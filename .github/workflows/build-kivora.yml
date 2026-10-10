@@ -32,9 +32,13 @@ jobs:
       - name: Accept Android SDK licenses
         shell: bash
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          for i in {1..20}; do
+            echo y
+          done | "$SDKMANAGER" --licenses
 
       - name: Install Android SDK packages
+        shell: bash
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
