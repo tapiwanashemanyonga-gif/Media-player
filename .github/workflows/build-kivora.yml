@@ -30,20 +30,18 @@ jobs:
       - name: Accept Android SDK licenses
         shell: bash
         run: |
-          set +o pipefail
-          yes | sdkmanager --licenses
-
-      - name: Verify Android SDK licenses
-        shell: bash
-        run: |
-          sdkmanager --licenses </dev/null
-          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-            echo "Android SDK license verification failed."
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Could not find sdkmanager."
             exit 1
           fi
+          yes | "$SDKMANAGER" --licenses || true
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
