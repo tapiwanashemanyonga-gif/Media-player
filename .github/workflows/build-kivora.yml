@@ -28,7 +28,19 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses
+
+      - name: Verify Android SDK licenses
+        shell: bash
+        run: |
+          sdkmanager --licenses </dev/null
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            echo "Android SDK license verification failed."
+            exit 1
+          fi
 
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
