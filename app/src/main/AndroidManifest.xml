@@ -1,27 +1,42 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET" />
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <application
-        android:allowBackup="true"
-        android:label="Kivora Music Player"
-        android:theme="@style/Theme.Kivora"
-        android:usesCleartextTraffic="false">
+<uses-permission
+    android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
-    </application>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+<application
+    android:label="Kivora Music Player"
+    android:theme="@style/Theme.Kivora"
+    android:usesCleartextTraffic="false">
+
+    <activity
+        android:name=".MainActivity"
+        android:exported="true">
+
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+
+    </activity>
+
+    <service
+        android:name=".KivoraPlaybackService"
+        android:foregroundServiceType="mediaPlayback"
+        android:exported="true">
+
+        <intent-filter>
+            <action android:name="androidx.media3.session.MediaSessionService" />
+        </intent-filter>
+
+    </service>
+
+</application>
+
 </manifest>
