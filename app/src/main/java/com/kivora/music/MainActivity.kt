@@ -230,6 +230,16 @@ class MainActivity : AppCompatActivity() {
         if (bold) setTypeface(typeface, Typeface.BOLD)
     }
 
+    private fun roundedBackground(
+        color: Int,
+        radiusDp: Int
+    ): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radiusDp).toFloat()
+        }
+    }
+
     private fun buildScreen() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -270,7 +280,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(148, 163, 184))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            setBackgroundColor(Color.rgb(30, 34, 49))
+            background = roundedBackground(Color.rgb(30, 34, 49), 14)
         }
 
         root.addView(
@@ -310,7 +320,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(Color.rgb(35, 39, 57))
+            background = roundedBackground(Color.rgb(35, 39, 57), 14)
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -333,7 +343,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(Color.rgb(39, 33, 65))
+            background = roundedBackground(Color.rgb(39, 33, 65), 14)
             isClickable = true
             isFocusable = true
 
@@ -375,7 +385,7 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
-            setBackgroundColor(Color.rgb(27, 30, 44))
+            background = roundedBackground(Color.rgb(27, 30, 44), 20)
         }
 
         card.addView(
@@ -395,7 +405,7 @@ class MainActivity : AppCompatActivity() {
 
         artwork = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(Color.rgb(45, 39, 72))
+            background = roundedBackground(Color.rgb(45, 39, 72), 16)
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Album artwork"
         }
