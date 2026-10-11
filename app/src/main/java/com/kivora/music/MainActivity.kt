@@ -38,6 +38,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import java.util.concurrent.Executors
 
 data class Song(
     val title: String,
@@ -76,6 +77,13 @@ class MainActivity : AppCompatActivity() {
     private var userSeeking = false
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Optimization: decode album artwork away from the UI thread.
+    private val artworkExecutor = Executors.newSingleThreadExecutor()
+    private var artworkRequestId = 0
+
+    // Optimization: cache lowercase search text for each song.
+    private val normalizedSearchText = mutableMapOf<String, String>()
 
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -1066,6 +1074,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSongs() {
         songs.clear()
+        normalizedSearchText.clear()
 
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
 
@@ -1208,16 +1217,18 @@ class MainActivity : AppCompatActivity() {
 
         songList.removeAllViews()
 
-        val normalized = query.trim().lowercase(Locale.getDefault())
+        val normalized = query.trim().lowercase(Locale.ROOT)
 
         val matches = songs.withIndex().filter { entry ->
             val song = entry.value
             val uri = song.uri.toString()
 
+            val searchableText = normalizedSearchText.getOrPut(uri) {
+                (song.title + " " + song.artist).lowercase(Locale.ROOT)
+            }
+
             val matchesQuery =
-                normalized.isEmpty() ||
-                    song.title.lowercase(Locale.getDefault()).contains(normalized) ||
-                    song.artist.lowercase(Locale.getDefault()).contains(normalized)
+                normalized.isEmpty() || searchableText.contains(normalized)
 
             val matchesFavorites =
                 !showFavoritesOnly || favoriteSongUris.contains(uri)
@@ -1417,6 +1428,10 @@ class MainActivity : AppCompatActivity() {
     private fun updateNowPlaying() {
         if (!::nowTitle.isInitialized) return
 
+        // Increment for every track change, including when no song is selected.
+        // This prevents a slow artwork request from replacing newer artwork.
+        val requestId = ++artworkRequestId
+
         val p = player
         val currentUri = p?.currentMediaItem?.localConfiguration?.uri
 
@@ -1439,16 +1454,29 @@ class MainActivity : AppCompatActivity() {
         nowArtist.text = song.artist
         artwork.setImageResource(android.R.drawable.ic_media_play)
 
-        try {
-            song.artworkUri?.let { uri ->
-                contentResolver.openInputStream(uri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)?.let { bitmap ->
+        val artworkUri = song.artworkUri
+
+        if (artworkUri != null) {
+            artworkExecutor.execute {
+                val bitmap = try {
+                    contentResolver.openInputStream(artworkUri)?.use { stream ->
+                        BitmapFactory.decodeStream(stream)
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+
+                runOnUiThread {
+                    if (
+                        !isFinishing &&
+                        !isDestroyed &&
+                        requestId == artworkRequestId &&
+                        bitmap != null
+                    ) {
                         artwork.setImageBitmap(bitmap)
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Keep placeholder artwork if unavailable.
         }
 
         updateProgress()
@@ -1538,6 +1566,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(progressUpdater)
+
+        // Invalidate any pending artwork callback and stop its worker.
+        artworkRequestId++
+        artworkExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
