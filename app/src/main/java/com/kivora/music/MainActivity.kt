@@ -67,6 +67,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playlistButton: TextView
 
     private val songs = mutableListOf<Song>()
+
+    // Songs in the queue currently loaded into the music player.
+    private var activeQueue: List<Song> = emptyList()
+
     private val favoriteSongUris = mutableSetOf<String>()
 
     // Playlist name -> song URI strings
@@ -271,7 +275,6 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(48))
         )
 
-        // Library header
         val libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(16), 0, dp(8))
@@ -296,7 +299,6 @@ class MainActivity : AppCompatActivity() {
         titleRow.addView(libraryCount)
         libraryHeader.addView(titleRow)
 
-        // Playlists selector
         playlistButton = label(
             "♫  ALL SONGS  ·  PLAYLISTS",
             13f,
@@ -320,7 +322,6 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        // Favourites filter
         favoriteFilterButton = label(
             "☆  SHOW FAVOURITES ONLY",
             13f,
@@ -335,6 +336,13 @@ class MainActivity : AppCompatActivity() {
 
             setOnClickListener {
                 showFavoritesOnly = !showFavoritesOnly
+
+                // A playlist takes priority over the favourites filter.
+                if (showFavoritesOnly) {
+                    selectedPlaylist = null
+                    updatePlaylistButton()
+                }
+
                 updateFavoriteFilterButton()
                 renderSongs(searchBox.text?.toString().orEmpty())
             }
@@ -349,7 +357,6 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(libraryHeader)
 
-        // Scrollable songs
         val scroll = ScrollView(this)
 
         songList = LinearLayout(this).apply {
@@ -363,7 +370,6 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
-        // Now playing
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
@@ -420,7 +426,6 @@ class MainActivity : AppCompatActivity() {
 
         card.addView(trackRow)
 
-        // Seek bar
         progress = SeekBar(this).apply {
             max = 1000
 
@@ -557,8 +562,10 @@ class MainActivity : AppCompatActivity() {
                 it.repeatMode = when (it.repeatMode) {
                     Player.REPEAT_MODE_OFF ->
                         Player.REPEAT_MODE_ALL
+
                     Player.REPEAT_MODE_ALL ->
                         Player.REPEAT_MODE_ONE
+
                     else ->
                         Player.REPEAT_MODE_OFF
                 }
@@ -779,6 +786,7 @@ class MainActivity : AppCompatActivity() {
 
                     else -> {
                         val name = playlists.keys.elementAtOrNull(which - 2)
+
                         if (name != null) {
                             selectedPlaylist = name
                             showFavoritesOnly = false
@@ -899,10 +907,12 @@ class MainActivity : AppCompatActivity() {
                     showCreatePlaylistDialog(song)
                 } else {
                     val name = playlists.keys.elementAtOrNull(which - 1)
+
                     if (name != null) {
                         val list = playlists[name]
 
-                        if (list != null &&
+                        if (
+                            list != null &&
                             list.add(song.uri.toString())
                         ) {
                             savePlaylists()
@@ -1040,8 +1050,9 @@ class MainActivity : AppCompatActivity() {
         renderSongs(searchBox.text?.toString().orEmpty())
     }
 
-    private fun makeMediaItems(): List<MediaItem> =
-        songs.map { song ->
+    // Convert whichever queue we choose into Media3 player items.
+    private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
+        queue.map { song ->
             val metadata = MediaMetadata.Builder()
                 .setTitle(song.title)
                 .setArtist(song.artist)
@@ -1056,22 +1067,45 @@ class MainActivity : AppCompatActivity() {
                 .build()
         }
 
+    // Keep the queue that is already playing when reconnecting to
+    // the service. This preserves background playback.
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
         if (songs.isEmpty()) {
+            activeQueue = emptyList()
+
             if (p.mediaItemCount > 0) {
                 p.clearMediaItems()
             }
+
             updateNowPlaying()
             return
         }
 
+        val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
+            val uri = p.getMediaItemAt(index)
+                .localConfiguration?.uri?.toString()
+
+            uri?.let { savedUri ->
+                songs.firstOrNull {
+                    it.uri.toString() == savedUri
+                }
+            }
+        }
+
         if (
-            p.mediaItemCount == 0 ||
-            p.mediaItemCount != songs.size
+            p.mediaItemCount > 0 &&
+            existingQueue.size == p.mediaItemCount
         ) {
-            p.setMediaItems(makeMediaItems())
+            // Rebuild our in-memory queue in the same order as the
+            // player's current queue.
+            activeQueue = existingQueue
+        } else {
+            // No usable queue exists: initialise the player with
+            // the full music library.
+            activeQueue = songs.toList()
+            p.setMediaItems(makeMediaItems(activeQueue))
             p.prepare()
         }
 
@@ -1157,7 +1191,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         matches.forEach { entry ->
-            val songIndex = entry.index
             val song = entry.value
             val uri = song.uri.toString()
 
@@ -1167,7 +1200,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(6), dp(10), dp(4), dp(10))
 
                 setOnClickListener {
-                    playSong(songIndex)
+                    playSong(song)
                 }
             }
 
@@ -1288,7 +1321,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun playSong(index: Int) {
+    // Load the correct queue whenever the user taps a song.
+    private fun playSong(song: Song) {
         val p = player
 
         if (p == null) {
@@ -1300,14 +1334,48 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (index !in songs.indices) return
+        val queue: List<Song> = when {
+            selectedPlaylist != null -> {
+                val members = playlists[selectedPlaylist].orEmpty()
 
-        if (p.mediaItemCount != songs.size) {
-            p.setMediaItems(makeMediaItems())
-            p.prepare()
+                songs.filter { candidate ->
+                    members.contains(candidate.uri.toString())
+                }
+            }
+
+            showFavoritesOnly -> {
+                songs.filter { candidate ->
+                    favoriteSongUris.contains(candidate.uri.toString())
+                }
+            }
+
+            else -> songs.toList()
         }
 
-        p.seekTo(index, 0L)
+        val startIndex = queue.indexOfFirst {
+            it.uri == song.uri
+        }
+
+        if (queue.isEmpty() || startIndex < 0) {
+            Toast.makeText(
+                this,
+                "This song is not in the selected list.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        activeQueue = queue
+
+        // Replace the player's queue, start at the tapped song,
+        // and let Media3 handle Next, Previous, Shuffle and Repeat.
+        p.setMediaItems(
+            makeMediaItems(activeQueue),
+            startIndex,
+            0L
+        )
+
+        p.prepare()
         p.play()
 
         updateNowPlaying()
@@ -1318,8 +1386,19 @@ class MainActivity : AppCompatActivity() {
         if (!::nowTitle.isInitialized) return
 
         val p = player
-        val song = p?.let {
-            songs.getOrNull(it.currentMediaItemIndex)
+        val currentUri = p?.currentMediaItem
+            ?.localConfiguration?.uri
+
+        // Match by URI as well as queue index so the displayed song
+        // remains correct after queue changes or service reconnection.
+        val song = if (currentUri != null) {
+            activeQueue.firstOrNull {
+                it.uri == currentUri
+            } ?: songs.firstOrNull {
+                it.uri == currentUri
+            }
+        } else {
+            null
         }
 
         if (song == null) {
