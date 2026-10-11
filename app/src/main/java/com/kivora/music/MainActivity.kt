@@ -1,4 +1,3 @@
-
 package com.kivora.music
 
 import android.Manifest
@@ -60,9 +59,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var elapsedText: TextView
     private lateinit var durationText: TextView
     private lateinit var libraryCount: TextView
+    private lateinit var favoriteFilterButton: TextView
 
     private val songs = mutableListOf<Song>()
+    private val favoriteSongUris = mutableSetOf<String>()
+
+    private var showFavoritesOnly = false
     private var userSeeking = false
+
     private val handler = Handler(Looper.getMainLooper())
 
     private val progressUpdater = object : Runnable {
@@ -112,6 +116,14 @@ class MainActivity : AppCompatActivity() {
 
         window.statusBarColor = Color.rgb(13, 15, 25)
         window.navigationBarColor = Color.rgb(13, 15, 25)
+
+        // Restore favourites saved during previous app sessions.
+        val savedFavorites = getSharedPreferences(
+            "kivora_preferences",
+            MODE_PRIVATE
+        ).getStringSet("favorite_song_uris", emptySet<String>())
+
+        favoriteSongUris.addAll(savedFavorites?.toSet().orEmpty())
 
         buildScreen()
         connectToPlaybackService()
@@ -202,9 +214,11 @@ class MainActivity : AppCompatActivity() {
             label("KIVORA", 27f, Color.rgb(167, 139, 250), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
+
         header.addView(
             label("MUSIC PLAYER", 10f, Color.rgb(148, 163, 184), true)
         )
+
         root.addView(header)
 
         root.addView(
@@ -222,34 +236,73 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(14), dp(8), dp(14), dp(8))
             setBackgroundColor(Color.rgb(30, 34, 49))
         }
-        root.addView(searchBox, LinearLayout.LayoutParams(-1, dp(48)))
+
+        root.addView(
+            searchBox,
+            LinearLayout.LayoutParams(-1, dp(48))
+        )
 
         val libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(20), 0, dp(10))
         }
+
         libraryHeader.addView(
             label("YOUR LIBRARY", 17f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
-        libraryCount = label("0 songs", 12f, Color.rgb(148, 163, 184))
+
+        libraryCount = label(
+            "0 songs",
+            12f,
+            Color.rgb(148, 163, 184)
+        )
+
         libraryHeader.addView(libraryCount)
+
+        favoriteFilterButton = label(
+            "☆ Favourites",
+            12f,
+            Color.rgb(196, 181, 253),
+            true
+        ).apply {
+            setPadding(dp(10), dp(6), 0, dp(6))
+            isClickable = true
+            contentDescription = "Show or hide favourite songs"
+
+            setOnClickListener {
+                showFavoritesOnly = !showFavoritesOnly
+                updateFavoriteFilterButton()
+                renderSongs(searchBox.text?.toString().orEmpty())
+            }
+        }
+
+        libraryHeader.addView(favoriteFilterButton)
         root.addView(libraryHeader)
 
         val scroll = ScrollView(this)
+
         songList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
+
         scroll.addView(songList)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
             setBackgroundColor(Color.rgb(27, 30, 44))
         }
-        card.addView(label("NOW PLAYING", 10f, Color.rgb(167, 139, 250), true))
+
+        card.addView(
+            label("NOW PLAYING", 10f, Color.rgb(167, 139, 250), true)
+        )
 
         val trackRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -263,62 +316,93 @@ class MainActivity : AppCompatActivity() {
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Album artwork"
         }
-        trackRow.addView(artwork, LinearLayout.LayoutParams(dp(64), dp(64)))
+
+        trackRow.addView(
+            artwork,
+            LinearLayout.LayoutParams(dp(64), dp(64))
+        )
 
         val trackInfo = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
+
         nowTitle = label("Choose a song", 15f, Color.WHITE, true)
-        nowArtist = label("Your library is ready", 12f, Color.rgb(148, 163, 184))
+        nowArtist = label(
+            "Your library is ready",
+            12f,
+            Color.rgb(148, 163, 184)
+        )
+
         trackInfo.addView(nowTitle)
         trackInfo.addView(nowArtist)
-        trackRow.addView(trackInfo, LinearLayout.LayoutParams(0, -2, 1f))
+
+        trackRow.addView(
+            trackInfo,
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+
         card.addView(trackRow)
 
         progress = SeekBar(this).apply {
             max = 1000
-            progressTintList = android.content.res.ColorStateList.valueOf(
-                Color.rgb(167, 139, 250)
-            )
-            thumbTintList = android.content.res.ColorStateList.valueOf(
-                Color.rgb(196, 181, 253)
-            )
 
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onStartTrackingTouch(seekBar: SeekBar) {
-                    userSeeking = true
-                }
+            progressTintList =
+                android.content.res.ColorStateList.valueOf(
+                    Color.rgb(167, 139, 250)
+                )
 
-                override fun onProgressChanged(
-                    seekBar: SeekBar,
-                    value: Int,
-                    fromUser: Boolean
-                ) {
-                    if (fromUser) {
+            thumbTintList =
+                android.content.res.ColorStateList.valueOf(
+                    Color.rgb(196, 181, 253)
+                )
+
+            setOnSeekBarChangeListener(
+                object : SeekBar.OnSeekBarChangeListener {
+
+                    override fun onStartTrackingTouch(seekBar: SeekBar) {
+                        userSeeking = true
+                    }
+
+                    override fun onProgressChanged(
+                        seekBar: SeekBar,
+                        value: Int,
+                        fromUser: Boolean
+                    ) {
+                        if (fromUser) {
+                            val d = player?.duration ?: 0L
+                            elapsedText.text = formatTime(d * value / 1000L)
+                        }
+                    }
+
+                    override fun onStopTrackingTouch(seekBar: SeekBar) {
                         val d = player?.duration ?: 0L
-                        elapsedText.text = formatTime(d * value / 1000L)
-                    }
-                }
 
-                override fun onStopTrackingTouch(seekBar: SeekBar) {
-                    val d = player?.duration ?: 0L
-                    if (d > 0L && d != C.TIME_UNSET) {
-                        player?.seekTo(d * seekBar.progress / 1000L)
+                        if (d > 0L && d != C.TIME_UNSET) {
+                            player?.seekTo(d * seekBar.progress / 1000L)
+                        }
+
+                        userSeeking = false
                     }
-                    userSeeking = false
                 }
-            })
+            )
         }
+
         card.addView(progress)
 
         val times = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
+
         elapsedText = label("0:00", 10f, Color.rgb(148, 163, 184))
         durationText = label("0:00", 10f, Color.rgb(148, 163, 184))
-        times.addView(elapsedText, LinearLayout.LayoutParams(0, -2, 1f))
+
+        times.addView(
+            elapsedText,
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+
         times.addView(durationText)
         card.addView(times)
 
@@ -337,12 +421,15 @@ class MainActivity : AppCompatActivity() {
 
         val previousButton = control("⏮") {
             player?.let {
-                if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem()
+                if (it.hasPreviousMediaItem()) {
+                    it.seekToPreviousMediaItem()
+                }
             }
         }
 
         playButton = control("▶") {
             val p = player
+
             if (p == null) {
                 Toast.makeText(
                     this@MainActivity,
@@ -360,12 +447,15 @@ class MainActivity : AppCompatActivity() {
             } else {
                 p.play()
             }
+
             updatePlayButton()
         }
 
         val nextButton = control("⏭") {
             player?.let {
-                if (it.hasNextMediaItem()) it.seekToNextMediaItem()
+                if (it.hasNextMediaItem()) {
+                    it.seekToNextMediaItem()
+                }
             }
         }
 
@@ -376,6 +466,7 @@ class MainActivity : AppCompatActivity() {
                     Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                     else -> Player.REPEAT_MODE_OFF
                 }
+
                 updateRepeatButton()
             }
         }
@@ -385,6 +476,7 @@ class MainActivity : AppCompatActivity() {
         controls.addView(playButton)
         controls.addView(nextButton)
         controls.addView(repeatButton)
+
         card.addView(controls)
 
         root.addView(
@@ -396,26 +488,41 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(root)
 
-        searchBox.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(
-                s: CharSequence?, start: Int, count: Int, after: Int
-            ) = Unit
+        searchBox.addTextChangedListener(
+            object : android.text.TextWatcher {
 
-            override fun onTextChanged(
-                s: CharSequence?, start: Int, before: Int, count: Int
-            ) {
-                renderSongs(s?.toString().orEmpty())
+                override fun beforeTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    count: Int,
+                    after: Int
+                ) = Unit
+
+                override fun onTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    before: Int,
+                    count: Int
+                ) {
+                    renderSongs(s?.toString().orEmpty())
+                }
+
+                override fun afterTextChanged(
+                    s: android.text.Editable?
+                ) = Unit
             }
-
-            override fun afterTextChanged(s: android.text.Editable?) = Unit
-        })
+        )
 
         updatePlayButton()
         updateShuffleButton()
         updateRepeatButton()
+        updateFavoriteFilterButton()
     }
 
-    private fun control(symbol: String, action: () -> Unit): TextView =
+    private fun control(
+        symbol: String,
+        action: () -> Unit
+    ): TextView =
         TextView(this).apply {
             text = symbol
             textSize = if (symbol == "▶" || symbol == "Ⅱ") 22f else 19f
@@ -425,10 +532,59 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { action() }
         }
 
+    private fun updateFavoriteFilterButton() {
+        if (!::favoriteFilterButton.isInitialized) return
+
+        favoriteFilterButton.text =
+            if (showFavoritesOnly) "★ Favourites" else "☆ Favourites"
+
+        favoriteFilterButton.setTextColor(
+            if (showFavoritesOnly) {
+                Color.rgb(250, 204, 21)
+            } else {
+                Color.rgb(196, 181, 253)
+            }
+        )
+    }
+
+    private fun toggleFavorite(song: Song) {
+        val songUri = song.uri.toString()
+
+        if (favoriteSongUris.contains(songUri)) {
+            favoriteSongUris.remove(songUri)
+            Toast.makeText(
+                this,
+                "Removed from favourites",
+                Toast.LENGTH_SHORT
+            ).show()
+        } else {
+            favoriteSongUris.add(songUri)
+            Toast.makeText(
+                this,
+                "Added to favourites",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        // Save a copy so changes persist after the app closes.
+        getSharedPreferences(
+            "kivora_preferences",
+            MODE_PRIVATE
+        ).edit()
+            .putStringSet(
+                "favorite_song_uris",
+                favoriteSongUris.toSet()
+            )
+            .apply()
+
+        renderSongs(searchBox.text?.toString().orEmpty())
+    }
+
     private fun loadSongs() {
         songs.clear()
 
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -446,27 +602,44 @@ class MainActivity : AppCompatActivity() {
             )
 
             cursor?.use {
-                val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                val idColumn =
+                    it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+
+                val titleColumn =
+                    it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+
+                val artistColumn =
+                    it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+
+                val albumColumn =
+                    it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
 
                 while (it.moveToNext()) {
                     val id = it.getLong(idColumn)
+
                     val title = it.getString(titleColumn)
-                        ?.takeIf { value -> value.isNotBlank() } ?: "Unknown title"
+                        ?.takeIf { value -> value.isNotBlank() }
+                        ?: "Unknown title"
+
                     val artistValue = it.getString(artistColumn)
+
                     val artist = artistValue?.takeIf {
-                        value -> value.isNotBlank() && value != "<unknown>"
+                        value ->
+                        value.isNotBlank() && value != "<unknown>"
                     } ?: "Unknown artist"
+
                     val albumId = it.getLong(albumColumn)
 
                     val artUri = if (albumId > 0L) {
                         ContentUris.withAppendedId(
-                            Uri.parse("content://media/external/audio/albumart"),
+                            Uri.parse(
+                                "content://media/external/audio/albumart"
+                            ),
                             albumId
                         )
-                    } else null
+                    } else {
+                        null
+                    }
 
                     songs.add(
                         Song(
@@ -510,7 +683,10 @@ class MainActivity : AppCompatActivity() {
         val p = player ?: return
 
         if (songs.isEmpty()) {
-            if (p.mediaItemCount > 0) p.clearMediaItems()
+            if (p.mediaItemCount > 0) {
+                p.clearMediaItems()
+            }
+
             updateNowPlaying()
             return
         }
@@ -524,35 +700,62 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderSongs(query: String) {
-        if (!::songList.isInitialized || !::libraryCount.isInitialized) return
+        if (!::songList.isInitialized || !::libraryCount.isInitialized) {
+            return
+        }
 
         songList.removeAllViews()
+
         val normalized = query.trim().lowercase(Locale.getDefault())
 
         val matches = songs.withIndex().filter { entry ->
-            normalized.isEmpty() ||
-                entry.value.title.lowercase(Locale.getDefault()).contains(normalized) ||
-                entry.value.artist.lowercase(Locale.getDefault()).contains(normalized)
+            val song = entry.value
+
+            val matchesQuery =
+                normalized.isEmpty() ||
+                    song.title.lowercase(Locale.getDefault()).contains(normalized) ||
+                    song.artist.lowercase(Locale.getDefault()).contains(normalized)
+
+            val matchesFavoriteFilter =
+                !showFavoritesOnly ||
+                    favoriteSongUris.contains(song.uri.toString())
+
+            matchesQuery && matchesFavoriteFilter
         }
 
-        libraryCount.text = if (normalized.isEmpty()) {
-            "${songs.size} songs"
-        } else {
-            "${matches.size} found"
+        libraryCount.text = when {
+            showFavoritesOnly -> "${matches.size} favourites"
+            normalized.isEmpty() -> "${songs.size} songs"
+            else -> "${matches.size} found"
         }
 
         if (matches.isEmpty()) {
-            val message = if (songs.isEmpty()) {
-                "No music found yet.\nAdd audio files to your device and try again."
-            } else {
-                "No songs match your search."
+            val message = when {
+                songs.isEmpty() ->
+                    "No music found yet.\nAdd audio files to your device and try again."
+
+                showFavoritesOnly && favoriteSongUris.none { uri ->
+                    songs.any { song -> song.uri.toString() == uri }
+                } ->
+                    "No favourites yet.\nTap ☆ beside a song to add it."
+
+                showFavoritesOnly ->
+                    "No favourite songs match your search."
+
+                else ->
+                    "No songs match your search."
             }
 
             songList.addView(
-                label(message, 14f, Color.rgb(148, 163, 184)).apply {
+                label(
+                    message,
+                    14f,
+                    Color.rgb(148, 163, 184)
+                ).apply {
                     setPadding(dp(4), dp(18), dp(4), dp(18))
                 }
             )
+
             return
         }
 
@@ -564,11 +767,18 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(6), dp(10), dp(6), dp(10))
-                setOnClickListener { playSong(songIndex) }
+                setOnClickListener {
+                    playSong(songIndex)
+                }
             }
 
             row.addView(
-                label("♫", 23f, Color.rgb(167, 139, 250), true).apply {
+                label(
+                    "♫",
+                    23f,
+                    Color.rgb(167, 139, 250),
+                    true
+                ).apply {
                     gravity = Gravity.CENTER
                 },
                 LinearLayout.LayoutParams(dp(42), dp(46))
@@ -580,22 +790,71 @@ class MainActivity : AppCompatActivity() {
             }
 
             info.addView(
-                label(song.title, 14f, Color.WHITE, true).apply {
+                label(
+                    song.title,
+                    14f,
+                    Color.WHITE,
+                    true
+                ).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }
             )
 
             info.addView(
-                label(song.artist, 12f, Color.rgb(148, 163, 184)).apply {
+                label(
+                    song.artist,
+                    12f,
+                    Color.rgb(148, 163, 184)
+                ).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 }
             )
 
-            row.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
-            row.addView(label("›", 24f, Color.rgb(148, 163, 184)))
+            row.addView(
+                info,
+                LinearLayout.LayoutParams(0, -2, 1f)
+            )
+
+            val isFavorite =
+                favoriteSongUris.contains(song.uri.toString())
+
+            val favoriteButton = label(
+                if (isFavorite) "★" else "☆",
+                22f,
+                if (isFavorite) {
+                    Color.rgb(250, 204, 21)
+                } else {
+                    Color.rgb(148, 163, 184)
+                }
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+
+                contentDescription =
+                    if (isFavorite) {
+                        "Remove from favourites"
+                    } else {
+                        "Add to favourites"
+                    }
+
+                setOnClickListener {
+                    toggleFavorite(song)
+                }
+            }
+
+            row.addView(favoriteButton)
+
+            row.addView(
+                label(
+                    "›",
+                    24f,
+                    Color.rgb(148, 163, 184)
+                )
+            )
+
             songList.addView(row)
 
             songList.addView(
@@ -628,6 +887,7 @@ class MainActivity : AppCompatActivity() {
 
         p.seekTo(index, 0L)
         p.play()
+
         updateNowPlaying()
         updatePlayButton()
     }
@@ -636,7 +896,9 @@ class MainActivity : AppCompatActivity() {
         if (!::nowTitle.isInitialized) return
 
         val p = player
-        val song = p?.let { songs.getOrNull(it.currentMediaItemIndex) }
+        val song = p?.let {
+            songs.getOrNull(it.currentMediaItemIndex)
+        }
 
         if (song == null) {
             nowTitle.text = "Choose a song"
@@ -667,7 +929,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayButton() {
         if (!::playButton.isInitialized) return
-        playButton.text = if (player?.isPlaying == true) "Ⅱ" else "▶"
+
+        playButton.text =
+            if (player?.isPlaying == true) "Ⅱ" else "▶"
+
         playButton.setTextColor(Color.rgb(196, 181, 253))
     }
 
@@ -686,39 +951,49 @@ class MainActivity : AppCompatActivity() {
     private fun updateRepeatButton() {
         if (!::repeatButton.isInitialized) return
 
-        repeatButton.text = when (player?.repeatMode ?: Player.REPEAT_MODE_OFF) {
-            Player.REPEAT_MODE_ONE -> "↻¹"
-            else -> "↻"
-        }
+        repeatButton.text =
+            when (player?.repeatMode ?: Player.REPEAT_MODE_OFF) {
+                Player.REPEAT_MODE_ONE -> "↻¹"
+                else -> "↻"
+            }
 
         val enabled =
-            (player?.repeatMode ?: Player.REPEAT_MODE_OFF) != Player.REPEAT_MODE_OFF
+            (player?.repeatMode ?: Player.REPEAT_MODE_OFF) !=
+                Player.REPEAT_MODE_OFF
 
         repeatButton.setTextColor(
-            if (enabled) Color.rgb(167, 139, 250)
-            else Color.rgb(148, 163, 184)
+            if (enabled) {
+                Color.rgb(167, 139, 250)
+            } else {
+                Color.rgb(148, 163, 184)
+            }
         )
     }
 
     private fun updateProgress() {
         if (!::progress.isInitialized) return
+
         val p = player ?: return
 
         val rawDuration = p.duration
-        val duration = if (rawDuration > 0L && rawDuration != C.TIME_UNSET) {
-            rawDuration
-        } else {
-            0L
-        }
+
+        val duration =
+            if (rawDuration > 0L && rawDuration != C.TIME_UNSET) {
+                rawDuration
+            } else {
+                0L
+            }
 
         val position = p.currentPosition.coerceAtLeast(0L)
 
         if (!userSeeking) {
-            progress.progress = if (duration > 0L) {
-                ((position * 1000L) / duration).toInt()
-            } else {
-                0
-            }
+            progress.progress =
+                if (duration > 0L) {
+                    ((position * 1000L) / duration).toInt()
+                } else {
+                    0
+                }
+
             elapsedText.text = formatTime(position)
         }
 
@@ -726,7 +1001,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun formatTime(milliseconds: Long): String {
-        val totalSeconds = (milliseconds.coerceAtLeast(0L) / 1000L).toInt()
+        val totalSeconds =
+            (milliseconds.coerceAtLeast(0L) / 1000L).toInt()
+
         return String.format(
             Locale.getDefault(),
             "%d:%02d",
@@ -737,12 +1014,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(progressUpdater)
+
         player?.removeListener(playerListener)
         player = null
 
         controllerFuture?.let { future ->
             MediaController.releaseFuture(future)
         }
+
         controllerFuture = null
 
         super.onDestroy()
