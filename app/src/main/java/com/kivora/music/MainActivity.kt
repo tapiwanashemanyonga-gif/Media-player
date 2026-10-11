@@ -67,13 +67,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playlistButton: TextView
 
     private val songs = mutableListOf<Song>()
-
-    // Songs in the queue currently loaded into the music player.
     private var activeQueue: List<Song> = emptyList()
-
     private val favoriteSongUris = mutableSetOf<String>()
-
-    // Playlist name -> song URI strings
     private val playlists = linkedMapOf<String, MutableSet<String>>()
 
     private var showFavoritesOnly = false
@@ -337,7 +332,6 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 showFavoritesOnly = !showFavoritesOnly
 
-                // A playlist takes priority over the favourites filter.
                 if (showFavoritesOnly) {
                     selectedPlaylist = null
                     updatePlaylistButton()
@@ -562,10 +556,8 @@ class MainActivity : AppCompatActivity() {
                 it.repeatMode = when (it.repeatMode) {
                     Player.REPEAT_MODE_OFF ->
                         Player.REPEAT_MODE_ALL
-
                     Player.REPEAT_MODE_ALL ->
                         Player.REPEAT_MODE_ONE
-
                     else ->
                         Player.REPEAT_MODE_OFF
                 }
@@ -786,13 +778,8 @@ class MainActivity : AppCompatActivity() {
 
                     else -> {
                         val name = playlists.keys.elementAtOrNull(which - 2)
-
                         if (name != null) {
-                            selectedPlaylist = name
-                            showFavoritesOnly = false
-                            updateFavoriteFilterButton()
-                            updatePlaylistButton()
-                            renderSongs(searchBox.text?.toString().orEmpty())
+                            showPlaylistActionsDialog(name)
                         }
                     }
                 }
@@ -801,9 +788,136 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showCreatePlaylistDialog(
-        songToAdd: Song? = null
-    ) {
+    private fun showPlaylistActionsDialog(name: String) {
+        AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(
+                arrayOf(
+                    "Open playlist",
+                    "Rename playlist",
+                    "Delete playlist"
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> {
+                        selectedPlaylist = name
+                        showFavoritesOnly = false
+                        updateFavoriteFilterButton()
+                        updatePlaylistButton()
+                        renderSongs(searchBox.text?.toString().orEmpty())
+                    }
+
+                    1 -> showRenamePlaylistDialog(name)
+                    2 -> confirmDeletePlaylist(name)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showRenamePlaylistDialog(oldName: String) {
+        val input = EditText(this).apply {
+            setSingleLine(true)
+            setText(oldName)
+            setSelection(text.length)
+            setTextColor(Color.BLACK)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Rename playlist")
+            .setMessage("Enter the new playlist name.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener {
+                    val newName = input.text.toString().trim()
+
+                    if (newName.isBlank()) {
+                        input.error = "Enter a name"
+                        return@setOnClickListener
+                    }
+
+                    val duplicate = playlists.keys.any {
+                        it != oldName &&
+                            it.equals(newName, ignoreCase = true)
+                    }
+
+                    if (duplicate) {
+                        input.error = "That playlist name already exists"
+                        return@setOnClickListener
+                    }
+
+                    if (newName != oldName) {
+                        val renamed = linkedMapOf<String, MutableSet<String>>()
+
+                        playlists.forEach { (name, uris) ->
+                            if (name == oldName) {
+                                renamed[newName] = uris
+                            } else {
+                                renamed[name] = uris
+                            }
+                        }
+
+                        playlists.clear()
+                        playlists.putAll(renamed)
+
+                        if (selectedPlaylist == oldName) {
+                            selectedPlaylist = newName
+                        }
+
+                        savePlaylists()
+                        updatePlaylistButton()
+                        renderSongs(searchBox.text?.toString().orEmpty())
+
+                        Toast.makeText(
+                            this,
+                            "Playlist renamed",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+
+                    dialog.dismiss()
+                }
+        }
+
+        dialog.show()
+    }
+
+    private fun confirmDeletePlaylist(name: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete playlist?")
+            .setMessage(
+                "Delete \"$name\" and its saved playlist list? " +
+                    "Your music files and favourites will not be deleted."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ ->
+                playlists.remove(name)
+
+                if (selectedPlaylist == name) {
+                    selectedPlaylist = null
+                }
+
+                savePlaylists()
+                updatePlaylistButton()
+                updateFavoriteFilterButton()
+                renderSongs(searchBox.text?.toString().orEmpty())
+
+                Toast.makeText(
+                    this,
+                    "Playlist deleted",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .show()
+    }
+
+    private fun showCreatePlaylistDialog(songToAdd: Song? = null) {
         val input = EditText(this).apply {
             hint = "e.g. Gospel, Amapiano, Love Songs"
             setSingleLine(true)
@@ -814,10 +928,7 @@ class MainActivity : AppCompatActivity() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), 0)
-            addView(
-                input,
-                LinearLayout.LayoutParams(-1, -2)
-            )
+            addView(input, LinearLayout.LayoutParams(-1, -2))
         }
 
         val dialog = AlertDialog.Builder(this)
@@ -854,9 +965,7 @@ class MainActivity : AppCompatActivity() {
                     playlists[name] = mutableSetOf()
 
                     if (songToAdd != null) {
-                        playlists[name]?.add(
-                            songToAdd.uri.toString()
-                        )
+                        playlists[name]?.add(songToAdd.uri.toString())
                     }
 
                     savePlaylists()
@@ -929,9 +1038,7 @@ class MainActivity : AppCompatActivity() {
                             ).show()
                         }
 
-                        renderSongs(
-                            searchBox.text?.toString().orEmpty()
-                        )
+                        renderSongs(searchBox.text?.toString().orEmpty())
                     }
                 }
             }
@@ -979,25 +1086,18 @@ class MainActivity : AppCompatActivity() {
             )
 
             cursor?.use {
-                val idColumn =
-                    it.getColumnIndexOrThrow(
-                        MediaStore.Audio.Media._ID
-                    )
-
-                val titleColumn =
-                    it.getColumnIndexOrThrow(
-                        MediaStore.Audio.Media.TITLE
-                    )
-
-                val artistColumn =
-                    it.getColumnIndexOrThrow(
-                        MediaStore.Audio.Media.ARTIST
-                    )
-
-                val albumColumn =
-                    it.getColumnIndexOrThrow(
-                        MediaStore.Audio.Media.ALBUM_ID
-                    )
+                val idColumn = it.getColumnIndexOrThrow(
+                    MediaStore.Audio.Media._ID
+                )
+                val titleColumn = it.getColumnIndexOrThrow(
+                    MediaStore.Audio.Media.TITLE
+                )
+                val artistColumn = it.getColumnIndexOrThrow(
+                    MediaStore.Audio.Media.ARTIST
+                )
+                val albumColumn = it.getColumnIndexOrThrow(
+                    MediaStore.Audio.Media.ALBUM_ID
+                )
 
                 while (it.moveToNext()) {
                     val id = it.getLong(idColumn)
@@ -1029,10 +1129,7 @@ class MainActivity : AppCompatActivity() {
                         Song(
                             title,
                             artist,
-                            ContentUris.withAppendedId(
-                                collection,
-                                id
-                            ),
+                            ContentUris.withAppendedId(collection, id),
                             artUri
                         )
                     )
@@ -1050,7 +1147,6 @@ class MainActivity : AppCompatActivity() {
         renderSongs(searchBox.text?.toString().orEmpty())
     }
 
-    // Convert whichever queue we choose into Media3 player items.
     private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
         queue.map { song ->
             val metadata = MediaMetadata.Builder()
@@ -1067,8 +1163,6 @@ class MainActivity : AppCompatActivity() {
                 .build()
         }
 
-    // Keep the queue that is already playing when reconnecting to
-    // the service. This preserves background playback.
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
@@ -1088,9 +1182,7 @@ class MainActivity : AppCompatActivity() {
                 .localConfiguration?.uri?.toString()
 
             uri?.let { savedUri ->
-                songs.firstOrNull {
-                    it.uri.toString() == savedUri
-                }
+                songs.firstOrNull { it.uri.toString() == savedUri }
             }
         }
 
@@ -1098,12 +1190,8 @@ class MainActivity : AppCompatActivity() {
             p.mediaItemCount > 0 &&
             existingQueue.size == p.mediaItemCount
         ) {
-            // Rebuild our in-memory queue in the same order as the
-            // player's current queue.
             activeQueue = existingQueue
         } else {
-            // No usable queue exists: initialise the player with
-            // the full music library.
             activeQueue = songs.toList()
             p.setMediaItems(makeMediaItems(activeQueue))
             p.prepare()
@@ -1120,9 +1208,7 @@ class MainActivity : AppCompatActivity() {
 
         songList.removeAllViews()
 
-        val normalized = query.trim().lowercase(
-            Locale.getDefault()
-        )
+        val normalized = query.trim().lowercase(Locale.getDefault())
 
         val matches = songs.withIndex().filter { entry ->
             val song = entry.value
@@ -1130,16 +1216,11 @@ class MainActivity : AppCompatActivity() {
 
             val matchesQuery =
                 normalized.isEmpty() ||
-                    song.title.lowercase(
-                        Locale.getDefault()
-                    ).contains(normalized) ||
-                    song.artist.lowercase(
-                        Locale.getDefault()
-                    ).contains(normalized)
+                    song.title.lowercase(Locale.getDefault()).contains(normalized) ||
+                    song.artist.lowercase(Locale.getDefault()).contains(normalized)
 
             val matchesFavorites =
-                !showFavoritesOnly ||
-                    favoriteSongUris.contains(uri)
+                !showFavoritesOnly || favoriteSongUris.contains(uri)
 
             val matchesPlaylist =
                 selectedPlaylist == null ||
@@ -1149,17 +1230,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         libraryCount.text = when {
-            selectedPlaylist != null ->
-                "${matches.size} in playlist"
-
-            showFavoritesOnly ->
-                "${matches.size} favourites"
-
-            normalized.isEmpty() ->
-                "${songs.size} songs"
-
-            else ->
-                "${matches.size} found"
+            selectedPlaylist != null -> "${matches.size} in playlist"
+            showFavoritesOnly -> "${matches.size} favourites"
+            normalized.isEmpty() -> "${songs.size} songs"
+            else -> "${matches.size} found"
         }
 
         if (matches.isEmpty()) {
@@ -1173,8 +1247,7 @@ class MainActivity : AppCompatActivity() {
                 showFavoritesOnly ->
                     "No favourites yet.\nTap ☆ beside a song to add it."
 
-                else ->
-                    "No songs match your search."
+                else -> "No songs match your search."
             }
 
             songList.addView(
@@ -1198,19 +1271,11 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(6), dp(10), dp(4), dp(10))
-
-                setOnClickListener {
-                    playSong(song)
-                }
+                setOnClickListener { playSong(song) }
             }
 
             row.addView(
-                label(
-                    "♫",
-                    23f,
-                    Color.rgb(167, 139, 250),
-                    true
-                ).apply {
+                label("♫", 23f, Color.rgb(167, 139, 250), true).apply {
                     gravity = Gravity.CENTER
                 },
                 LinearLayout.LayoutParams(dp(36), dp(46))
@@ -1224,8 +1289,7 @@ class MainActivity : AppCompatActivity() {
             info.addView(
                 label(song.title, 14f, Color.WHITE, true).apply {
                     maxLines = 1
-                    ellipsize =
-                        android.text.TextUtils.TruncateAt.END
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                 }
             )
 
@@ -1236,8 +1300,7 @@ class MainActivity : AppCompatActivity() {
                     Color.rgb(148, 163, 184)
                 ).apply {
                     maxLines = 1
-                    ellipsize =
-                        android.text.TextUtils.TruncateAt.END
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 }
             )
@@ -1262,20 +1325,13 @@ class MainActivity : AppCompatActivity() {
                     gravity = Gravity.CENTER
                     setPadding(dp(6), dp(8), dp(6), dp(8))
                     contentDescription = "Toggle favourite"
-                    setOnClickListener {
-                        toggleFavorite(song)
-                    }
+                    setOnClickListener { toggleFavorite(song) }
                 }
             )
 
             if (selectedPlaylist == null) {
                 row.addView(
-                    label(
-                        "+",
-                        23f,
-                        Color.rgb(196, 181, 253),
-                        true
-                    ).apply {
+                    label("+", 23f, Color.rgb(196, 181, 253), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
                         contentDescription = "Add song to playlist"
@@ -1286,12 +1342,7 @@ class MainActivity : AppCompatActivity() {
                 )
             } else {
                 row.addView(
-                    label(
-                        "−",
-                        23f,
-                        Color.rgb(248, 113, 113),
-                        true
-                    ).apply {
+                    label("−", 23f, Color.rgb(248, 113, 113), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
                         contentDescription = "Remove from playlist"
@@ -1302,13 +1353,7 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            row.addView(
-                label(
-                    "›",
-                    24f,
-                    Color.rgb(148, 163, 184)
-                )
-            )
+            row.addView(label("›", 24f, Color.rgb(148, 163, 184)))
 
             songList.addView(row)
 
@@ -1321,7 +1366,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Load the correct queue whenever the user taps a song.
     private fun playSong(song: Song) {
         val p = player
 
@@ -1337,24 +1381,19 @@ class MainActivity : AppCompatActivity() {
         val queue: List<Song> = when {
             selectedPlaylist != null -> {
                 val members = playlists[selectedPlaylist].orEmpty()
-
-                songs.filter { candidate ->
-                    members.contains(candidate.uri.toString())
-                }
+                songs.filter { members.contains(it.uri.toString()) }
             }
 
             showFavoritesOnly -> {
-                songs.filter { candidate ->
-                    favoriteSongUris.contains(candidate.uri.toString())
+                songs.filter {
+                    favoriteSongUris.contains(it.uri.toString())
                 }
             }
 
             else -> songs.toList()
         }
 
-        val startIndex = queue.indexOfFirst {
-            it.uri == song.uri
-        }
+        val startIndex = queue.indexOfFirst { it.uri == song.uri }
 
         if (queue.isEmpty() || startIndex < 0) {
             Toast.makeText(
@@ -1367,14 +1406,7 @@ class MainActivity : AppCompatActivity() {
 
         activeQueue = queue
 
-        // Replace the player's queue, start at the tapped song,
-        // and let Media3 handle Next, Previous, Shuffle and Repeat.
-        p.setMediaItems(
-            makeMediaItems(activeQueue),
-            startIndex,
-            0L
-        )
-
+        p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
         p.prepare()
         p.play()
 
@@ -1386,17 +1418,11 @@ class MainActivity : AppCompatActivity() {
         if (!::nowTitle.isInitialized) return
 
         val p = player
-        val currentUri = p?.currentMediaItem
-            ?.localConfiguration?.uri
+        val currentUri = p?.currentMediaItem?.localConfiguration?.uri
 
-        // Match by URI as well as queue index so the displayed song
-        // remains correct after queue changes or service reconnection.
         val song = if (currentUri != null) {
-            activeQueue.firstOrNull {
-                it.uri == currentUri
-            } ?: songs.firstOrNull {
-                it.uri == currentUri
-            }
+            activeQueue.firstOrNull { it.uri == currentUri }
+                ?: songs.firstOrNull { it.uri == currentUri }
         } else {
             null
         }
@@ -1404,19 +1430,14 @@ class MainActivity : AppCompatActivity() {
         if (song == null) {
             nowTitle.text = "Choose a song"
             nowArtist.text = "Your library is ready"
-            artwork.setImageResource(
-                android.R.drawable.ic_media_play
-            )
+            artwork.setImageResource(android.R.drawable.ic_media_play)
             updateProgress()
             return
         }
 
         nowTitle.text = song.title
         nowArtist.text = song.artist
-
-        artwork.setImageResource(
-            android.R.drawable.ic_media_play
-        )
+        artwork.setImageResource(android.R.drawable.ic_media_play)
 
         try {
             song.artworkUri?.let { uri ->
@@ -1436,12 +1457,8 @@ class MainActivity : AppCompatActivity() {
     private fun updatePlayButton() {
         if (!::playButton.isInitialized) return
 
-        playButton.text =
-            if (player?.isPlaying == true) "Ⅱ" else "▶"
-
-        playButton.setTextColor(
-            Color.rgb(196, 181, 253)
-        )
+        playButton.text = if (player?.isPlaying == true) "Ⅱ" else "▶"
+        playButton.setTextColor(Color.rgb(196, 181, 253))
     }
 
     private fun updateShuffleButton() {
@@ -1460,9 +1477,7 @@ class MainActivity : AppCompatActivity() {
         if (!::repeatButton.isInitialized) return
 
         repeatButton.text =
-            when (
-                player?.repeatMode ?: Player.REPEAT_MODE_OFF
-            ) {
+            when (player?.repeatMode ?: Player.REPEAT_MODE_OFF) {
                 Player.REPEAT_MODE_ONE -> "↻¹"
                 else -> "↻"
             }
