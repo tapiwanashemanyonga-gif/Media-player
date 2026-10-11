@@ -25,6 +25,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -34,6 +35,8 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 
 data class Song(
@@ -61,11 +64,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var durationText: TextView
     private lateinit var libraryCount: TextView
     private lateinit var favoriteFilterButton: TextView
+    private lateinit var playlistButton: TextView
 
     private val songs = mutableListOf<Song>()
     private val favoriteSongUris = mutableSetOf<String>()
 
+    // Playlist name -> song URI strings
+    private val playlists = linkedMapOf<String, MutableSet<String>>()
+
     private var showFavoritesOnly = false
+    private var selectedPlaylist: String? = null
     private var userSeeking = false
 
     private val handler = Handler(Looper.getMainLooper())
@@ -126,16 +134,19 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.rgb(13, 15, 25)
         window.navigationBarColor = Color.rgb(13, 15, 25)
 
-        val savedFavorites = getSharedPreferences(
+        val preferences = getSharedPreferences(
             "kivora_preferences",
             MODE_PRIVATE
-        ).getStringSet(
-            "favorite_song_uris",
-            emptySet<String>()
         )
 
-        favoriteSongUris.addAll(savedFavorites?.toSet().orEmpty())
+        favoriteSongUris.addAll(
+            preferences.getStringSet(
+                "favorite_song_uris",
+                emptySet<String>()
+            )?.toSet().orEmpty()
+        )
 
+        loadSavedPlaylists()
         buildScreen()
         connectToPlaybackService()
         handler.post(progressUpdater)
@@ -209,10 +220,7 @@ class MainActivity : AppCompatActivity() {
         text = value
         textSize = size
         setTextColor(color)
-
-        if (bold) {
-            setTypeface(typeface, Typeface.BOLD)
-        }
+        if (bold) setTypeface(typeface, Typeface.BOLD)
     }
 
     private fun buildScreen() {
@@ -222,7 +230,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(13, 15, 25))
         }
 
-        // App heading
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -234,12 +241,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         header.addView(
-            label(
-                "MUSIC PLAYER",
-                10f,
-                Color.rgb(148, 163, 184),
-                true
-            )
+            label("MUSIC PLAYER", 10f, Color.rgb(148, 163, 184), true)
         )
 
         root.addView(header)
@@ -254,7 +256,6 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        // Search
         searchBox = EditText(this).apply {
             hint = "Search songs or artists"
             setSingleLine(true)
@@ -270,18 +271,18 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(48))
         )
 
-        // Library heading and song count
+        // Library header
         val libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(18), 0, dp(10))
+            setPadding(0, dp(16), 0, dp(8))
         }
 
-        val libraryTitleRow = LinearLayout(this).apply {
+        val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        libraryTitleRow.addView(
+        titleRow.addView(
             label("YOUR LIBRARY", 17f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
@@ -292,10 +293,34 @@ class MainActivity : AppCompatActivity() {
             Color.rgb(148, 163, 184)
         )
 
-        libraryTitleRow.addView(libraryCount)
-        libraryHeader.addView(libraryTitleRow)
+        titleRow.addView(libraryCount)
+        libraryHeader.addView(titleRow)
 
-        // Large, easy-to-find favourites filter
+        // Playlists selector
+        playlistButton = label(
+            "♫  ALL SONGS  ·  PLAYLISTS",
+            13f,
+            Color.rgb(196, 181, 253),
+            true
+        ).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(Color.rgb(35, 39, 57))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showPlaylistMenu()
+            }
+        }
+
+        libraryHeader.addView(
+            playlistButton,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(10)
+            }
+        )
+
+        // Favourites filter
         favoriteFilterButton = label(
             "☆  SHOW FAVOURITES ONLY",
             13f,
@@ -307,7 +332,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(39, 33, 65))
             isClickable = true
             isFocusable = true
-            contentDescription = "Show or hide favourite songs"
 
             setOnClickListener {
                 showFavoritesOnly = !showFavoritesOnly
@@ -319,13 +343,13 @@ class MainActivity : AppCompatActivity() {
         libraryHeader.addView(
             favoriteFilterButton,
             LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(10)
+                topMargin = dp(8)
             }
         )
 
         root.addView(libraryHeader)
 
-        // Scrollable song list
+        // Scrollable songs
         val scroll = ScrollView(this)
 
         songList = LinearLayout(this).apply {
@@ -339,7 +363,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
-        // Now-playing card
+        // Now playing
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
@@ -380,7 +404,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         nowTitle = label("Choose a song", 15f, Color.WHITE, true)
-
         nowArtist = label(
             "Your library is ready",
             12f,
@@ -397,7 +420,7 @@ class MainActivity : AppCompatActivity() {
 
         card.addView(trackRow)
 
-        // Playback progress
+        // Seek bar
         progress = SeekBar(this).apply {
             max = 1000
 
@@ -476,7 +499,6 @@ class MainActivity : AppCompatActivity() {
         times.addView(durationText)
         card.addView(times)
 
-        // Playback controls
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -535,10 +557,8 @@ class MainActivity : AppCompatActivity() {
                 it.repeatMode = when (it.repeatMode) {
                     Player.REPEAT_MODE_OFF ->
                         Player.REPEAT_MODE_ALL
-
                     Player.REPEAT_MODE_ALL ->
                         Player.REPEAT_MODE_ONE
-
                     else ->
                         Player.REPEAT_MODE_OFF
                 }
@@ -564,10 +584,8 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(root)
 
-        // Search updates the visible list
         searchBox.addTextChangedListener(
             object : android.text.TextWatcher {
-
                 override fun beforeTextChanged(
                     s: CharSequence?,
                     start: Int,
@@ -594,6 +612,7 @@ class MainActivity : AppCompatActivity() {
         updateShuffleButton()
         updateRepeatButton()
         updateFavoriteFilterButton()
+        updatePlaylistButton()
     }
 
     private fun control(
@@ -609,6 +628,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener { action() }
         }
+
+    // ---------------- FAVOURITES ----------------
 
     private fun updateFavoriteFilterButton() {
         if (!::favoriteFilterButton.isInitialized) return
@@ -638,19 +659,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleFavorite(song: Song) {
-        val songUri = song.uri.toString()
+        val uri = song.uri.toString()
 
-        if (favoriteSongUris.contains(songUri)) {
-            favoriteSongUris.remove(songUri)
-
+        if (favoriteSongUris.contains(uri)) {
+            favoriteSongUris.remove(uri)
             Toast.makeText(
                 this,
                 "Removed from favourites",
                 Toast.LENGTH_SHORT
             ).show()
         } else {
-            favoriteSongUris.add(songUri)
-
+            favoriteSongUris.add(uri)
             Toast.makeText(
                 this,
                 "Added to favourites",
@@ -670,6 +689,263 @@ class MainActivity : AppCompatActivity() {
 
         renderSongs(searchBox.text?.toString().orEmpty())
     }
+
+    // ---------------- PLAYLIST STORAGE ----------------
+
+    private fun loadSavedPlaylists() {
+        val saved = getSharedPreferences(
+            "kivora_preferences",
+            MODE_PRIVATE
+        ).getString("saved_playlists", "{}") ?: "{}"
+
+        try {
+            val json = JSONObject(saved)
+            val keys = json.keys()
+
+            while (keys.hasNext()) {
+                val name = keys.next()
+                val array = json.optJSONArray(name) ?: JSONArray()
+                val uris = mutableSetOf<String>()
+
+                for (i in 0 until array.length()) {
+                    val uri = array.optString(i)
+                    if (uri.isNotBlank()) uris.add(uri)
+                }
+
+                playlists[name] = uris
+            }
+        } catch (_: Exception) {
+            playlists.clear()
+        }
+    }
+
+    private fun savePlaylists() {
+        val json = JSONObject()
+
+        playlists.forEach { (name, uris) ->
+            val array = JSONArray()
+            uris.forEach { array.put(it) }
+            json.put(name, array)
+        }
+
+        getSharedPreferences(
+            "kivora_preferences",
+            MODE_PRIVATE
+        ).edit()
+            .putString("saved_playlists", json.toString())
+            .apply()
+    }
+
+    private fun updatePlaylistButton() {
+        if (!::playlistButton.isInitialized) return
+
+        playlistButton.text = selectedPlaylist?.let { name ->
+            "♫  $name  ·  TAP TO CHANGE PLAYLIST"
+        } ?: "♫  ALL SONGS  ·  PLAYLISTS"
+
+        playlistButton.setTextColor(
+            if (selectedPlaylist != null) {
+                Color.rgb(250, 204, 21)
+            } else {
+                Color.rgb(196, 181, 253)
+            }
+        )
+    }
+
+    // ---------------- PLAYLIST MENUS ----------------
+
+    private fun showPlaylistMenu() {
+        val options = mutableListOf<String>()
+        options.add("All songs")
+        options.add("+ Create a new playlist")
+
+        playlists.keys.forEach { name ->
+            options.add("$name (${playlists[name]?.size ?: 0} songs)")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Your Playlists")
+            .setItems(options.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> {
+                        selectedPlaylist = null
+                        showFavoritesOnly = false
+                        updateFavoriteFilterButton()
+                        updatePlaylistButton()
+                        renderSongs(searchBox.text?.toString().orEmpty())
+                    }
+
+                    1 -> showCreatePlaylistDialog()
+
+                    else -> {
+                        val name = playlists.keys.elementAtOrNull(which - 2)
+                        if (name != null) {
+                            selectedPlaylist = name
+                            showFavoritesOnly = false
+                            updateFavoriteFilterButton()
+                            updatePlaylistButton()
+                            renderSongs(searchBox.text?.toString().orEmpty())
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showCreatePlaylistDialog(
+        songToAdd: Song? = null
+    ) {
+        val input = EditText(this).apply {
+            hint = "e.g. Gospel, Amapiano, Love Songs"
+            setSingleLine(true)
+            setTextColor(Color.BLACK)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(
+                input,
+                LinearLayout.LayoutParams(-1, -2)
+            )
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Create a playlist")
+            .setMessage(
+                if (songToAdd != null) {
+                    "Choose a name. This song will be added to it."
+                } else {
+                    "Give your new playlist a name."
+                }
+            )
+            .setView(container)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Create", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener {
+                    val name = input.text.toString().trim()
+
+                    if (name.isBlank()) {
+                        input.error = "Enter a playlist name"
+                        return@setOnClickListener
+                    }
+
+                    if (playlists.keys.any {
+                            it.equals(name, ignoreCase = true)
+                        }) {
+                        input.error = "That playlist already exists"
+                        return@setOnClickListener
+                    }
+
+                    playlists[name] = mutableSetOf()
+
+                    if (songToAdd != null) {
+                        playlists[name]?.add(
+                            songToAdd.uri.toString()
+                        )
+                    }
+
+                    savePlaylists()
+                    selectedPlaylist = name
+                    showFavoritesOnly = false
+
+                    updatePlaylistButton()
+                    updateFavoriteFilterButton()
+                    renderSongs(searchBox.text?.toString().orEmpty())
+
+                    Toast.makeText(
+                        this,
+                        if (songToAdd != null) {
+                            "Playlist created and song added"
+                        } else {
+                            "Playlist created"
+                        },
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    dialog.dismiss()
+                }
+        }
+
+        dialog.show()
+    }
+
+    private fun showAddToPlaylistDialog(song: Song) {
+        if (playlists.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("Add to playlist")
+                .setMessage("You haven't created a playlist yet.")
+                .setPositiveButton("Create playlist") { _, _ ->
+                    showCreatePlaylistDialog(song)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+
+        val options = mutableListOf("+ Create a new playlist")
+        options.addAll(playlists.keys)
+
+        AlertDialog.Builder(this)
+            .setTitle("Add “${song.title}” to...")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    showCreatePlaylistDialog(song)
+                } else {
+                    val name = playlists.keys.elementAtOrNull(which - 1)
+                    if (name != null) {
+                        val list = playlists[name]
+
+                        if (list != null &&
+                            list.add(song.uri.toString())
+                        ) {
+                            savePlaylists()
+                            Toast.makeText(
+                                this,
+                                "Added to $name",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "Song is already in that playlist",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        renderSongs(
+                            searchBox.text?.toString().orEmpty()
+                        )
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun removeFromPlaylist(song: Song) {
+        val name = selectedPlaylist ?: return
+        val list = playlists[name] ?: return
+
+        list.remove(song.uri.toString())
+        savePlaylists()
+
+        Toast.makeText(
+            this,
+            "Removed from $name",
+            Toast.LENGTH_SHORT
+        ).show()
+
+        renderSongs(searchBox.text?.toString().orEmpty())
+    }
+
+    // ---------------- MUSIC LIBRARY ----------------
 
     private fun loadSongs() {
         songs.clear()
@@ -770,9 +1046,7 @@ class MainActivity : AppCompatActivity() {
                 .setTitle(song.title)
                 .setArtist(song.artist)
                 .apply {
-                    song.artworkUri?.let {
-                        setArtworkUri(it)
-                    }
+                    song.artworkUri?.let { setArtworkUri(it) }
                 }
                 .build()
 
@@ -789,7 +1063,6 @@ class MainActivity : AppCompatActivity() {
             if (p.mediaItemCount > 0) {
                 p.clearMediaItems()
             }
-
             updateNowPlaying()
             return
         }
@@ -809,9 +1082,7 @@ class MainActivity : AppCompatActivity() {
         if (
             !::songList.isInitialized ||
             !::libraryCount.isInitialized
-        ) {
-            return
-        }
+        ) return
 
         songList.removeAllViews()
 
@@ -821,6 +1092,7 @@ class MainActivity : AppCompatActivity() {
 
         val matches = songs.withIndex().filter { entry ->
             val song = entry.value
+            val uri = song.uri.toString()
 
             val matchesQuery =
                 normalized.isEmpty() ||
@@ -831,16 +1103,21 @@ class MainActivity : AppCompatActivity() {
                         Locale.getDefault()
                     ).contains(normalized)
 
-            val matchesFavoriteFilter =
+            val matchesFavorites =
                 !showFavoritesOnly ||
-                    favoriteSongUris.contains(
-                        song.uri.toString()
-                    )
+                    favoriteSongUris.contains(uri)
 
-            matchesQuery && matchesFavoriteFilter
+            val matchesPlaylist =
+                selectedPlaylist == null ||
+                    playlists[selectedPlaylist]?.contains(uri) == true
+
+            matchesQuery && matchesFavorites && matchesPlaylist
         }
 
         libraryCount.text = when {
+            selectedPlaylist != null ->
+                "${matches.size} in playlist"
+
             showFavoritesOnly ->
                 "${matches.size} favourites"
 
@@ -856,16 +1133,11 @@ class MainActivity : AppCompatActivity() {
                 songs.isEmpty() ->
                     "No music found yet.\nAdd audio files to your device and try again."
 
-                showFavoritesOnly &&
-                    favoriteSongUris.none { uri ->
-                        songs.any { song ->
-                            song.uri.toString() == uri
-                        }
-                    } ->
-                    "No favourites yet.\nTap ☆ beside a song to add it."
+                selectedPlaylist != null ->
+                    "This playlist is empty.\nReturn to All Songs and tap ＋ beside a song to add it."
 
                 showFavoritesOnly ->
-                    "No favourite songs match your search."
+                    "No favourites yet.\nTap ☆ beside a song to add it."
 
                 else ->
                     "No songs match your search."
@@ -877,12 +1149,7 @@ class MainActivity : AppCompatActivity() {
                     14f,
                     Color.rgb(148, 163, 184)
                 ).apply {
-                    setPadding(
-                        dp(4),
-                        dp(18),
-                        dp(4),
-                        dp(18)
-                    )
+                    setPadding(dp(4), dp(18), dp(4), dp(18))
                 }
             )
 
@@ -892,16 +1159,12 @@ class MainActivity : AppCompatActivity() {
         matches.forEach { entry ->
             val songIndex = entry.index
             val song = entry.value
+            val uri = song.uri.toString()
 
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(
-                    dp(6),
-                    dp(10),
-                    dp(6),
-                    dp(10)
-                )
+                setPadding(dp(6), dp(10), dp(4), dp(10))
 
                 setOnClickListener {
                     playSong(songIndex)
@@ -917,21 +1180,16 @@ class MainActivity : AppCompatActivity() {
                 ).apply {
                     gravity = Gravity.CENTER
                 },
-                LinearLayout.LayoutParams(dp(42), dp(46))
+                LinearLayout.LayoutParams(dp(36), dp(46))
             )
 
             val info = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(10), 0, dp(4), 0)
+                setPadding(dp(8), 0, dp(2), 0)
             }
 
             info.addView(
-                label(
-                    song.title,
-                    14f,
-                    Color.WHITE,
-                    true
-                ).apply {
+                label(song.title, 14f, Color.WHITE, true).apply {
                     maxLines = 1
                     ellipsize =
                         android.text.TextUtils.TruncateAt.END
@@ -956,39 +1214,60 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
 
-            val isFavorite =
-                favoriteSongUris.contains(song.uri.toString())
+            val isFavorite = favoriteSongUris.contains(uri)
 
-            val favoriteButton = label(
-                if (isFavorite) "★" else "☆",
-                22f,
-                if (isFavorite) {
-                    Color.rgb(250, 204, 21)
-                } else {
-                    Color.rgb(148, 163, 184)
-                }
-            ).apply {
-                gravity = Gravity.CENTER
-                setPadding(
-                    dp(8),
-                    dp(8),
-                    dp(8),
-                    dp(8)
-                )
-
-                contentDescription =
+            row.addView(
+                label(
+                    if (isFavorite) "★" else "☆",
+                    21f,
                     if (isFavorite) {
-                        "Remove from favourites"
+                        Color.rgb(250, 204, 21)
                     } else {
-                        "Add to favourites"
+                        Color.rgb(148, 163, 184)
                     }
-
-                setOnClickListener {
-                    toggleFavorite(song)
+                ).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(6), dp(8), dp(6), dp(8))
+                    contentDescription = "Toggle favourite"
+                    setOnClickListener {
+                        toggleFavorite(song)
+                    }
                 }
-            }
+            )
 
-            row.addView(favoriteButton)
+            if (selectedPlaylist == null) {
+                row.addView(
+                    label(
+                        "+",
+                        23f,
+                        Color.rgb(196, 181, 253),
+                        true
+                    ).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(dp(8), dp(6), dp(8), dp(6))
+                        contentDescription = "Add song to playlist"
+                        setOnClickListener {
+                            showAddToPlaylistDialog(song)
+                        }
+                    }
+                )
+            } else {
+                row.addView(
+                    label(
+                        "−",
+                        23f,
+                        Color.rgb(248, 113, 113),
+                        true
+                    ).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(dp(8), dp(6), dp(8), dp(6))
+                        contentDescription = "Remove from playlist"
+                        setOnClickListener {
+                            removeFromPlaylist(song)
+                        }
+                    }
+                )
+            }
 
             row.addView(
                 label(
@@ -1039,7 +1318,6 @@ class MainActivity : AppCompatActivity() {
         if (!::nowTitle.isInitialized) return
 
         val p = player
-
         val song = p?.let {
             songs.getOrNull(it.currentMediaItemIndex)
         }
@@ -1070,7 +1348,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (_: Exception) {
-            // Keep the placeholder if artwork is unavailable.
+            // Keep placeholder artwork if unavailable.
         }
 
         updateProgress()
