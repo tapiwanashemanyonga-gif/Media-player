@@ -138,8 +138,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(13, 15, 25)
-        window.navigationBarColor = Color.rgb(13, 15, 25)
+        window.statusBarColor = Color.rgb(8, 12, 22)
+        window.navigationBarColor = Color.rgb(8, 12, 22)
 
         val preferences = getSharedPreferences(
             "kivora_preferences",
@@ -244,7 +244,7 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(18), dp(20), dp(12))
-            setBackgroundColor(Color.rgb(13, 15, 25))
+            setBackgroundColor(Color.rgb(8, 12, 22))
         }
 
         val header = LinearLayout(this).apply {
@@ -253,19 +253,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         header.addView(
-            label("KIVORA", 27f, Color.rgb(167, 139, 250), true),
+            label("KIVORA", 27f, Color.rgb(45, 212, 191), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
         header.addView(
-            label("MUSIC PLAYER", 10f, Color.rgb(148, 163, 184), true)
+            label("YOUR SOUND SPACE", 10f, Color.rgb(148, 163, 184), true)
         )
 
         root.addView(header)
 
         root.addView(
             label(
-                "YOUR MUSIC. YOUR WORLD.",
+                "EVERY BEAT. ALL YOURS.",
                 11f,
                 Color.rgb(148, 163, 184)
             ).apply {
@@ -274,13 +274,13 @@ class MainActivity : AppCompatActivity() {
         )
 
         searchBox = EditText(this).apply {
-            hint = "Search songs or artists"
+            hint = "Find a song, artist or vibe"
             setSingleLine(true)
             textSize = 14f
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(148, 163, 184))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = roundedBackground(Color.rgb(30, 34, 49), 14)
+            background = roundedBackground(Color.rgb(21, 33, 48), 14)
         }
 
         root.addView(
@@ -299,7 +299,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(
-            label("YOUR LIBRARY", 17f, Color.WHITE, true),
+            label("YOUR COLLECTION", 17f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
@@ -315,12 +315,12 @@ class MainActivity : AppCompatActivity() {
         playlistButton = label(
             "♫  ALL SONGS  ·  PLAYLISTS",
             13f,
-            Color.rgb(196, 181, 253),
+            Color.rgb(153, 246, 228),
             true
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = roundedBackground(Color.rgb(35, 39, 57), 14)
+            background = roundedBackground(Color.rgb(20, 48, 57), 14)
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -338,12 +338,12 @@ class MainActivity : AppCompatActivity() {
         favoriteFilterButton = label(
             "☆  SHOW FAVOURITES ONLY",
             13f,
-            Color.rgb(196, 181, 253),
+            Color.rgb(153, 246, 228),
             true
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = roundedBackground(Color.rgb(39, 33, 65), 14)
+            background = roundedBackground(Color.rgb(24, 48, 52), 14)
             isClickable = true
             isFocusable = true
 
@@ -385,14 +385,14 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
-            background = roundedBackground(Color.rgb(27, 30, 44), 20)
+            background = roundedBackground(Color.rgb(19, 27, 42), 20)
         }
 
         card.addView(
             label(
-                "NOW PLAYING",
+                "PLAYING RIGHT NOW",
                 10f,
-                Color.rgb(167, 139, 250),
+                Color.rgb(45, 212, 191),
                 true
             )
         )
@@ -443,12 +443,12 @@ class MainActivity : AppCompatActivity() {
 
             progressTintList =
                 android.content.res.ColorStateList.valueOf(
-                    Color.rgb(167, 139, 250)
+                    Color.rgb(45, 212, 191)
                 )
 
             thumbTintList =
                 android.content.res.ColorStateList.valueOf(
-                    Color.rgb(196, 181, 253)
+                    Color.rgb(153, 246, 228)
                 )
 
             setOnSeekBarChangeListener(
@@ -662,7 +662,7 @@ class MainActivity : AppCompatActivity() {
             if (showFavoritesOnly) {
                 Color.rgb(250, 204, 21)
             } else {
-                Color.rgb(196, 181, 253)
+                Color.rgb(153, 246, 228)
             }
         )
 
@@ -670,7 +670,7 @@ class MainActivity : AppCompatActivity() {
             if (showFavoritesOnly) {
                 Color.rgb(55, 48, 30)
             } else {
-                Color.rgb(39, 33, 65)
+                Color.rgb(24, 48, 52)
             }
         )
     }
@@ -764,7 +764,7 @@ class MainActivity : AppCompatActivity() {
             if (selectedPlaylist != null) {
                 Color.rgb(250, 204, 21)
             } else {
-                Color.rgb(196, 181, 253)
+                Color.rgb(153, 246, 228)
             }
         )
     }
@@ -1296,7 +1296,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             row.addView(
-                label("♫", 23f, Color.rgb(167, 139, 250), true).apply {
+                label("♫", 23f, Color.rgb(45, 212, 191), true).apply {
                     gravity = Gravity.CENTER
                 },
                 LinearLayout.LayoutParams(dp(36), dp(46))
@@ -1352,7 +1352,7 @@ class MainActivity : AppCompatActivity() {
 
             if (selectedPlaylist == null) {
                 row.addView(
-                    label("+", 23f, Color.rgb(196, 181, 253), true).apply {
+                    label("+", 23f, Color.rgb(153, 246, 228), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
                         contentDescription = "Add song to playlist"
@@ -1496,7 +1496,7 @@ class MainActivity : AppCompatActivity() {
         if (!::playButton.isInitialized) return
 
         playButton.text = if (player?.isPlaying == true) "Ⅱ" else "▶"
-        playButton.setTextColor(Color.rgb(196, 181, 253))
+        playButton.setTextColor(Color.rgb(153, 246, 228))
     }
 
     private fun updateShuffleButton() {
@@ -1504,7 +1504,7 @@ class MainActivity : AppCompatActivity() {
 
         shuffleButton.setTextColor(
             if (player?.shuffleModeEnabled == true) {
-                Color.rgb(167, 139, 250)
+                Color.rgb(45, 212, 191)
             } else {
                 Color.rgb(148, 163, 184)
             }
@@ -1526,7 +1526,7 @@ class MainActivity : AppCompatActivity() {
 
         repeatButton.setTextColor(
             if (enabled) {
-                Color.rgb(167, 139, 250)
+                Color.rgb(45, 212, 191)
             } else {
                 Color.rgb(148, 163, 184)
             }
