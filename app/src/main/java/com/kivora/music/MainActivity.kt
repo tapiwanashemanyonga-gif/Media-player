@@ -387,8 +387,8 @@ class MainActivity : AppCompatActivity() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(12))
-            background = roundedBackground(Color.rgb(42, 22, 66), 24).apply { setStroke(dp(2), Color.rgb(192, 132, 252)) }
+            setPadding(dp(18), dp(18), dp(18), dp(14))
+            background = roundedBackground(Color.rgb(34, 16, 56), 26).apply { setStroke(dp(2), Color.rgb(216, 180, 254)) }
         }
 
         card.addView(
@@ -424,7 +424,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), 0, 0, 0)
         }
 
-        nowTitle = label("Choose a song", 17f, Color.WHITE, true)
+        nowTitle = label("Choose a song", 18f, Color.WHITE, true)
         nowArtist = label(
              "Your library is ready",
             12f,
