@@ -454,6 +454,12 @@ class MainActivity : AppCompatActivity() {
                     Color.rgb(216, 180, 254)
                 )
 
+            // KIVORA_ROUND14_PROGRESS_TRACK
+            progressBackgroundTintList =
+                android.content.res.ColorStateList.valueOf(
+                    Color.rgb(83, 55, 108)
+                )
+
             setOnSeekBarChangeListener(
                 object : SeekBar.OnSeekBarChangeListener {
 
