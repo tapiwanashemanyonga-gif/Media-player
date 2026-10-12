@@ -243,7 +243,7 @@ class MainActivity : AppCompatActivity() {
     private fun buildScreen() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(12))
+            setPadding(dp(22), dp(22), dp(22), dp(14))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(12, 7, 23), Color.rgb(48, 20, 75))
@@ -277,7 +277,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         searchBox = EditText(this).apply {
-            hint = "Find a song, artist or vibe"
+            hint = "Search songs, artists and videos"
             setSingleLine(true)
             textSize = 14f
             setTextColor(Color.WHITE)
@@ -288,7 +288,7 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(
             searchBox,
-            LinearLayout.LayoutParams(-1, dp(48))
+            LinearLayout.LayoutParams(-1, dp(52))
         )
 
         val libraryHeader = LinearLayout(this).apply {
@@ -302,7 +302,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(
-            label("YOUR LIBRARY", 19f, Color.WHITE, true),
+            label("YOUR LIBRARY", 20f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
@@ -387,7 +387,7 @@ class MainActivity : AppCompatActivity() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(10))
+            setPadding(dp(16), dp(16), dp(16), dp(12))
             background = roundedBackground(Color.rgb(34, 24, 44), 20).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
         }
 
@@ -408,14 +408,14 @@ class MainActivity : AppCompatActivity() {
 
         artwork = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(69, 43, 96), 16)
+            background = roundedBackground(Color.rgb(91, 45, 135), 16)
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Album artwork"
         }
 
         trackRow.addView(
             artwork,
-            LinearLayout.LayoutParams(dp(84), dp(84))
+            LinearLayout.LayoutParams(dp(96), dp(96))
         )
 
         val trackInfo = LinearLayout(this).apply {
