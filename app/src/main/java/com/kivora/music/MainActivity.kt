@@ -388,12 +388,12 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(12))
-            background = roundedBackground(Color.rgb(34, 24, 44), 20).apply { setStroke(dp(1), Color.rgb(168, 85, 247)) }
+            background = roundedBackground(Color.rgb(42, 22, 66), 24).apply { setStroke(dp(2), Color.rgb(192, 132, 252)) }
         }
 
         card.addView(
             label(
-                "NOW PLAYING",
+                "NOW PLAYING  •  KIVORA PLAYER",
                 10f,
                 Color.rgb(196, 145, 255),
                 true
@@ -415,7 +415,7 @@ class MainActivity : AppCompatActivity() {
 
         trackRow.addView(
             artwork,
-            LinearLayout.LayoutParams(dp(104), dp(104))
+            LinearLayout.LayoutParams(dp(116), dp(116))
         )
 
         val trackInfo = LinearLayout(this).apply {
