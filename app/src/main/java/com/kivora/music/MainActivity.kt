@@ -1374,7 +1374,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             info.addView(
-                label(song.title, 14f, Color.WHITE, true).apply {
+                label(song.title, 15f, Color.WHITE, true).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }
@@ -1384,7 +1384,7 @@ class MainActivity : AppCompatActivity() {
                 label(
                     song.artist,
                     12f,
-                    Color.rgb(174, 159, 194)
+                    Color.rgb(190, 175, 210)
                 ).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
