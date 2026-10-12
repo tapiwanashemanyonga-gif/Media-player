@@ -246,7 +246,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(22), dp(22), dp(22), dp(14))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(12, 7, 23), Color.rgb(48, 20, 75))
+                intArrayOf(Color.rgb(9, 5, 19), Color.rgb(39, 15, 64))
             )
         }
 
@@ -261,7 +261,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         header.addView(
-            label("YOUR MUSIC. YOUR RULES.", 10f, Color.rgb(190, 178, 205), true)
+            label("YOUR MUSIC. YOUR RULES.", 10f, Color.rgb(174, 159, 194), true)
         )
 
         root.addView(header)
@@ -270,7 +270,7 @@ class MainActivity : AppCompatActivity() {
             label(
                 "YOUR SOUND. YOUR WORLD.",
                 11f,
-                Color.rgb(190, 178, 205)
+                Color.rgb(174, 159, 194)
             ).apply {
                 setPadding(0, dp(3), 0, dp(16))
             }
@@ -281,7 +281,7 @@ class MainActivity : AppCompatActivity() {
             setSingleLine(true)
             textSize = 14f
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(190, 178, 205))
+            setHintTextColor(Color.rgb(174, 159, 194))
             setPadding(dp(14), dp(8), dp(14), dp(8))
             background = roundedBackground(Color.rgb(30, 18, 47), 14).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
         }
@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
         libraryCount = label(
             "0 songs",
             12f,
-            Color.rgb(190, 178, 205)
+            Color.rgb(174, 159, 194)
         )
 
         titleRow.addView(libraryCount)
@@ -395,7 +395,7 @@ class MainActivity : AppCompatActivity() {
             label(
                 "NOW PLAYING",
                 10f,
-                Color.rgb(187, 134, 252),
+                Color.rgb(196, 145, 255),
                 true
             )
         )
@@ -424,11 +424,11 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), 0, 0, 0)
         }
 
-        nowTitle = label("Choose a song", 15f, Color.WHITE, true)
+        nowTitle = label("Choose a song", 17f, Color.WHITE, true)
         nowArtist = label(
-            "Your library is ready",
+             "Your library is ready",
             12f,
-            Color.rgb(190, 178, 205)
+            Color.rgb(174, 159, 194)
         )
 
         trackInfo.addView(nowTitle)
@@ -446,7 +446,7 @@ class MainActivity : AppCompatActivity() {
 
             progressTintList =
                 android.content.res.ColorStateList.valueOf(
-                    Color.rgb(187, 134, 252)
+                    Color.rgb(196, 145, 255)
                 )
 
             thumbTintList =
@@ -502,13 +502,13 @@ class MainActivity : AppCompatActivity() {
         elapsedText = label(
             "0:00",
             10f,
-            Color.rgb(190, 178, 205)
+            Color.rgb(174, 159, 194)
         )
 
         durationText = label(
             "0:00",
             10f,
-            Color.rgb(190, 178, 205)
+            Color.rgb(174, 159, 194)
         )
 
         times.addView(
@@ -1324,7 +1324,7 @@ class MainActivity : AppCompatActivity() {
                 label(
                     message,
                     14f,
-                    Color.rgb(190, 178, 205)
+                    Color.rgb(174, 159, 194)
                 ).apply {
                     setPadding(dp(4), dp(18), dp(4), dp(18))
                 }
@@ -1347,7 +1347,7 @@ class MainActivity : AppCompatActivity() {
 
             val cover = ImageView(this).apply {
                 setImageResource(android.R.drawable.ic_media_play)
-                setColorFilter(Color.rgb(187, 134, 252))
+                setColorFilter(Color.rgb(196, 145, 255))
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = "Album artwork"
             }
@@ -1370,7 +1370,7 @@ class MainActivity : AppCompatActivity() {
                 label(
                     song.artist,
                     12f,
-                    Color.rgb(190, 178, 205)
+                    Color.rgb(174, 159, 194)
                 ).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1392,7 +1392,7 @@ class MainActivity : AppCompatActivity() {
                     if (isFavorite) {
                         Color.rgb(250, 204, 21)
                     } else {
-                        Color.rgb(190, 178, 205)
+                        Color.rgb(174, 159, 194)
                     }
                 ).apply {
                     gravity = Gravity.CENTER
@@ -1426,7 +1426,7 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            row.addView(label("›", 24f, Color.rgb(190, 178, 205)))
+            row.addView(label("›", 24f, Color.rgb(174, 159, 194)))
 
             songList.addView(
                 row,
@@ -1557,9 +1557,9 @@ class MainActivity : AppCompatActivity() {
 
         shuffleButton.setTextColor(
             if (player?.shuffleModeEnabled == true) {
-                Color.rgb(187, 134, 252)
+                Color.rgb(196, 145, 255)
             } else {
-                Color.rgb(190, 178, 205)
+                Color.rgb(174, 159, 194)
             }
         )
     }
@@ -1579,9 +1579,9 @@ class MainActivity : AppCompatActivity() {
 
         repeatButton.setTextColor(
             if (enabled) {
-                Color.rgb(187, 134, 252)
+                Color.rgb(196, 145, 255)
             } else {
-                Color.rgb(190, 178, 205)
+                Color.rgb(174, 159, 194)
             }
         )
     }
