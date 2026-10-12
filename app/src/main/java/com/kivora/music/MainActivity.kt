@@ -852,7 +852,6 @@ class MainActivity : AppCompatActivity() {
                         showFavoritesOnly = false
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
-        showTab("home")
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
 
@@ -886,7 +885,6 @@ class MainActivity : AppCompatActivity() {
                         showFavoritesOnly = false
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
-        showTab("home")
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
 
@@ -955,7 +953,6 @@ class MainActivity : AppCompatActivity() {
 
                         savePlaylists()
                         updatePlaylistButton()
-        showTab("home")
                         renderSongs(searchBox.text?.toString().orEmpty())
 
                         Toast.makeText(
@@ -989,7 +986,6 @@ class MainActivity : AppCompatActivity() {
 
                 savePlaylists()
                 updatePlaylistButton()
-        showTab("home")
                 updateFavoriteFilterButton()
                 renderSongs(searchBox.text?.toString().orEmpty())
 
@@ -1058,7 +1054,6 @@ class MainActivity : AppCompatActivity() {
                     showFavoritesOnly = false
 
                     updatePlaylistButton()
-        showTab("home")
                     updateFavoriteFilterButton()
                     renderSongs(searchBox.text?.toString().orEmpty())
 
