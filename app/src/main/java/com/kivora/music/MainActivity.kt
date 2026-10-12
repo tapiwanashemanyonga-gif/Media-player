@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(
             label(
-                "YOUR SOUND. YOUR WORLD.",
+                "YOUR SOUND. YOUR WORLD.  ✦"
                 11f,
                 Color.rgb(174, 159, 194)
             ).apply {
@@ -283,7 +283,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(174, 159, 194))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = roundedBackground(Color.rgb(30, 18, 47), 18).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
+            background = roundedBackground(Color.rgb(30, 18, 47), 18).apply { setStroke(dp(1), Color.rgb(168, 85, 247)) }
         }
 
         root.addView(
@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         libraryCount = label(
-            "0 songs",
+            "0 tracks in your collection",
             12f,
             Color.rgb(174, 159, 194)
         )
@@ -334,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         libraryHeader.addView(
             playlistButton,
             LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(14)
+                topMargin = dp(16)
             }
         )
 
@@ -388,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(12))
-            background = roundedBackground(Color.rgb(34, 24, 44), 20).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
+            background = roundedBackground(Color.rgb(34, 24, 44), 20).apply { setStroke(dp(1), Color.rgb(168, 85, 247)) }
         }
 
         card.addView(
@@ -598,7 +598,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(
             card,
             LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(14)
+                topMargin = dp(16)
             }
         )
 
