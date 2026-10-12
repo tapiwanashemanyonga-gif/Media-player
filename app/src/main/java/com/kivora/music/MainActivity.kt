@@ -632,6 +632,71 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
+        miniPlayer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = roundedBackground(Color.rgb(34, 16, 56), 18)
+            setOnClickListener { showTab("home") }
+        }
+
+        val miniArtwork = TextView(this).apply {
+            text = "♫"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(216, 180, 254))
+            background = roundedBackground(Color.rgb(83, 39, 126), 12)
+            setOnClickListener { showTab("home") }
+        }
+        miniPlayer.addView(miniArtwork, LinearLayout.LayoutParams(dp(44), dp(44)))
+
+        val miniInfo = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, dp(8), 0)
+        }
+
+        miniTitle = label("Choose a song", 13f, Color.WHITE, true).apply {
+            maxLines = 1
+            setOnClickListener { showTab("home") }
+        }
+        miniArtist = label("Your library is ready", 11f, Color.rgb(190, 175, 210)).apply {
+            maxLines = 1
+            setOnClickListener { showTab("home") }
+        }
+        miniInfo.addView(miniTitle)
+        miniInfo.addView(miniArtist)
+        miniPlayer.addView(miniInfo, LinearLayout.LayoutParams(0, -2, 1f))
+
+        miniPlayButton = TextView(this).apply {
+            text = "▶"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = roundedBackground(Color.rgb(124, 58, 237), 24)
+            setOnClickListener {
+                val p = player
+                if (p != null && p.mediaItemCount > 0) {
+                    if (p.isPlaying) p.pause() else p.play()
+                    updatePlayButton()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Choose a song first",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+        miniPlayer.addView(miniPlayButton, LinearLayout.LayoutParams(dp(48), dp(44)))
+        root.addView(
+            miniPlayer,
+            LinearLayout.LayoutParams(-1, dp(62)).apply {
+                bottomMargin = dp(8)
+            }
+        )
+
         val navBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
