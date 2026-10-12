@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(
             label(
-                "YOUR SOUND. YOUR WORLD.  ✦"
+                "YOUR SOUND. YOUR WORLD.  ✦",
                 11f,
                 Color.rgb(174, 159, 194)
             ).apply {
