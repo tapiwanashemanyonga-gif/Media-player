@@ -283,12 +283,12 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(174, 159, 194))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = roundedBackground(Color.rgb(30, 18, 47), 18).apply { setStroke(dp(1), Color.rgb(168, 85, 247)) }
+            background = roundedBackground(Color.rgb(23, 12, 37), 22).apply { setStroke(dp(2), Color.rgb(192, 132, 252)) }
         }
 
         root.addView(
             searchBox,
-            LinearLayout.LayoutParams(-1, dp(52))
+            LinearLayout.LayoutParams(-1, dp(58))
         )
 
         val libraryHeader = LinearLayout(this).apply {
