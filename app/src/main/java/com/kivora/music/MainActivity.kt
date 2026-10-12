@@ -1339,6 +1339,9 @@ class MainActivity : AppCompatActivity() {
                     Color.rgb(174, 159, 194)
                 ).apply {
                     setPadding(dp(4), dp(18), dp(4), dp(18))
+                    // KIVORA_ROUND23_EMPTY_LIBRARY_CARD
+                    background = roundedBackground(Color.rgb(34, 16, 56), 18).apply { setStroke(dp(1), Color.rgb(145, 95, 190)) }
+                    setPadding(dp(16), dp(18), dp(16), dp(18))
                 }
             )
 
