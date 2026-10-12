@@ -269,8 +269,9 @@ class MainActivity : AppCompatActivity() {
         root.addView(
             label(
                 "YOUR SOUND. YOUR WORLD.  ✦",
+                // KIVORA_ROUND16_TAGLINE_ACCENT
                 11f,
-                Color.rgb(174, 159, 194)
+                Color.rgb(216, 180, 254)
             ).apply {
                 setPadding(0, dp(3), 0, dp(16))
             }
