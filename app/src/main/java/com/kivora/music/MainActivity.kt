@@ -1091,6 +1091,7 @@ class MainActivity : AppCompatActivity() {
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM_ID
         )
@@ -1111,6 +1112,9 @@ class MainActivity : AppCompatActivity() {
                 val titleColumn = it.getColumnIndexOrThrow(
                     MediaStore.Audio.Media.TITLE
                 )
+                val displayNameColumn = it.getColumnIndexOrThrow(
+                    MediaStore.Audio.Media.DISPLAY_NAME
+                )
                 val artistColumn = it.getColumnIndexOrThrow(
                     MediaStore.Audio.Media.ARTIST
                 )
@@ -1121,9 +1125,19 @@ class MainActivity : AppCompatActivity() {
                 while (it.moveToNext()) {
                     val id = it.getLong(idColumn)
 
-                    val title = it.getString(titleColumn)
-                        ?.takeIf { value -> value.isNotBlank() }
-                        ?: "Unknown title"
+                    val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
+                    val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
+                    val fileTitle = displayName
+                        .substringBeforeLast('.', displayName)
+                        .replace(Regex("[._-]+"), " ")
+                        .trim()
+                        .ifBlank { "Unknown title" }
+
+                    val title = if (
+                        rawTitle.isBlank() ||
+                        rawTitle.equals("unknown", ignoreCase = true) ||
+                        rawTitle.equals("unknown title", ignoreCase = true)
+                    ) fileTitle else rawTitle
 
                     val artistValue = it.getString(artistColumn)
 
@@ -1219,6 +1233,31 @@ class MainActivity : AppCompatActivity() {
         updateNowPlaying()
     }
 
+    private fun loadArtworkInto(imageView: ImageView, song: Song) {
+        val songKey = song.uri.toString()
+        imageView.tag = songKey
+        val artworkUri = song.artworkUri ?: return
+
+        artworkExecutor.execute {
+            val bitmap = try {
+                contentResolver.openInputStream(artworkUri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            } catch (_: Exception) {
+                null
+            }
+
+            if (bitmap != null) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && imageView.tag == songKey) {
+                        imageView.clearColorFilter()
+                        imageView.setImageBitmap(bitmap)
+                    }
+                }
+            }
+        }
+    }
+
     private fun renderSongs(query: String) {
         if (
             !::songList.isInitialized ||
@@ -1295,12 +1334,14 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { playSong(song) }
             }
 
-            row.addView(
-                label("♫", 23f, Color.rgb(45, 212, 191), true).apply {
-                    gravity = Gravity.CENTER
-                },
-                LinearLayout.LayoutParams(dp(36), dp(46))
-            )
+            val cover = ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_media_play)
+                setColorFilter(Color.rgb(45, 212, 191))
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "Album artwork"
+            }
+            row.addView(cover, LinearLayout.LayoutParams(dp(44), dp(44)))
+            loadArtworkInto(cover, song)
 
             val info = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
