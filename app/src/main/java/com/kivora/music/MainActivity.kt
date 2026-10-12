@@ -302,14 +302,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(
-            label("YOUR LIBRARY", 20f, Color.WHITE, true),
+            label("YOUR LIBRARY", 22f, Color.rgb(232, 213, 255), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
         libraryCount = label(
             "0 tracks in your collection",
-            12f,
-            Color.rgb(174, 159, 194)
+            13f,
+            Color.rgb(207, 187, 229)
         )
 
         titleRow.addView(libraryCount)
@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(69, 35, 103), 18).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
+            background = roundedBackground(Color.rgb(83, 39, 126), 18).apply { setStroke(dp(2), Color.rgb(192, 132, 252)) }
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -346,7 +346,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(69, 35, 103), 18).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
+            background = roundedBackground(Color.rgb(83, 39, 126), 18).apply { setStroke(dp(2), Color.rgb(192, 132, 252)) }
             isClickable = true
             isFocusable = true
 
