@@ -283,7 +283,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(174, 159, 194))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = roundedBackground(Color.rgb(30, 18, 47), 14).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
+            background = roundedBackground(Color.rgb(30, 18, 47), 18).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
         }
 
         root.addView(
@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(69, 35, 103), 14).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
+            background = roundedBackground(Color.rgb(69, 35, 103), 18).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -334,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         libraryHeader.addView(
             playlistButton,
             LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(10)
+                topMargin = dp(14)
             }
         )
 
@@ -346,7 +346,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(69, 35, 103), 14).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
+            background = roundedBackground(Color.rgb(69, 35, 103), 18).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
             isClickable = true
             isFocusable = true
 
@@ -598,7 +598,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(
             card,
             LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(10)
+                topMargin = dp(14)
             }
         )
 
