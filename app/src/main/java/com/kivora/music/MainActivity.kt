@@ -1362,6 +1362,8 @@ class MainActivity : AppCompatActivity() {
             val cover = ImageView(this).apply {
                 setImageResource(android.R.drawable.ic_media_play)
                 setColorFilter(Color.rgb(196, 145, 255))
+                background = roundedBackground(Color.rgb(55, 27, 79), 14)
+                clipToOutline = true
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = "Album artwork"
             }
