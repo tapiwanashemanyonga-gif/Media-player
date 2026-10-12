@@ -311,7 +311,8 @@ class MainActivity : AppCompatActivity() {
             "0 tracks in your collection",
             13f,
             Color.rgb(207, 187, 229)
-        )
+            // KIVORA_ROUND17_LIBRARY_COUNT_BADGE
+        ).apply { setPadding(dp(10), dp(6), dp(10), dp(6)); background = roundedBackground(Color.rgb(55, 27, 79), 14).apply { setStroke(dp(1), Color.rgb(192, 132, 252)) } }
 
         titleRow.addView(libraryCount)
         libraryHeader.addView(titleRow)
