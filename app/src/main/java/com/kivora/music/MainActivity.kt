@@ -246,7 +246,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(20), dp(18), dp(20), dp(12))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(18, 12, 28), Color.rgb(32, 17, 48))
+                intArrayOf(Color.rgb(12, 7, 23), Color.rgb(48, 20, 75))
             )
         }
 
@@ -256,12 +256,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         header.addView(
-            label("KIVORA", 27f, Color.rgb(187, 134, 252), true),
+            label("KIVORA", 30f, Color.rgb(216, 180, 254), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
         header.addView(
-            label("MUSIC FOR EVERY MOOD", 10f, Color.rgb(190, 178, 205), true)
+            label("YOUR MUSIC. YOUR RULES.", 10f, Color.rgb(190, 178, 205), true)
         )
 
         root.addView(header)
@@ -283,7 +283,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(190, 178, 205))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = roundedBackground(Color.rgb(38, 27, 52), 14)
+            background = roundedBackground(Color.rgb(30, 18, 47), 14).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
         }
 
         root.addView(
@@ -302,7 +302,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(
-            label("YOUR MUSIC", 17f, Color.WHITE, true),
+            label("YOUR LIBRARY", 19f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = roundedBackground(Color.rgb(56, 34, 78), 14)
+            background = roundedBackground(Color.rgb(69, 35, 103), 14).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -346,7 +346,7 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = roundedBackground(Color.rgb(56, 34, 78), 14)
+            background = roundedBackground(Color.rgb(69, 35, 103), 14).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
             isClickable = true
             isFocusable = true
 
@@ -388,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
-            background = roundedBackground(Color.rgb(34, 24, 44), 20)
+            background = roundedBackground(Color.rgb(34, 24, 44), 20).apply { setStroke(dp(1), Color.rgb(124, 58, 237)) }
         }
 
         card.addView(
@@ -415,7 +415,7 @@ class MainActivity : AppCompatActivity() {
 
         trackRow.addView(
             artwork,
-            LinearLayout.LayoutParams(dp(64), dp(64))
+            LinearLayout.LayoutParams(dp(84), dp(84))
         )
 
         val trackInfo = LinearLayout(this).apply {
