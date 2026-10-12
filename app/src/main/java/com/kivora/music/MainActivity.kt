@@ -256,7 +256,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         header.addView(
-            label("KIVORA", 30f, Color.rgb(216, 180, 254), true),
+            label("KIVORA", 32f, Color.rgb(216, 180, 254), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
@@ -279,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         searchBox = EditText(this).apply {
             hint = "Search songs, artists and videos"
             setSingleLine(true)
-            textSize = 14f
+            textSize = 15f
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(174, 159, 194))
             setPadding(dp(14), dp(8), dp(14), dp(8))
@@ -322,7 +322,7 @@ class MainActivity : AppCompatActivity() {
             true
         ).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
             background = roundedBackground(Color.rgb(69, 35, 103), 14).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
             isClickable = true
             isFocusable = true
@@ -345,7 +345,7 @@ class MainActivity : AppCompatActivity() {
             true
         ).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
             background = roundedBackground(Color.rgb(69, 35, 103), 14).apply { setStroke(dp(1), Color.rgb(155, 93, 229)) }
             isClickable = true
             isFocusable = true
@@ -415,7 +415,7 @@ class MainActivity : AppCompatActivity() {
 
         trackRow.addView(
             artwork,
-            LinearLayout.LayoutParams(dp(96), dp(96))
+            LinearLayout.LayoutParams(dp(104), dp(104))
         )
 
         val trackInfo = LinearLayout(this).apply {
