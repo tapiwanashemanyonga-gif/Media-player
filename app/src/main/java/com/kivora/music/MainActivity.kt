@@ -1340,8 +1340,8 @@ class MainActivity : AppCompatActivity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(12), dp(10), dp(12))
-                background = roundedBackground(Color.rgb(29, 17, 44), 20).apply { setStroke(dp(1), Color.rgb(104, 65, 143)) }
+                setPadding(dp(14), dp(12), dp(12), dp(12))
+                background = roundedBackground(Color.rgb(37, 22, 55), 20).apply { setStroke(dp(1), Color.rgb(145, 95, 190)) }
                 setOnClickListener { playSong(song) }
             }
 
@@ -1351,7 +1351,7 @@ class MainActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = "Album artwork"
             }
-            row.addView(cover, LinearLayout.LayoutParams(dp(52), dp(52)))
+            row.addView(cover, LinearLayout.LayoutParams(dp(56), dp(56)))
             loadArtworkInto(cover, song)
 
             val info = LinearLayout(this).apply {
