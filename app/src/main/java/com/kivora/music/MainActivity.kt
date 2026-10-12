@@ -1354,6 +1354,8 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(14), dp(12), dp(12), dp(12))
                 background = roundedBackground(Color.rgb(37, 22, 55), 20).apply { setStroke(dp(1), Color.rgb(145, 95, 190)) }
+                // KIVORA_ROUND20_SONG_ROW_DEPTH
+                row.elevation = dp(3).toFloat()
                 setOnClickListener { playSong(song) }
             }
 
