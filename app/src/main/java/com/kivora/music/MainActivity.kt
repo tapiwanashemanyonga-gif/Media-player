@@ -325,7 +325,8 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(83, 39, 126), 18).apply { setStroke(dp(2), Color.rgb(192, 132, 252)) }
+            // KIVORA_ROUND19_PLAYLIST_BUTTON
+            background = roundedBackground(Color.rgb(96, 43, 145), 18).apply { setStroke(dp(2), Color.rgb(216, 180, 254)) }
             isClickable = true
             isFocusable = true
             setOnClickListener {
