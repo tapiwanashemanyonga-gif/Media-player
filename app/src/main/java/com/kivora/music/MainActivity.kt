@@ -70,6 +70,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var songScroll: ScrollView
     private lateinit var playerCard: LinearLayout
     private lateinit var videoPlaceholder: LinearLayout
+    private lateinit var miniPlayer: LinearLayout
+    private lateinit var miniTitle: TextView
+    private lateinit var miniArtist: TextView
+    private lateinit var miniPlayButton: TextView
     private val navigationButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
@@ -364,7 +368,6 @@ class MainActivity : AppCompatActivity() {
                 if (showFavoritesOnly) {
                     selectedPlaylist = null
                     updatePlaylistButton()
-        showTab("home")
                 }
 
                 updateFavoriteFilterButton()
@@ -1567,7 +1570,9 @@ class MainActivity : AppCompatActivity() {
 
         if (song == null) {
             nowTitle.text = "Choose a song"
+            if (::miniTitle.isInitialized) miniTitle.text = nowTitle.text
             nowArtist.text = "Your library is ready"
+            if (::miniArtist.isInitialized) miniArtist.text = nowArtist.text
             artwork.setImageResource(android.R.drawable.ic_media_play)
             updateProgress()
             return
@@ -1575,6 +1580,8 @@ class MainActivity : AppCompatActivity() {
 
         nowTitle.text = song.title
         nowArtist.text = song.artist
+        if (::miniTitle.isInitialized) miniTitle.text = song.title
+        if (::miniArtist.isInitialized) miniArtist.text = song.artist
         artwork.setImageResource(android.R.drawable.ic_media_play)
 
         val artworkUri = song.artworkUri
@@ -1609,6 +1616,7 @@ class MainActivity : AppCompatActivity() {
         if (!::playButton.isInitialized) return
 
         playButton.text = if (player?.isPlaying == true) "Ⅱ" else "▶"
+        if (::miniPlayButton.isInitialized) miniPlayButton.text = if (player?.isPlaying == true) "Ⅱ" else "▶"
         playButton.setTextColor(Color.WHITE)
     }
 
@@ -1716,6 +1724,7 @@ class MainActivity : AppCompatActivity() {
             if (tab == "videos") View.VISIBLE else View.GONE
         playerCard.visibility =
             if (tab == "home") View.VISIBLE else View.GONE
+        miniPlayer.visibility = if (tab == "home") View.GONE else View.VISIBLE
 
         if (tab == "search") {
             showFavoritesOnly = false
