@@ -687,13 +687,13 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        favoriteFilterButton.setBackgroundColor(
-            if (showFavoritesOnly) {
-                Color.rgb(55, 40, 65)
-            } else {
-                Color.rgb(56, 34, 78)
-            }
-        )
+        // KIVORA_ROUND18_FAVOURITES_BORDER
+        favoriteFilterButton.background = roundedBackground(
+            if (showFavoritesOnly) Color.rgb(55, 40, 65) else Color.rgb(56, 34, 78),
+            18
+        ).apply {
+            setStroke(dp(2), if (showFavoritesOnly) Color.rgb(250, 204, 21) else Color.rgb(192, 132, 252))
+        }
     }
 
     private fun toggleFavorite(song: Song) {
