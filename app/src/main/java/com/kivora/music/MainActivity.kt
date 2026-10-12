@@ -408,7 +408,8 @@ class MainActivity : AppCompatActivity() {
 
         artwork = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(91, 45, 135), 16)
+            // KIVORA_ROUND15_ARTWORK_FRAME
+            background = roundedBackground(Color.rgb(91, 45, 135), 16).apply { setStroke(dp(2), Color.rgb(216, 180, 254)) }
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Album artwork"
         }
