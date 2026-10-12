@@ -390,7 +390,7 @@ class MainActivity : AppCompatActivity() {
         songScroll.addView(songList)
 
         root.addView(
-            scroll,
+            songScroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
@@ -623,7 +623,7 @@ class MainActivity : AppCompatActivity() {
         playerCard.addView(controls)
 
         root.addView(
-            card,
+            playerCard,
             LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = dp(16)
             }
