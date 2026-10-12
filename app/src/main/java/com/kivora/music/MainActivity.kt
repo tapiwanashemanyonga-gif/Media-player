@@ -66,6 +66,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var libraryCount: TextView
     private lateinit var favoriteFilterButton: TextView
     private lateinit var playlistButton: TextView
+    private lateinit var libraryHeader: LinearLayout
+    private lateinit var songScroll: ScrollView
+    private lateinit var playerCard: LinearLayout
+    private lateinit var videoPlaceholder: LinearLayout
+    private val navigationButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
     private var activeQueue: List<Song> = emptyList()
@@ -292,7 +297,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(58))
         )
 
-        val libraryHeader = LinearLayout(this).apply {
+        libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(16), 0, dp(8))
         }
@@ -359,6 +364,7 @@ class MainActivity : AppCompatActivity() {
                 if (showFavoritesOnly) {
                     selectedPlaylist = null
                     updatePlaylistButton()
+        showTab("home")
                 }
 
                 updateFavoriteFilterButton()
@@ -375,26 +381,37 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(libraryHeader)
 
-        val scroll = ScrollView(this)
+        songScroll = ScrollView(this)
 
         songList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
 
-        scroll.addView(songList)
+        songScroll.addView(songList)
 
         root.addView(
             scroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
-        val card = LinearLayout(this).apply {
+        videoPlaceholder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            addView(label("▣", 42f, Color.rgb(216, 180, 254), true))
+            addView(label("YOUR VIDEOS", 22f, Color.WHITE, true).apply {
+                setPadding(0, dp(12), 0, dp(8))
+            })
+            addView(label("Your device video library will appear here.", 14f, Color.rgb(190, 175, 210)))
+        }
+        root.addView(videoPlaceholder, LinearLayout.LayoutParams(-1, 0, 1f))
+        playerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(14))
             background = roundedBackground(Color.rgb(34, 16, 56), 26).apply { setStroke(dp(2), Color.rgb(216, 180, 254)) }
         }
 
-        card.addView(
+        playerCard.addView(
             label(
                 "NOW PLAYING  •  KIVORA PLAYER",
                 10f,
@@ -443,7 +460,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
-        card.addView(trackRow)
+        playerCard.addView(trackRow)
 
         progress = SeekBar(this).apply {
             max = 1000
@@ -503,7 +520,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        card.addView(progress)
+        playerCard.addView(progress)
 
         val times = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -527,7 +544,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         times.addView(durationText)
-        card.addView(times)
+        playerCard.addView(times)
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -603,7 +620,7 @@ class MainActivity : AppCompatActivity() {
         controls.addView(nextButton)
         controls.addView(repeatButton)
 
-        card.addView(controls)
+        playerCard.addView(controls)
 
         root.addView(
             card,
@@ -612,6 +629,29 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
+        val navBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = roundedBackground(Color.rgb(20, 10, 32), 20)
+        }
+        listOf(
+            Triple("home", "⌂", "HOME"),
+            Triple("search", "⌕", "SEARCH"),
+            Triple("library", "♫", "LIBRARY"),
+            Triple("videos", "▣", "VIDEOS")
+        ).forEach { (tab, symbol, title) ->
+            val item = label("$symbol\n$title", 10f, Color.rgb(190, 175, 210), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(4), dp(6), dp(4), dp(6))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { showTab(tab) }
+            }
+            navigationButtons[tab] = item
+            navBar.addView(item, LinearLayout.LayoutParams(0, dp(52), 1f))
+        }
+        root.addView(navBar, LinearLayout.LayoutParams(-1, dp(60)))
         setContentView(root)
 
         searchBox.addTextChangedListener(
@@ -643,6 +683,7 @@ class MainActivity : AppCompatActivity() {
         updateRepeatButton()
         updateFavoriteFilterButton()
         updatePlaylistButton()
+        showTab("home")
     }
 
     private fun control(
@@ -811,6 +852,7 @@ class MainActivity : AppCompatActivity() {
                         showFavoritesOnly = false
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
+        showTab("home")
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
 
@@ -844,6 +886,7 @@ class MainActivity : AppCompatActivity() {
                         showFavoritesOnly = false
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
+        showTab("home")
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
 
@@ -912,6 +955,7 @@ class MainActivity : AppCompatActivity() {
 
                         savePlaylists()
                         updatePlaylistButton()
+        showTab("home")
                         renderSongs(searchBox.text?.toString().orEmpty())
 
                         Toast.makeText(
@@ -945,6 +989,7 @@ class MainActivity : AppCompatActivity() {
 
                 savePlaylists()
                 updatePlaylistButton()
+        showTab("home")
                 updateFavoriteFilterButton()
                 renderSongs(searchBox.text?.toString().orEmpty())
 
@@ -1013,6 +1058,7 @@ class MainActivity : AppCompatActivity() {
                     showFavoritesOnly = false
 
                     updatePlaylistButton()
+        showTab("home")
                     updateFavoriteFilterButton()
                     renderSongs(searchBox.text?.toString().orEmpty())
 
@@ -1664,4 +1710,38 @@ class MainActivity : AppCompatActivity() {
 
         super.onDestroy()
     }
+    private fun showTab(tab: String) {
+        searchBox.visibility =
+            if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
+        libraryHeader.visibility =
+            if (tab == "library") View.VISIBLE else View.GONE
+        songScroll.visibility =
+            if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
+        videoPlaceholder.visibility =
+            if (tab == "videos") View.VISIBLE else View.GONE
+        playerCard.visibility =
+            if (tab == "home") View.VISIBLE else View.GONE
+
+        if (tab == "search") {
+            showFavoritesOnly = false
+            selectedPlaylist = null
+            updateFavoriteFilterButton()
+            updatePlaylistButton()
+            renderSongs(searchBox.text?.toString().orEmpty())
+        }
+
+        navigationButtons.forEach { (name, button) ->
+            val selected = name == tab
+            button.setTextColor(
+                if (selected) Color.rgb(232, 213, 255)
+                else Color.rgb(174, 159, 194)
+            )
+            button.background = roundedBackground(
+                if (selected) Color.rgb(83, 39, 126)
+                else Color.TRANSPARENT,
+                14
+            )
+        }
+    }
+
 }
