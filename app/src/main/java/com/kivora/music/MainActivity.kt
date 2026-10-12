@@ -645,7 +645,7 @@ class MainActivity : AppCompatActivity() {
                 if (symbol == "▶" || symbol == "Ⅱ") 22f else 19f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setPadding(dp(12), dp(9), dp(12), dp(9))
+            setPadding(dp(if (symbol == "▶" || symbol == "Ⅱ") 18 else 12), dp(if (symbol == "▶" || symbol == "Ⅱ") 14 else 9), dp(if (symbol == "▶" || symbol == "Ⅱ") 18 else 12), dp(if (symbol == "▶" || symbol == "Ⅱ") 14 else 9))
             background = roundedBackground(
                 if (symbol == "▶" || symbol == "Ⅱ")
                     Color.rgb(124, 58, 237)
@@ -653,6 +653,8 @@ class MainActivity : AppCompatActivity() {
                     Color.rgb(56, 34, 78),
                 28
             )
+            // KIVORA_ROUND13_CONTROL_BORDER
+            (background as android.graphics.drawable.GradientDrawable).setStroke(dp(if (symbol == "▶" || symbol == "Ⅱ") 2 else 1), if (symbol == "▶" || symbol == "Ⅱ") Color.rgb(216, 180, 254) else Color.rgb(145, 95, 190))
             setOnClickListener { action() }
         }
 
