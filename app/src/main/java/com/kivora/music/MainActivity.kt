@@ -461,7 +461,7 @@ class MainActivity : AppCompatActivity() {
         }
         videoScroll.addView(
             videoList,
-            ScrollView.LayoutParams(-1, -2)
+            android.widget.FrameLayout.LayoutParams(-1, -2)
         )
         videoPlaceholder.addView(
             videoScroll,
