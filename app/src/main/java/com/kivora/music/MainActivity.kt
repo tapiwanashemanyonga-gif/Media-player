@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
+import android.util.Size
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -32,6 +33,8 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -45,6 +48,13 @@ data class Song(
     val artist: String,
     val uri: Uri,
     val artworkUri: Uri?
+)
+
+data class DeviceVideo(
+    val id: Long,
+    val title: String,
+    val uri: Uri,
+    val durationMs: Long
 )
 
 class MainActivity : AppCompatActivity() {
@@ -70,6 +80,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var songScroll: ScrollView
     private lateinit var playerCard: LinearLayout
     private lateinit var videoPlaceholder: LinearLayout
+    private lateinit var videoList: LinearLayout
+    private lateinit var videoStatus: TextView
+    private lateinit var videoPlayerView: PlayerView
+    private var videoPlayer: ExoPlayer? = null
+    private val deviceVideos = mutableListOf<DeviceVideo>()
+    private var videosLoaded = false
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
@@ -111,6 +127,22 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(
                     this,
                     "Allow music access to show songs from your device.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+    private val videoPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                loadVideos()
+            } else {
+                videoStatus.text = "Allow video access to show your videos."
+                Toast.makeText(
+                    this,
+                    "Video access is needed to display your device videos.",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -399,15 +431,46 @@ class MainActivity : AppCompatActivity() {
 
         videoPlaceholder = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(24), dp(24), dp(24), dp(24))
-            addView(label("▣", 42f, Color.rgb(216, 180, 254), true))
-            addView(label("YOUR VIDEOS", 22f, Color.WHITE, true).apply {
-                setPadding(0, dp(12), 0, dp(8))
-            })
-            addView(label("Your device video library will appear here.", 14f, Color.rgb(190, 175, 210)))
+            setPadding(dp(12), dp(10), dp(12), dp(8))
         }
-        root.addView(videoPlaceholder, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        videoPlayer = ExoPlayer.Builder(this).build()
+        videoPlayerView = PlayerView(this).apply {
+            player = videoPlayer
+            useController = true
+        }
+        videoPlaceholder.addView(
+            videoPlayerView,
+            LinearLayout.LayoutParams(-1, dp(220))
+        )
+
+        videoStatus = label(
+            "Open Videos to scan your device.",
+            13f,
+            Color.rgb(190, 175, 210)
+        )
+        videoStatus.setPadding(dp(4), dp(10), dp(4), dp(8))
+        videoPlaceholder.addView(
+            videoStatus,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        val videoScroll = ScrollView(this)
+        videoList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        videoScroll.addView(
+            videoList,
+            ScrollView.LayoutParams(-1, -2)
+        )
+        videoPlaceholder.addView(
+            videoScroll,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
+        root.addView(
+            videoPlaceholder,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
         playerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(14))
@@ -1776,8 +1839,131 @@ class MainActivity : AppCompatActivity() {
 
         controllerFuture = null
 
+        if (::videoPlayerView.isInitialized) {
+            videoPlayerView.player = null
+        }
+        videoPlayer?.release()
+        videoPlayer = null
+
         super.onDestroy()
     }
+    private fun loadVideos() {
+        videoStatus.text = "Scanning videos on this device..."
+        deviceVideos.clear()
+        videoList.removeAllViews()
+
+        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.DISPLAY_NAME,
+            MediaStore.Video.Media.DURATION
+        )
+
+        try {
+            contentResolver.query(
+                collection, projection, null, null,
+                "${MediaStore.Video.Media.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }
+                        ?: cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
+                        ?: "Untitled video"
+
+                    deviceVideos.add(
+                        DeviceVideo(
+                            id,
+                            title,
+                            ContentUris.withAppendedId(collection, id),
+                            cursor.getLong(durationColumn)
+                        )
+                    )
+                }
+            }
+            videosLoaded = true
+            renderVideos()
+        } catch (error: Exception) {
+            videoStatus.text = "Couldn't read videos. Reopen Videos to retry."
+            Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun renderVideos() {
+        videoList.removeAllViews()
+
+        if (deviceVideos.isEmpty()) {
+            videoStatus.text = "No videos found. Add videos to your device and retry."
+            return
+        }
+
+        videoStatus.text = "${deviceVideos.size} videos found"
+
+        deviceVideos.forEach { video ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+                isClickable = true
+                isFocusable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+            }
+
+            val thumbnail = ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_media_play)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    thumbnail.setImageBitmap(
+                        contentResolver.loadThumbnail(
+                            video.uri,
+                            Size(dp(100), dp(70)),
+                            null
+                        )
+                    )
+                } catch (_: Exception) {
+                    // Keep the play icon if a thumbnail cannot be loaded.
+                }
+            }
+
+            row.addView(thumbnail, LinearLayout.LayoutParams(dp(100), dp(70)))
+
+            val details = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, 0, 0)
+            }
+
+            details.addView(label(video.title, 15f, Color.WHITE, true))
+            details.addView(
+                label(formatTime(video.durationMs), 12f, Color.rgb(190, 175, 210))
+            )
+            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+
+            row.setOnClickListener { playDeviceVideo(video) }
+
+            videoList.addView(
+                row,
+                LinearLayout.LayoutParams(-1, -2)
+            )
+        }
+    }
+
+    private fun playDeviceVideo(video: DeviceVideo) {
+        videoStatus.text = "Playing: ${video.title}"
+        videoPlayer?.apply {
+            setMediaItem(MediaItem.fromUri(video.uri))
+            prepare()
+            playWhenReady = true
+        }
+    }
+
     private fun showTab(tab: String) {
         searchBox.visibility =
             if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
@@ -1786,6 +1972,18 @@ class MainActivity : AppCompatActivity() {
         songScroll.visibility =
             if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
+        if (tab == "videos" && !videosLoaded) {
+            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Manifest.permission.READ_MEDIA_VIDEO
+            } else {
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+            if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+                loadVideos()
+            } else {
+                videoPermissionLauncher.launch(permission)
+            }
+        }
             if (tab == "videos") View.VISIBLE else View.GONE
         playerCard.visibility =
             if (tab == "home") View.VISIBLE else View.GONE
