@@ -1972,6 +1972,7 @@ class MainActivity : AppCompatActivity() {
         songScroll.visibility =
             if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
+            if (tab == "videos") View.VISIBLE else View.GONE
         if (tab == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
@@ -1984,7 +1985,6 @@ class MainActivity : AppCompatActivity() {
                 videoPermissionLauncher.launch(permission)
             }
         }
-            if (tab == "videos") View.VISIBLE else View.GONE
         playerCard.visibility =
             if (tab == "home") View.VISIBLE else View.GONE
         miniPlayer.visibility = if (tab == "home") View.GONE else View.VISIBLE
