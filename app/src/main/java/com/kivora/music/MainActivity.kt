@@ -494,60 +494,80 @@ class MainActivity : AppCompatActivity() {
         )
         playerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(14))
-            background = roundedBackground(Color.rgb(34, 16, 56), 26).apply { setStroke(dp(2), Color.rgb(216, 180, 254)) }
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(20), dp(22), dp(20), dp(18))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(
+                    Color.rgb(67, 28, 103),
+                    Color.rgb(34, 16, 56),
+                    Color.rgb(23, 12, 39)
+                )
+            ).apply {
+                cornerRadius = dp(28).toFloat()
+                setStroke(dp(2), Color.rgb(190, 130, 255))
+            }
         }
 
         playerCard.addView(
-            label(
-                "NOW PLAYING  •  KIVORA PLAYER",
-                10f,
-                Color.rgb(196, 145, 255),
-                true
-            )
+            label("KIVORA  •  NOW PLAYING", 10f, Color.rgb(216, 180, 254), true).apply {
+                gravity = Gravity.CENTER
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(20)
+            }
         )
-
-        val trackRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(6))
-        }
 
         artwork = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            // KIVORA_ROUND15_ARTWORK_FRAME
-            background = roundedBackground(Color.rgb(91, 45, 135), 16).apply { setStroke(dp(2), Color.rgb(216, 180, 254)) }
+            background = roundedBackground(Color.rgb(91, 45, 135), 22).apply {
+                setStroke(dp(2), Color.rgb(216, 180, 254))
+            }
             setImageResource(android.R.drawable.ic_media_play)
             contentDescription = "Album artwork"
+            clipToOutline = true
         }
 
-        trackRow.addView(
+        playerCard.addView(
             artwork,
-            LinearLayout.LayoutParams(dp(116), dp(116))
+            LinearLayout.LayoutParams(dp(176), dp(176)).apply {
+                gravity = Gravity.CENTER
+                bottomMargin = dp(20)
+            }
         )
 
-        val trackInfo = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, 0, 0)
+        nowTitle = label("Choose a song", 21f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
         }
 
-        nowTitle = label("Choose a song", 18f, Color.WHITE, true)
+        playerCard.addView(
+            nowTitle,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(7)
+            }
+        )
+
         nowArtist = label(
-             "Your library is ready",
-            12f,
-            Color.rgb(174, 159, 194)
+            "Your library is ready",
+            13f,
+            Color.rgb(205, 187, 225)
+        ).apply {
+            gravity = Gravity.CENTER
+        }
+
+        playerCard.addView(
+            nowArtist,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         )
-
-        trackInfo.addView(nowTitle)
-        trackInfo.addView(nowArtist)
-
-        trackRow.addView(
-            trackInfo,
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
-
-        playerCard.addView(trackRow)
 
         progress = SeekBar(this).apply {
             max = 1000
@@ -859,6 +879,7 @@ class MainActivity : AppCompatActivity() {
             )
             // KIVORA_ROUND13_CONTROL_BORDER
             (background as android.graphics.drawable.GradientDrawable).setStroke(dp(if (symbol == "▶" || symbol == "Ⅱ") 2 else 1), if (symbol == "▶" || symbol == "Ⅱ") Color.rgb(216, 180, 254) else Color.rgb(145, 95, 190))
+            elevation = dp(if (symbol == "▶" || symbol == "Ⅱ") 5 else 1).toFloat()
             setOnClickListener { action() }
         }
 
