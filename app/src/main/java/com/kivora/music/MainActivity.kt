@@ -29,6 +29,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -1964,6 +1967,10 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(progressUpdater)
 
+        fullscreenVideoDialog?.dismiss()
+        fullscreenVideoDialog = null
+        restoreVideoPlayerView()
+
         // Invalidate any pending artwork callback and stop its worker.
         artworkRequestId++
         artworkExecutor.shutdownNow()
@@ -2121,6 +2128,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
     private fun showVideoFullscreen() {
+        if (videoPlayer?.currentMediaItem == null) return
         if (fullscreenVideoDialog?.isShowing == true) return
 
         val parent = videoPlayerView.parent as? android.view.ViewGroup ?: return
@@ -2143,15 +2151,8 @@ class MainActivity : AppCompatActivity() {
         )
         dialog.setContentView(fullscreenRoot)
         dialog.setOnDismissListener {
-            (videoPlayerView.parent as? android.view.ViewGroup)?.removeView(videoPlayerView)
-            if (::videoPlaceholder.isInitialized && !isFinishing && !isDestroyed) {
-                videoPlaceholder.addView(
-                    videoPlayerView,
-                    2.coerceAtMost(videoPlaceholder.childCount),
-                    LinearLayout.LayoutParams(-1, dp(160))
-                )
-            }
-            fullscreenVideoDialog = null
+            restoreVideoPlayerView()
+            if (fullscreenVideoDialog === dialog) fullscreenVideoDialog = null
         }
         fullscreenVideoDialog = dialog
         dialog.show()
@@ -2159,14 +2160,26 @@ class MainActivity : AppCompatActivity() {
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.MATCH_PARENT
         )
-        dialog.window?.decorView?.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        dialog.window?.let { window ->
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                hide(WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+    }
+
+    private fun restoreVideoPlayerView() {
+        if (!::videoPlayerView.isInitialized || !::videoPlaceholder.isInitialized) return
+        (videoPlayerView.parent as? android.view.ViewGroup)?.removeView(videoPlayerView)
+        if (videoPlayerView.parent == null) {
+            videoPlaceholder.addView(
+                videoPlayerView,
+                2.coerceAtMost(videoPlaceholder.childCount),
+                LinearLayout.LayoutParams(-1, dp(160))
             )
+        }
     }
 
     private fun showTab(tab: String) {
