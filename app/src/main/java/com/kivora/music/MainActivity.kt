@@ -660,6 +660,44 @@ class MainActivity : AppCompatActivity() {
         times.addView(durationText)
         playerCard.addView(times)
 
+        val playerShortcuts = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(12), 0, dp(4))
+        }
+
+        val minimizePlayerButton = label("↓  MINIMIZE PLAYER", 11f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(12), dp(8), dp(12))
+            background = roundedBackground(Color.rgb(83, 39, 126), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showTab("search") }
+        }
+
+        val songListButton = label("♫  SONG LIST", 11f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(12), dp(8), dp(12))
+            background = roundedBackground(Color.rgb(83, 39, 126), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showTab("library") }
+        }
+
+        playerShortcuts.addView(
+            minimizePlayerButton,
+            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(6) }
+        )
+        playerShortcuts.addView(
+            songListButton,
+            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(6) }
+        )
+        playerCard.addView(playerShortcuts)
+
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
