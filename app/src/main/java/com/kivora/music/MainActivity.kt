@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Open video in fullscreen"
             setOnClickListener { showVideoFullscreen() }
         }
-        videoPlayerActions.addView(fullscreenButton)
+        videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
@@ -503,7 +503,7 @@ class MainActivity : AppCompatActivity() {
             fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
             minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
         }
-        videoPlayerActions.addView(minimizeVideoButton)
+        videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
         val videoListButton = label("▤  VIDEO LIST", 11f, Color.rgb(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
@@ -519,7 +519,7 @@ class MainActivity : AppCompatActivity() {
                 videoList.requestFocus()
             }
         }
-        videoPlayerActions.addView(videoListButton)
+        videoPlayerActions.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
 
         // KIVORA_FIX_VIDEO_LIST_PRIORITY_V1
         videoPlaceholder.removeView(videoScroll)
