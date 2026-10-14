@@ -719,8 +719,8 @@ class MainActivity : AppCompatActivity() {
         miniPlayer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = roundedBackground(Color.rgb(34, 16, 56), 18)
+            setPadding(dp(14), dp(9), dp(14), dp(9))
+            background = roundedBackground(Color.rgb(34, 16, 56), 18).apply { setStroke(dp(1), Color.rgb(145, 95, 190)) }
             setOnClickListener { showTab("home") }
         }
 
