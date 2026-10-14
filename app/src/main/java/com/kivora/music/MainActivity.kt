@@ -1922,9 +1922,14 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val filteredVideos = deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }
+        if (filteredVideos.isEmpty()) {
+            videoStatus.text = "No videos match your search."
+            return
+        }
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
-        deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }.forEach { video ->
+        filteredVideos.forEach { video ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
