@@ -88,6 +88,7 @@ class MainActivity : AppCompatActivity() {
     private var fullscreenVideoDialog: android.app.Dialog? = null
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
+    private var selectedVideoUri: String? = null
     private var currentTab = "search"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
@@ -2055,7 +2056,13 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(10), dp(10), dp(10), dp(10))
                 isClickable = true
                 isFocusable = true
-                setBackgroundResource(android.R.drawable.list_selector_background)
+                if (video.uri.toString() == selectedVideoUri) {
+                    background = roundedBackground(Color.rgb(55, 28, 82), 12).apply {
+                        setStroke(dp(1), Color.rgb(192, 132, 252))
+                    }
+                } else {
+                    setBackgroundResource(android.R.drawable.list_selector_background)
+                }
             }
 
             val thumbnail = ImageView(this).apply {
@@ -2100,6 +2107,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playDeviceVideo(video: DeviceVideo) {
+        selectedVideoUri = video.uri.toString()
+        renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
         // KIVORA_FIX_AUDIO_VIDEO_V1
         player?.pause()
