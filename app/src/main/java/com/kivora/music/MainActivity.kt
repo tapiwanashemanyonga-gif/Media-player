@@ -84,6 +84,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoStatus: TextView
     private lateinit var videoPlayerView: PlayerView
     private var videoPlayer: ExoPlayer? = null
+    private var fullscreenVideoDialog: android.app.Dialog? = null
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
     private lateinit var miniPlayer: LinearLayout
@@ -439,6 +440,24 @@ class MainActivity : AppCompatActivity() {
             player = videoPlayer
             useController = true
         }
+        val videoPlayerActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        val fullscreenButton = label("⛶  FULLSCREEN", 12f, Color.rgb(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = roundedBackground(Color.rgb(83, 39, 126), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Open video in fullscreen"
+            setOnClickListener { showVideoFullscreen() }
+        }
+        videoPlayerActions.addView(fullscreenButton)
+        videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
             LinearLayout.LayoutParams(-1, dp(220))
@@ -1962,6 +1981,56 @@ class MainActivity : AppCompatActivity() {
             prepare()
             playWhenReady = true
         }
+    }
+
+    /** Move the existing PlayerView into fullscreen without recreating its player. */
+    private fun showVideoFullscreen() {
+        if (fullscreenVideoDialog?.isShowing == true) return
+
+        val parent = videoPlayerView.parent as? android.view.ViewGroup ?: return
+        parent.removeView(videoPlayerView)
+
+        val dialog = android.app.Dialog(
+            this,
+            android.R.style.Theme_Black_NoTitleBar_Fullscreen
+        )
+        val fullscreenRoot = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+        }
+        fullscreenRoot.addView(
+            videoPlayerView,
+            android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+            )
+        )
+        dialog.setContentView(fullscreenRoot)
+        dialog.setOnDismissListener {
+            (videoPlayerView.parent as? android.view.ViewGroup)?.removeView(videoPlayerView)
+            if (::videoPlaceholder.isInitialized && !isFinishing && !isDestroyed) {
+                videoPlaceholder.addView(
+                    videoPlayerView,
+                    1.coerceAtMost(videoPlaceholder.childCount),
+                    LinearLayout.LayoutParams(-1, dp(220))
+                )
+            }
+            fullscreenVideoDialog = null
+        }
+        fullscreenVideoDialog = dialog
+        dialog.show()
+        dialog.window?.setLayout(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        dialog.window?.decorView?.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
     }
 
     private fun showTab(tab: String) {
