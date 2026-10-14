@@ -1869,6 +1869,7 @@ class MainActivity : AppCompatActivity() {
     }
     private fun loadVideos() {
         videoStatus.text = "Scanning videos on this device..."
+        videoStatus.setOnClickListener(null)
         deviceVideos.clear()
         videoList.removeAllViews()
 
@@ -1909,7 +1910,8 @@ class MainActivity : AppCompatActivity() {
             videosLoaded = true
             renderVideos()
         } catch (error: Exception) {
-            videoStatus.text = "Couldn't read videos. Reopen Videos to retry."
+            videoStatus.text = "Couldn't read videos. Tap here to retry."
+            videoStatus.setOnClickListener { loadVideos() }
             Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
         }
     }
