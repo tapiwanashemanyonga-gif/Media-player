@@ -462,7 +462,7 @@ class MainActivity : AppCompatActivity() {
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
-            LinearLayout.LayoutParams(-1, dp(220))
+            LinearLayout.LayoutParams(-1, dp(160))
         )
 
         videoStatus = label(
@@ -486,6 +486,13 @@ class MainActivity : AppCompatActivity() {
         )
         videoPlaceholder.addView(
             videoScroll,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
+        // KIVORA_FIX_VIDEO_LIST_PRIORITY_V1
+        videoPlaceholder.removeView(videoScroll)
+        videoPlaceholder.addView(
+            videoScroll,
+            0,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
         root.addView(
@@ -1714,6 +1721,8 @@ class MainActivity : AppCompatActivity() {
 
         activeQueue = queue
 
+        // KIVORA_FIX_AUDIO_VIDEO_V1
+        videoPlayer?.pause()
         p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
         p.prepare()
         p.play()
@@ -2013,6 +2022,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun playDeviceVideo(video: DeviceVideo) {
         videoStatus.text = "Playing: ${video.title}"
+        // KIVORA_FIX_AUDIO_VIDEO_V1
+        player?.pause()
         videoPlayer?.apply {
             setMediaItem(MediaItem.fromUri(video.uri))
             prepare()
@@ -2048,8 +2059,8 @@ class MainActivity : AppCompatActivity() {
             if (::videoPlaceholder.isInitialized && !isFinishing && !isDestroyed) {
                 videoPlaceholder.addView(
                     videoPlayerView,
-                    1.coerceAtMost(videoPlaceholder.childCount),
-                    LinearLayout.LayoutParams(-1, dp(220))
+                    2.coerceAtMost(videoPlaceholder.childCount),
+                    LinearLayout.LayoutParams(-1, dp(160))
                 )
             }
             fullscreenVideoDialog = null
@@ -2077,7 +2088,7 @@ class MainActivity : AppCompatActivity() {
         libraryHeader.visibility =
             if (tab == "library") View.VISIBLE else View.GONE
         songScroll.visibility =
-            if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
+            if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
             if (tab == "videos") View.VISIBLE else View.GONE
         if (tab == "videos" && !videosLoaded) {
