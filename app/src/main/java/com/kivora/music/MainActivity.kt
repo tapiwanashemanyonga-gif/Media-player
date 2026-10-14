@@ -66,6 +66,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nowTitle: TextView
     private lateinit var nowArtist: TextView
     private lateinit var artwork: ImageView
+    private lateinit var miniArtwork: ImageView
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
@@ -723,12 +724,13 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showTab("home") }
         }
 
-        val miniArtwork = TextView(this).apply {
-            text = "♫"
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(216, 180, 254))
+        miniArtwork = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageResource(android.R.drawable.ic_media_play)
+            setColorFilter(Color.rgb(216, 180, 254))
             background = roundedBackground(Color.rgb(83, 39, 126), 12)
+            clipToOutline = true
+            contentDescription = "Current song album artwork"
             setOnClickListener { showTab("home") }
         }
         miniPlayer.addView(miniArtwork, LinearLayout.LayoutParams(dp(44), dp(44)))
@@ -1722,6 +1724,9 @@ class MainActivity : AppCompatActivity() {
             nowArtist.text = "Your library is ready"
             if (::miniArtist.isInitialized) miniArtist.text = nowArtist.text
             artwork.setImageResource(android.R.drawable.ic_media_play)
+            if (::miniArtwork.isInitialized) miniArtwork.setImageResource(android.R.drawable.ic_media_play)
+            if (::miniArtwork.isInitialized) miniArtwork.setColorFilter(Color.rgb(216, 180, 254))
+            if (::miniArtwork.isInitialized) miniArtwork.tag = null
             updateProgress()
             return
         }
@@ -1731,6 +1736,9 @@ class MainActivity : AppCompatActivity() {
         if (::miniTitle.isInitialized) miniTitle.text = song.title
         if (::miniArtist.isInitialized) miniArtist.text = song.artist
         artwork.setImageResource(android.R.drawable.ic_media_play)
+        if (::miniArtwork.isInitialized) miniArtwork.setImageResource(android.R.drawable.ic_media_play)
+        if (::miniArtwork.isInitialized) miniArtwork.setColorFilter(Color.rgb(216, 180, 254))
+        if (::miniArtwork.isInitialized) loadArtworkInto(miniArtwork, song)
 
         val artworkUri = song.artworkUri
 
