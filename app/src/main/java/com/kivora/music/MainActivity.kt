@@ -250,7 +250,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Toast.makeText(
                         this,
-                        "Couldn't connect to the music service. Reopen Kivora.",
+                        "Couldn't connect to the music service. Reopen A1 Family Media Player.",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -300,19 +300,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         header.addView(
-            label("KIVORA", 32f, Color.rgb(216, 180, 254), true),
+            label("A1 FAMILY", 32f, Color.rgb(216, 180, 254), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
         header.addView(
-            label("YOUR MUSIC. YOUR RULES.", 10f, Color.rgb(174, 159, 194), true)
+            label("MEDIA PLAYER • MUSIC & VIDEO", 10f, Color.rgb(174, 159, 194), true)
         )
 
         root.addView(header)
 
         root.addView(
             label(
-                "YOUR SOUND. YOUR WORLD.  ✦",
+                "YOUR ENTERTAINMENT. YOUR WAY.  ✦",
                 // KIVORA_ROUND16_TAGLINE_ACCENT
                 11f,
                 Color.rgb(216, 180, 254)
@@ -517,7 +517,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         playerCard.addView(
-            label("KIVORA  •  NOW PLAYING", 10f, Color.rgb(216, 180, 254), true).apply {
+            label("A1 FAMILY  •  NOW PLAYING", 10f, Color.rgb(216, 180, 254), true).apply {
                 gravity = Gravity.CENTER
             },
             LinearLayout.LayoutParams(
