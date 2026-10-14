@@ -699,6 +699,8 @@ class MainActivity : AppCompatActivity() {
             } else if (p.isPlaying) {
                 p.pause()
             } else {
+                // KIVORA_FIX_AUDIO_VIDEO_V2
+                videoPlayer?.pause()
                 p.play()
             }
 
@@ -790,7 +792,13 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 val p = player
                 if (p != null && p.mediaItemCount > 0) {
-                    if (p.isPlaying) p.pause() else p.play()
+                    if (p.isPlaying) {
+                        p.pause()
+                    } else {
+                        // KIVORA_FIX_AUDIO_VIDEO_V2
+                        videoPlayer?.pause()
+                        p.play()
+                    }
                     updatePlayButton()
                 } else {
                     Toast.makeText(
