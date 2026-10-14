@@ -488,6 +488,39 @@ class MainActivity : AppCompatActivity() {
             videoScroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
+        val minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, Color.rgb(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = roundedBackground(Color.rgb(83, 39, 126), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        minimizeVideoButton.setOnClickListener {
+            val shouldMinimize = videoPlayerView.visibility == View.VISIBLE
+            videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
+            fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
+            minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
+        }
+        videoPlayerActions.addView(minimizeVideoButton)
+
+        val videoListButton = label("▤  VIDEO LIST", 11f, Color.rgb(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = roundedBackground(Color.rgb(83, 39, 126), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Return video list to its beginning"
+            setOnClickListener {
+                videoScroll.smoothScrollTo(0, 0)
+                videoList.requestFocus()
+            }
+        }
+        videoPlayerActions.addView(videoListButton)
+
         // KIVORA_FIX_VIDEO_LIST_PRIORITY_V1
         videoPlaceholder.removeView(videoScroll)
         videoPlaceholder.addView(
