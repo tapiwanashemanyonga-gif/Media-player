@@ -87,6 +87,7 @@ class MainActivity : AppCompatActivity() {
     private var fullscreenVideoDialog: android.app.Dialog? = null
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
+    private var currentTab = "search"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
@@ -819,7 +820,7 @@ class MainActivity : AppCompatActivity() {
                     before: Int,
                     count: Int
                 ) {
-                    renderSongs(s?.toString().orEmpty())
+                    if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
                 }
 
                 override fun afterTextChanged(
@@ -1913,7 +1914,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderVideos() {
+    private fun renderVideos(query: String = searchBox.text?.toString().orEmpty()) {
         videoList.removeAllViews()
 
         if (deviceVideos.isEmpty()) {
@@ -1921,9 +1922,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        videoStatus.text = "${deviceVideos.size} videos found"
+        videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
-        deviceVideos.forEach { video ->
+        deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }.forEach { video ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -2034,12 +2035,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTab(tab: String) {
+        currentTab = tab
         searchBox.visibility =
-            if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
+            if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
         libraryHeader.visibility =
             if (tab == "library") View.VISIBLE else View.GONE
         songScroll.visibility =
-            if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
+            if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
             if (tab == "videos") View.VISIBLE else View.GONE
         if (tab == "videos" && !videosLoaded) {
