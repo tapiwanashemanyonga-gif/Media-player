@@ -362,7 +362,6 @@ class MainActivity : AppCompatActivity() {
             background = roundedBackground(Color.rgb(31, 21, 47), 19).apply {
                 setStroke(dp(1), Color.rgb(91, 66, 122))
             }
-            singleLine = true
             contentDescription = "Search songs, artists and albums"
         }
 
@@ -862,7 +861,7 @@ class MainActivity : AppCompatActivity() {
             clipToPadding = false
             setPadding(0, dp(12), 0, dp(4))
             isFillViewport = false
-            addView(playerCard, ScrollView.LayoutParams(-1, -2))
+            addView(playerCard, android.widget.FrameLayout.LayoutParams(-1, -2))
         }
         root.addView(playerScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
