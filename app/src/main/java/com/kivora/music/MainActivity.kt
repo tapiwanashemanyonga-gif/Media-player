@@ -254,7 +254,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Toast.makeText(
                         this,
-                        "Couldn't connect to the music service. Reopen A1 Family Media Player.",
+                        "Couldn't connect to the music service. Reopen Kivora Music Player.",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -304,19 +304,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         header.addView(
-            label("A1 FAMILY", 32f, Color.rgb(216, 180, 254), true),
+            label("KIVORA", 30f, Color.rgb(216, 180, 254), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
         header.addView(
-            label("MEDIA PLAYER • MUSIC & VIDEO", 10f, Color.rgb(174, 159, 194), true)
+            label("MUSIC • VIDEO", 10f, Color.rgb(174, 159, 194), true)
         )
 
         root.addView(header)
 
         root.addView(
             label(
-                "YOUR ENTERTAINMENT. YOUR WAY.  ✦",
+                "YOUR MUSIC. YOUR MOMENT.  ✦",
                 // KIVORA_ROUND16_TAGLINE_ACCENT
                 11f,
                 Color.rgb(216, 180, 254)
@@ -506,6 +506,8 @@ class MainActivity : AppCompatActivity() {
             videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
             fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
             minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
+            minimizeVideoButton.contentDescription =
+                if (shouldMinimize) "Restore video player" else "Minimize video player"
         }
         videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
@@ -525,13 +527,9 @@ class MainActivity : AppCompatActivity() {
         }
         videoPlayerActions.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
 
-        // KIVORA_FIX_VIDEO_LIST_PRIORITY_V1
-        videoPlaceholder.removeView(videoScroll)
-        videoPlaceholder.addView(
-            videoScroll,
-            0,
-            LinearLayout.LayoutParams(-1, 0, 1f)
-        )
+        // Keep the video list last so its weight fills the space below the player and controls.
+        videoPlaceholder.removeView(videoPlayerActions)
+        videoPlaceholder.addView(videoPlayerActions, 1, LinearLayout.LayoutParams(-1, -2))
         root.addView(
             videoPlaceholder,
             LinearLayout.LayoutParams(-1, 0, 1f)
@@ -554,7 +552,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         playerCard.addView(
-            label("A1 FAMILY  •  NOW PLAYING", 10f, Color.rgb(216, 180, 254), true).apply {
+            label("KIVORA  •  NOW PLAYING", 10f, Color.rgb(216, 180, 254), true).apply {
                 gravity = Gravity.CENTER
             },
             LinearLayout.LayoutParams(
@@ -2176,7 +2174,7 @@ class MainActivity : AppCompatActivity() {
         if (videoPlayerView.parent == null) {
             videoPlaceholder.addView(
                 videoPlayerView,
-                2.coerceAtMost(videoPlaceholder.childCount),
+                0,
                 LinearLayout.LayoutParams(-1, dp(160))
             )
         }
