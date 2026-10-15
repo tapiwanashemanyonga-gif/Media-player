@@ -1,10 +1,11 @@
 <resources>
     <style name="Theme.Kivora" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#7C4DFF</item>
-        <item name="colorPrimaryVariant">#512DA8</item>
-        <item name="colorSecondary">#00E5FF</item>
-        <item name="android:statusBarColor">#0A0B10</item>
-        <item name="android:navigationBarColor">#0A0B10</item>
+        <item name="colorPrimary">#A66BFF</item>
+        <item name="colorPrimaryVariant">#6937B8</item>
+        <item name="colorSecondary">#D6B7FF</item>
+        <item name="android:colorAccent">#B784FF</item>
+        <item name="android:statusBarColor">#0D0817</item>
+        <item name="android:navigationBarColor">#0D0817</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
