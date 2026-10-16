@@ -1880,7 +1880,7 @@ class MainActivity : AppCompatActivity() {
             while (keys.hasNext()) {
                 val name = keys.next()
                 val array = json.optJSONArray(name) ?: JSONArray()
-                val uris = mutableSetOf<String>()
+                val uris = linkedSetOf<String>()
 
                 for (i in 0 until array.length()) {
                     val uri = array.optString(i)
@@ -1909,6 +1909,11 @@ class MainActivity : AppCompatActivity() {
         ).edit()
             .putString("saved_playlists", json.toString())
             .apply()
+    }
+
+    private fun playlistSongs(name: String): List<Song> {
+        val songsByUri = songs.associateBy { it.uri.toString() }
+        return playlists[name].orEmpty().mapNotNull { songsByUri[it] }
     }
 
     private fun updatePlaylistButton() {
@@ -1948,9 +1953,11 @@ class MainActivity : AppCompatActivity() {
         val options = mutableListOf<String>()
         options.add("All songs")
         options.add("+ Create a new playlist")
+        options.add("＋ Add multiple songs")
 
         playlists.keys.forEach { name ->
-            options.add("$name (${playlists[name]?.size ?: 0} songs)")
+            val count = playlistSongs(name).size
+            options.add("$name ($count ${if (count == 1) "song" else "songs"})")
         }
 
         AlertDialog.Builder(this)
@@ -1960,15 +1967,21 @@ class MainActivity : AppCompatActivity() {
                     0 -> {
                         selectedPlaylist = null
                         showFavoritesOnly = false
+                        selectedAlbumKey = null
+                        selectedArtistName = null
+                        libraryBrowseMode = "songs"
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
+                        updateLibraryBrowseButtons()
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
 
                     1 -> showCreatePlaylistDialog()
 
+                    2 -> showSelectSongsForPlaylistDialog()
+
                     else -> {
-                        val name = playlists.keys.elementAtOrNull(which - 2)
+                        val name = playlists.keys.elementAtOrNull(which - 3)
                         if (name != null) {
                             showPlaylistActionsDialog(name)
                         }
@@ -1993,8 +2006,12 @@ class MainActivity : AppCompatActivity() {
                     0 -> {
                         selectedPlaylist = name
                         showFavoritesOnly = false
+                        selectedAlbumKey = null
+                        selectedArtistName = null
+                        libraryBrowseMode = "songs"
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
+                        updateLibraryBrowseButtons()
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
 
@@ -2108,7 +2125,10 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showCreatePlaylistDialog(songToAdd: Song? = null) {
+    private fun showCreatePlaylistDialog(
+        songToAdd: Song? = null,
+        songsToAdd: List<Song> = emptyList()
+    ) {
         val input = EditText(this).apply {
             hint = "e.g. Gospel, Amapiano, Love Songs"
             setSingleLine(true)
@@ -2125,8 +2145,8 @@ class MainActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setTitle("Create a playlist")
             .setMessage(
-                if (songToAdd != null) {
-                    "Choose a name. This song will be added to it."
+                if (songToAdd != null || songsToAdd.isNotEmpty()) {
+                    "Choose a name. The selected songs will be added to it."
                 } else {
                     "Give your new playlist a name."
                 }
@@ -2153,26 +2173,34 @@ class MainActivity : AppCompatActivity() {
                         return@setOnClickListener
                     }
 
-                    playlists[name] = mutableSetOf()
+                    playlists[name] = linkedSetOf()
 
                     if (songToAdd != null) {
                         playlists[name]?.add(songToAdd.uri.toString())
+                    }
+                    songsToAdd.forEach { song ->
+                        playlists[name]?.add(song.uri.toString())
                     }
 
                     savePlaylists()
                     selectedPlaylist = name
                     showFavoritesOnly = false
+                    selectedAlbumKey = null
+                    selectedArtistName = null
+                    libraryBrowseMode = "songs"
 
                     updatePlaylistButton()
                     updateFavoriteFilterButton()
+                    updateLibraryBrowseButtons()
                     renderSongs(searchBox.text?.toString().orEmpty())
+                    renderHomeDashboard()
 
                     Toast.makeText(
                         this,
-                        if (songToAdd != null) {
-                            "Playlist created and song added"
-                        } else {
-                            "Playlist created"
+                        when {
+                            songToAdd != null -> "Playlist created and song added"
+                            songsToAdd.isNotEmpty() -> "Playlist created with ${songsToAdd.size} songs"
+                            else -> "Playlist created"
                         },
                         Toast.LENGTH_SHORT
                     ).show()
@@ -2232,6 +2260,69 @@ class MainActivity : AppCompatActivity() {
                         renderSongs(searchBox.text?.toString().orEmpty())
                     }
                 }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSelectSongsForPlaylistDialog() {
+        val query = searchBox.text?.toString().orEmpty().trim().lowercase(Locale.ROOT)
+        val candidates = sortLibrarySongs(songs.filter { song ->
+            val searchableText =
+                "${song.title.trim()} ${song.artist.trim()} ${song.album.trim()}".lowercase(Locale.ROOT)
+            query.isEmpty() || searchableText.contains(query)
+        })
+        if (candidates.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("No songs available")
+                .setMessage("Add music to your library before selecting playlist tracks.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val checked = BooleanArray(candidates.size)
+        val labels = candidates.map { "${it.title}  —  ${it.artist}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Select songs")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton("Choose playlist") { _, _ ->
+                val selectedSongs = candidates.filterIndexed { index, _ -> checked[index] }
+                if (selectedSongs.isEmpty()) {
+                    Toast.makeText(this, "Select at least one song.", Toast.LENGTH_SHORT).show()
+                } else {
+                    showBulkPlaylistTargetDialog(selectedSongs)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showBulkPlaylistTargetDialog(selectedSongs: List<Song>) {
+        val names = playlists.keys.toList()
+        val options = listOf("+ Create a new playlist") + names
+        AlertDialog.Builder(this)
+            .setTitle("Add ${selectedSongs.size} selected songs to...")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    showCreatePlaylistDialog(songsToAdd = selectedSongs)
+                    return@setItems
+                }
+                val name = names.getOrNull(which - 1) ?: return@setItems
+                val target = playlists[name] ?: return@setItems
+                val addedCount = selectedSongs.count { target.add(it.uri.toString()) }
+                savePlaylists()
+                updatePlaylistButton()
+                renderSongs(searchBox.text?.toString().orEmpty())
+                renderHomeDashboard()
+                Toast.makeText(
+                    this,
+                    if (addedCount == 0) "All selected songs are already in $name."
+                    else "Added $addedCount ${if (addedCount == 1) "song" else "songs"} to $name.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -2366,8 +2457,8 @@ class MainActivity : AppCompatActivity() {
         if (availablePlaylists.isEmpty()) {
             homeContent.addView(homeEmptyCard("Create a playlist from the Library to see it here."))
         } else {
-            availablePlaylists.forEach { (name, members) ->
-                val tracks = songs.filter { members.contains(it.uri.toString()) }
+            availablePlaylists.forEach { (name, _) ->
+                val tracks = playlistSongs(name)
                 val representative = tracks.firstOrNull { it.artworkUri != null } ?: tracks.firstOrNull()
                 playlistRow.addView(homePlaylistCard(name, tracks.size, representative) {
                     selectedAlbumKey = null
@@ -2722,19 +2813,28 @@ class MainActivity : AppCompatActivity() {
         val isLibraryBrowse = currentTab == "library"
         val isLibraryDetail = isLibraryBrowse &&
             (selectedAlbumKey != null || selectedArtistName != null)
-        val visibleSongs = sortLibrarySongs(matches.filter { song ->
+        val filteredSongs = matches.filter { song ->
             if (!isLibraryBrowse) return@filter true
             when {
                 selectedAlbumKey != null -> albumGroupKey(song) == selectedAlbumKey
                 selectedArtistName != null -> song.artist.equals(selectedArtistName, ignoreCase = true)
                 else -> true
             }
-        })
+        }
+        val visibleSongs = if (selectedPlaylist != null) {
+            val playlistOrder = playlists[selectedPlaylist].orEmpty()
+                .withIndex()
+                .associate { it.value to it.index }
+            filteredSongs.sortedBy { playlistOrder[it.uri.toString()] ?: Int.MAX_VALUE }
+        } else {
+            sortLibrarySongs(filteredSongs)
+        }
         val showingCollections = isLibraryBrowse &&
             selectedAlbumKey == null && selectedArtistName == null &&
             libraryBrowseMode != "songs"
         if (::sortContainer.isInitialized) {
-            sortContainer.visibility = if (showingCollections) View.GONE else View.VISIBLE
+            sortContainer.visibility =
+                if (showingCollections || selectedPlaylist != null) View.GONE else View.VISIBLE
         }
         val albumCount = visibleSongs.map(::albumGroupKey).distinct().size
         val artistCount = visibleSongs.map { it.artist.lowercase(Locale.ROOT) }.distinct().size
@@ -2756,7 +2856,7 @@ class MainActivity : AppCompatActivity() {
                     "No music found yet.\nAdd audio files to your device and try again."
 
                 selectedPlaylist != null ->
-                    "This playlist is empty.\nReturn to All Songs and tap ＋ beside a song to add it."
+                    "This playlist has no available tracks.\nAdd songs from a song row or the Playlists menu."
 
                 showFavoritesOnly ->
                     "No favourites yet.\nTap ☆ beside a song to add it."
@@ -3072,10 +3172,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val queueCandidates = when {
-            selectedPlaylist != null -> {
-                val members = playlists[selectedPlaylist].orEmpty()
-                songs.filter { members.contains(it.uri.toString()) }
-            }
+            selectedPlaylist != null -> playlistSongs(selectedPlaylist.orEmpty())
             showFavoritesOnly -> songs.filter { favoriteSongUris.contains(it.uri.toString()) }
             else -> songs.toList()
         }
