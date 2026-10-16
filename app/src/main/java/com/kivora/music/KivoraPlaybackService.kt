@@ -3,6 +3,10 @@ package com.kivora.music
 import android.media.audiofx.Equalizer
 import android.media.audiofx.BassBoost
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.widget.Toast
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -19,6 +23,22 @@ class KivoraPlaybackService : MediaSessionService() {
     private var equalizerAudioSessionId = 0
     private var bassBoost: BassBoost? = null
     private var bassBoostAudioSessionId = 0
+    private val sleepTimerHandler = Handler(Looper.getMainLooper())
+    private var sleepTimerDeadlineElapsedRealtime = 0L
+    private var sleepTimerDurationMinutes = 0
+    private var sleepTimerExpired = false
+
+    private val sleepTimerRunnable = object : Runnable {
+        override fun run() {
+            val remainingMs = sleepTimerDeadlineElapsedRealtime - SystemClock.elapsedRealtime()
+            if (sleepTimerDeadlineElapsedRealtime == 0L) return
+            if (remainingMs > 0L) {
+                sleepTimerHandler.postDelayed(this, remainingMs)
+                return
+            }
+            finishSleepTimer()
+        }
+    }
 
     private val equalizerCallback = object : MediaSession.Callback {
         override fun onConnect(
@@ -35,6 +55,9 @@ class KivoraPlaybackService : MediaSessionService() {
                 commands.add(SessionCommand(COMMAND_BASS_BOOST_GET_STATE, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_BASS_BOOST_SET_ENABLED, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_BASS_BOOST_SET_STRENGTH, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_SLEEP_TIMER_GET_STATE, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_SLEEP_TIMER_SET, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_SLEEP_TIMER_CANCEL, Bundle.EMPTY))
             }
             return MediaSession.ConnectionResult.accept(
                 commands.build(),
@@ -86,6 +109,25 @@ class KivoraPlaybackService : MediaSessionService() {
                         require(strength in 0..1000) { "Invalid Bass Boost strength." }
                         effect.setStrength(strength.toShort())
                         bassBoostState()
+                    }
+                    COMMAND_SLEEP_TIMER_GET_STATE -> sleepTimerState()
+                    COMMAND_SLEEP_TIMER_SET -> {
+                        val durationMinutes = args.getInt(KEY_DURATION_MINUTES)
+                        require(durationMinutes in SLEEP_TIMER_OPTIONS_MINUTES) { "Invalid sleep timer duration." }
+                        sleepTimerHandler.removeCallbacks(sleepTimerRunnable)
+                        sleepTimerDurationMinutes = durationMinutes
+                        sleepTimerDeadlineElapsedRealtime =
+                            SystemClock.elapsedRealtime() + durationMinutes * 60_000L
+                        sleepTimerExpired = false
+                        sleepTimerHandler.postDelayed(sleepTimerRunnable, durationMinutes * 60_000L)
+                        sleepTimerState()
+                    }
+                    COMMAND_SLEEP_TIMER_CANCEL -> {
+                        sleepTimerHandler.removeCallbacks(sleepTimerRunnable)
+                        sleepTimerDeadlineElapsedRealtime = 0L
+                        sleepTimerDurationMinutes = 0
+                        sleepTimerExpired = false
+                        sleepTimerState()
                     }
                     else -> Bundle().apply { putBoolean(KEY_SUPPORTED, false) }
                 }
@@ -171,6 +213,32 @@ class KivoraPlaybackService : MediaSessionService() {
         }
     }
 
+    private fun sleepTimerState(): Bundle {
+        val deadline = sleepTimerDeadlineElapsedRealtime
+        val remainingMs = if (deadline > 0L) {
+            (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        } else 0L
+        if (deadline > 0L && remainingMs == 0L) finishSleepTimer()
+        val wasExpired = sleepTimerExpired
+        sleepTimerExpired = false
+        return Bundle().apply {
+            putBoolean(KEY_TIMER_ACTIVE, remainingMs > 0L)
+            putBoolean(KEY_TIMER_EXPIRED, wasExpired)
+            putInt(KEY_DURATION_MINUTES, sleepTimerDurationMinutes)
+            putLong(KEY_REMAINING_MILLIS, remainingMs)
+        }
+    }
+
+    private fun finishSleepTimer() {
+        if (sleepTimerDeadlineElapsedRealtime == 0L) return
+        sleepTimerHandler.removeCallbacks(sleepTimerRunnable)
+        sleepTimerDeadlineElapsedRealtime = 0L
+        sleepTimerDurationMinutes = 0
+        sleepTimerExpired = true
+        musicPlayer?.pause()
+        Toast.makeText(this, "Sleep timer ended. Music paused.", Toast.LENGTH_LONG).show()
+    }
+
     private fun requireEqualizer(): Equalizer = getOrCreateEqualizer()
         ?: error("Equalizer is unavailable for the current music audio session.")
 
@@ -208,6 +276,9 @@ class KivoraPlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onDestroy() {
+        sleepTimerHandler.removeCallbacks(sleepTimerRunnable)
+        sleepTimerDeadlineElapsedRealtime = 0L
+        sleepTimerDurationMinutes = 0
         runCatching { equalizer?.release() }
         releaseBassBoost()
         equalizer = null
@@ -227,6 +298,11 @@ class KivoraPlaybackService : MediaSessionService() {
         const val COMMAND_BASS_BOOST_GET_STATE = "com.kivora.music.BASS_BOOST_GET_STATE"
         const val COMMAND_BASS_BOOST_SET_ENABLED = "com.kivora.music.BASS_BOOST_SET_ENABLED"
         const val COMMAND_BASS_BOOST_SET_STRENGTH = "com.kivora.music.BASS_BOOST_SET_STRENGTH"
+        const val COMMAND_SLEEP_TIMER_GET_STATE = "com.kivora.music.SLEEP_TIMER_GET_STATE"
+        const val COMMAND_SLEEP_TIMER_SET = "com.kivora.music.SLEEP_TIMER_SET"
+        const val COMMAND_SLEEP_TIMER_CANCEL = "com.kivora.music.SLEEP_TIMER_CANCEL"
+
+        val SLEEP_TIMER_OPTIONS_MINUTES = setOf(15, 30, 45, 60)
 
         const val KEY_SUPPORTED = "supported"
         const val KEY_MESSAGE = "message"
@@ -244,5 +320,9 @@ class KivoraPlaybackService : MediaSessionService() {
         const val KEY_MIN_STRENGTH = "min_strength"
         const val KEY_MAX_STRENGTH = "max_strength"
         const val KEY_STRENGTH_SUPPORTED = "strength_supported"
+        const val KEY_DURATION_MINUTES = "duration_minutes"
+        const val KEY_REMAINING_MILLIS = "remaining_millis"
+        const val KEY_TIMER_ACTIVE = "timer_active"
+        const val KEY_TIMER_EXPIRED = "timer_expired"
     }
 }

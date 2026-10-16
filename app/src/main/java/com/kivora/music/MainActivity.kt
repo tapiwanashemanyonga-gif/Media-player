@@ -99,6 +99,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private var fullscreenVideoDialog: android.app.Dialog? = null
+    private var sleepTimerDialog: AlertDialog? = null
+    private var sleepTimerStatus: TextView? = null
+    private var sleepTimerPollRunnable: Runnable? = null
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
     private var selectedVideoUri: String? = null
@@ -749,6 +752,21 @@ class MainActivity : AppCompatActivity() {
         )
 
         times.addView(durationText)
+        val sleepTimerButton = label("☾ TIMER", 10f, Color.rgb(226, 202, 255), true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Open sleep timer options"
+            isClickable = true
+            isFocusable = true
+            minHeight = dp(44)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            setOnClickListener { openSleepTimer() }
+        }
+        times.addView(sleepTimerButton, LinearLayout.LayoutParams(-2, -2).apply {
+            leftMargin = dp(12)
+        })
         playerCard.addView(times)
 
         val playerShortcuts = LinearLayout(this).apply {
@@ -1332,6 +1350,184 @@ class MainActivity : AppCompatActivity() {
             }
             dialog.show()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun openSleepTimer() {
+        val controller = player
+        if (controller == null) {
+            Toast.makeText(this, "Connecting to music service. Please wait.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val future = controller.sendCustomCommand(
+            SessionCommand(KivoraPlaybackService.COMMAND_SLEEP_TIMER_GET_STATE, Bundle.EMPTY),
+            Bundle.EMPTY
+        )
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            val state = result?.extras
+            if (result?.resultCode != androidx.media3.session.SessionResult.RESULT_SUCCESS || state == null || isFinishing || isDestroyed) {
+                if (!isFinishing && !isDestroyed) {
+                    Toast.makeText(this, "Sleep timer is unavailable while the music service is disconnected.", Toast.LENGTH_LONG).show()
+                }
+                return@addListener
+            }
+
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(8), dp(20), dp(8))
+            }
+            sleepTimerStatus = label("", 14f, Color.rgb(226, 202, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(8), 0, dp(14))
+            }
+            content.addView(sleepTimerStatus)
+
+            val optionRows = listOf(listOf(15, 30), listOf(45, 60))
+            optionRows.forEach { options ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                options.forEach { minutes ->
+                    val option = android.widget.Button(this).apply {
+                        text = "$minutes minutes"
+                        contentDescription = "Set sleep timer for $minutes minutes"
+                        isAllCaps = false
+                        setTextColor(Color.WHITE)
+                        background = roundedBackground(Color.rgb(91, 52, 132), 14).apply {
+                            setStroke(dp(1), Color.rgb(192, 132, 252))
+                        }
+                        setOnClickListener { setSleepTimer(minutes) }
+                    }
+                    row.addView(option, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                        if (minutes == 15 || minutes == 45) rightMargin = dp(6) else leftMargin = dp(6)
+                        bottomMargin = dp(8)
+                    })
+                }
+                content.addView(row)
+            }
+
+            val cancelButton = android.widget.Button(this).apply {
+                text = "Cancel Timer"
+                contentDescription = "Cancel the active sleep timer"
+                isAllCaps = false
+                setTextColor(Color.rgb(255, 220, 235))
+                background = roundedBackground(Color.rgb(72, 38, 63), 14).apply {
+                    setStroke(dp(1), Color.rgb(210, 105, 160))
+                }
+                setOnClickListener { cancelSleepTimer() }
+            }
+            content.addView(cancelButton, LinearLayout.LayoutParams(-1, dp(48)))
+
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("Sleep timer")
+                .setView(content)
+                .setPositiveButton("Done", null)
+                .create()
+            dialog.setOnDismissListener {
+                sleepTimerPollRunnable?.let(handler::removeCallbacks)
+                sleepTimerPollRunnable = null
+                sleepTimerDialog = null
+                sleepTimerStatus = null
+            }
+            sleepTimerDialog = dialog
+            updateSleepTimerStatus(state)
+            dialog.show()
+            if (state.getBoolean(KivoraPlaybackService.KEY_TIMER_ACTIVE)) startSleepTimerPolling()
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun setSleepTimer(minutes: Int) {
+        sendSleepTimerCommand(
+            KivoraPlaybackService.COMMAND_SLEEP_TIMER_SET,
+            Bundle().apply { putInt(KivoraPlaybackService.KEY_DURATION_MINUTES, minutes) }
+        ) { state ->
+            updateSleepTimerStatus(state)
+            Toast.makeText(this, "Sleep timer set for $minutes minutes.", Toast.LENGTH_SHORT).show()
+            startSleepTimerPolling()
+        }
+    }
+
+    private fun cancelSleepTimer() {
+        sendSleepTimerCommand(KivoraPlaybackService.COMMAND_SLEEP_TIMER_CANCEL, Bundle.EMPTY) { state ->
+            updateSleepTimerStatus(state)
+            stopSleepTimerPolling()
+            Toast.makeText(this, "Sleep timer cancelled.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun sendSleepTimerCommand(
+        action: String,
+        args: Bundle,
+        onComplete: (Bundle) -> Unit
+    ) {
+        val controller = player
+        if (controller == null) {
+            Toast.makeText(this, "Music service is disconnected; timer setting wasn't applied.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val future = controller.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (!isFinishing && !isDestroyed && result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS) {
+                onComplete(result.extras)
+            } else if (!isFinishing && !isDestroyed) {
+                Toast.makeText(this, "Sleep timer command failed. Check the music service connection.", Toast.LENGTH_LONG).show()
+                stopSleepTimerPolling()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun updateSleepTimerStatus(state: Bundle) {
+        if (state.getBoolean(KivoraPlaybackService.KEY_TIMER_ACTIVE)) {
+            val minutes = state.getInt(KivoraPlaybackService.KEY_DURATION_MINUTES)
+            val remaining = state.getLong(KivoraPlaybackService.KEY_REMAINING_MILLIS)
+            sleepTimerStatus?.text = "$minutes-minute timer · ${formatTime(remaining)} remaining"
+        } else if (state.getBoolean(KivoraPlaybackService.KEY_TIMER_EXPIRED)) {
+            sleepTimerStatus?.text = "Timer finished · music paused"
+        } else {
+            sleepTimerStatus?.text = "No sleep timer is active"
+        }
+    }
+
+    private fun startSleepTimerPolling() {
+        stopSleepTimerPolling()
+        val poll = object : Runnable {
+            override fun run() {
+                if (sleepTimerDialog == null || isFinishing || isDestroyed) return
+                val controller = player ?: run {
+                    sleepTimerStatus?.text = "Music service disconnected"
+                    return
+                }
+                val future = controller.sendCustomCommand(
+                    SessionCommand(KivoraPlaybackService.COMMAND_SLEEP_TIMER_GET_STATE, Bundle.EMPTY),
+                    Bundle.EMPTY
+                )
+                future.addListener({
+                    val result = runCatching { future.get() }.getOrNull()
+                    if (sleepTimerDialog == null || isFinishing || isDestroyed) return@addListener
+                    val state = result?.extras
+                    if (result?.resultCode != androidx.media3.session.SessionResult.RESULT_SUCCESS || state == null) {
+                        sleepTimerStatus?.text = "Music service disconnected"
+                        sleepTimerPollRunnable = null
+                    } else {
+                        updateSleepTimerStatus(state)
+                        if (state.getBoolean(KivoraPlaybackService.KEY_TIMER_ACTIVE)) {
+                            handler.postDelayed(this, 1000L)
+                        } else {
+                            sleepTimerPollRunnable = null
+                        }
+                    }
+                }, ContextCompat.getMainExecutor(this@MainActivity))
+            }
+        }
+        sleepTimerPollRunnable = poll
+        handler.post(poll)
+    }
+
+    private fun stopSleepTimerPolling() {
+        sleepTimerPollRunnable?.let(handler::removeCallbacks)
+        sleepTimerPollRunnable = null
     }
 
     private fun formatEqualizerLevel(millibels: Int): String =
@@ -2434,6 +2630,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(progressUpdater)
+        stopSleepTimerPolling()
+        sleepTimerDialog?.dismiss()
+        sleepTimerDialog = null
+        sleepTimerStatus = null
 
         fullscreenVideoDialog?.dismiss()
         fullscreenVideoDialog = null
