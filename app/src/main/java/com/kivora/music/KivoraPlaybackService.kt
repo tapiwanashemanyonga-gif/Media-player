@@ -269,49 +269,47 @@ class KivoraPlaybackService : MediaSessionService() {
             .build()
 
         val currentIndex = player.currentMediaItemIndex
+        val oldItemCount = player.mediaItemCount
         val wasEmpty = player.mediaItemCount == 0
-        val previousShuffleOrder = if (player.shuffleModeEnabled && !wasEmpty) {
-            player.shuffleOrder
+        val shuffleEnabled = player.shuffleModeEnabled
+        val previousNextIndex = if (shuffleEnabled && currentIndex in 0 until oldItemCount) {
+            player.nextMediaItemIndex
         } else {
-            null
+            androidx.media3.common.C.INDEX_UNSET
         }
-        val insertionIndex = if (playNext && currentIndex in 0 until player.mediaItemCount) {
+        val insertionIndex = if (playNext && currentIndex in 0 until oldItemCount) {
             currentIndex + 1
-        } else player.mediaItemCount
+        } else oldItemCount
         player.addMediaItem(insertionIndex, mediaItem)
 
-        if (wasEmpty) {
-            player.prepare()
-            player.play()
-        } else if (previousShuffleOrder != null) {
-            val oldOrder = buildList {
-                var index = previousShuffleOrder.firstIndex
-                while (index != androidx.media3.common.C.INDEX_UNSET) {
-                    add(index)
-                    index = previousShuffleOrder.getNextIndex(index)
-                }
-            }
+        if (!wasEmpty && shuffleEnabled) {
+            val newItemIndex = player.mediaItemCount - 1
             val remapIndex: (Int) -> Int = { index ->
                 if (index >= insertionIndex) index + 1 else index
             }
-            val shuffleOrder = if (playNext && currentIndex in 0 until player.mediaItemCount) {
-                val currentPosition = oldOrder.indexOf(currentIndex)
-                if (currentPosition >= 0) {
-                    buildList {
-                        add(currentIndex)
-                        add(insertionIndex)
-                        addAll(oldOrder.drop(currentPosition + 1).map(remapIndex))
-                        addAll(oldOrder.take(currentPosition).map(remapIndex))
-                    }
-                } else {
-                    oldOrder.map(remapIndex) + insertionIndex
+            val shuffleOrder = buildList {
+                if (currentIndex in 0 until oldItemCount) add(currentIndex)
+                if (playNext) add(insertionIndex)
+                if (previousNextIndex in 0 until oldItemCount && previousNextIndex != currentIndex) {
+                    add(remapIndex(previousNextIndex))
                 }
-            } else {
-                oldOrder.map(remapIndex) + (player.mediaItemCount - 1)
+                val prioritized = toSet()
+                val remaining = (0 until player.mediaItemCount).filterNot { it in prioritized }
+                    .filterNot { !playNext && it == newItemIndex }
+                    .shuffled()
+                addAll(remaining)
+                if (!playNext) add(newItemIndex)
+                if (isEmpty()) addAll((0 until player.mediaItemCount).shuffled())
             }
             player.setShuffleOrder(
                 DefaultShuffleOrder(shuffleOrder.toIntArray(), SystemClock.elapsedRealtime())
             )
+        }
+
+        if (wasEmpty || (playNext && currentIndex !in 0 until oldItemCount)) {
+            if (!wasEmpty) player.seekTo(insertionIndex, androidx.media3.common.C.TIME_UNSET)
+            player.prepare()
+            player.play()
         }
 
         return Bundle().apply { putBoolean(KEY_SUPPORTED, true) }
@@ -324,14 +322,13 @@ class KivoraPlaybackService : MediaSessionService() {
         if (count == 0) return Bundle().apply { putIntArray(KEY_QUEUE_INDICES, intArrayOf()) }
 
         val currentIndex = player.currentMediaItemIndex
-        val shuffleOrder = if (player.shuffleModeEnabled) player.shuffleOrder else null
         val order = mutableListOf<Int>()
         val seen = mutableSetOf<Int>()
         if (currentIndex in 0 until count) seen.add(currentIndex)
 
         var index = when {
-            currentIndex !in 0 until count -> shuffleOrder?.firstIndex ?: 0
-            shuffleOrder != null -> shuffleOrder.getNextIndex(currentIndex)
+            currentIndex !in 0 until count -> 0
+            player.shuffleModeEnabled -> player.nextMediaItemIndex
             currentIndex + 1 < count -> currentIndex + 1
             else -> androidx.media3.common.C.INDEX_UNSET
         }
@@ -340,13 +337,11 @@ class KivoraPlaybackService : MediaSessionService() {
         while (order.size < expectedSize) {
             if (index == androidx.media3.common.C.INDEX_UNSET) {
                 if (!wrapsQueue) break
-                index = shuffleOrder?.firstIndex ?: 0
+                index = 0
             }
             if (index !in 0 until count || !seen.add(index)) break
             order.add(index)
-            index = if (shuffleOrder != null) {
-                shuffleOrder.getNextIndex(index)
-            } else if (index + 1 < count) {
+            index = if (index + 1 < count) {
                 index + 1
             } else {
                 androidx.media3.common.C.INDEX_UNSET
