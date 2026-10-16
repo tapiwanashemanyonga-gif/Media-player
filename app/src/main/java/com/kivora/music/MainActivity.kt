@@ -102,6 +102,16 @@ class MainActivity : AppCompatActivity() {
     private var sleepTimerDialog: AlertDialog? = null
     private var sleepTimerStatus: TextView? = null
     private var sleepTimerPollRunnable: Runnable? = null
+    private var upNextButton: TextView? = null
+    private var upNextDialog: AlertDialog? = null
+    private var upNextList: LinearLayout? = null
+    private var upNextSummary: TextView? = null
+    private var queueOrderIndices: IntArray? = null
+    private var queueOrderItemCount = -1
+    private var queueOrderCurrentIndex = -1
+    private var queueOrderShuffleEnabled = false
+    private var queueOrderRepeatMode = Player.REPEAT_MODE_OFF
+    private var queueOrderRequestId = 0
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
     private var selectedVideoUri: String? = null
@@ -174,7 +184,12 @@ class MainActivity : AppCompatActivity() {
             mediaItem: MediaItem?,
             reason: Int
         ) {
+            refreshActiveQueue()
             updateNowPlaying()
+        }
+
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            refreshActiveQueue()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -185,10 +200,14 @@ class MainActivity : AppCompatActivity() {
             shuffleModeEnabled: Boolean
         ) {
             updateShuffleButton()
+            requestQueueOrder()
+            renderUpNextQueue()
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
             updateRepeatButton()
+            requestQueueOrder()
+            renderUpNextQueue()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -766,6 +785,21 @@ class MainActivity : AppCompatActivity() {
         }
         times.addView(sleepTimerButton, LinearLayout.LayoutParams(-2, -2).apply {
             leftMargin = dp(12)
+        })
+        upNextButton = label("UP NEXT · 0", 10f, Color.rgb(226, 202, 255), true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "View upcoming songs"
+            isClickable = true
+            isFocusable = true
+            minHeight = dp(44)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            setOnClickListener { openUpNextQueue() }
+        }
+        times.addView(upNextButton, LinearLayout.LayoutParams(-2, -2).apply {
+            leftMargin = dp(8)
         })
         playerCard.addView(times)
 
@@ -2168,17 +2202,6 @@ class MainActivity : AppCompatActivity() {
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
-        if (songs.isEmpty()) {
-            activeQueue = emptyList()
-
-            if (p.mediaItemCount > 0) {
-                p.clearMediaItems()
-            }
-
-            updateNowPlaying()
-            return
-        }
-
         val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
             val uri = p.getMediaItemAt(index)
                 .localConfiguration?.uri?.toString()
@@ -2188,15 +2211,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (
-            p.mediaItemCount > 0 &&
-            existingQueue.size == p.mediaItemCount
-        ) {
+        if (p.mediaItemCount > 0) {
             activeQueue = existingQueue
-        } else {
+        } else if (songs.isNotEmpty()) {
             activeQueue = songs.toList()
             p.setMediaItems(makeMediaItems(activeQueue))
             p.prepare()
+        } else {
+            activeQueue = emptyList()
         }
 
         updateNowPlaying()
@@ -2407,9 +2429,14 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            row.addView(label("›", 24f, Color.rgb(176, 145, 207)).apply {
+            row.addView(label("⋮", 22f, Color.rgb(216, 180, 254), true).apply {
                 gravity = Gravity.CENTER
-                minWidth = dp(22)
+                minWidth = dp(36)
+                minHeight = dp(44)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Queue actions for ${song.title}"
+                setOnClickListener { showQueueActions(song) }
             })
 
             songList.addView(
@@ -2472,6 +2499,347 @@ class MainActivity : AppCompatActivity() {
 
         updateNowPlaying()
         updatePlayButton()
+    }
+
+    private fun showQueueActions(song: Song) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(song.title)
+            .setView(content)
+            .setNegativeButton("Close", null)
+            .create()
+        fun actionButton(text: String, description: String, action: () -> Unit) =
+            android.widget.Button(this).apply {
+                this.text = text
+                contentDescription = description
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = roundedBackground(Color.rgb(72, 42, 101), 14).apply {
+                    setStroke(dp(1), Color.rgb(167, 112, 220))
+                }
+                setOnClickListener {
+                    action()
+                    dialog.dismiss()
+                }
+            }
+
+        content.addView(actionButton("Add to end of queue", "Add ${song.title} to the end of the queue") {
+            enqueueSong(song)
+        }, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(8) })
+        content.addView(actionButton("Play next", "Play ${song.title} after the current song") {
+            playSongNext(song)
+        }, LinearLayout.LayoutParams(-1, dp(48)))
+
+        dialog.show()
+    }
+
+    private fun enqueueSong(song: Song) {
+        if (player == null) return showQueueUnavailable()
+        if (!isAvailableLibrarySong(song)) return showUnavailableSong()
+        sendQueueSongCommand(song, KivoraPlaybackService.COMMAND_QUEUE_ADD_END, "Added to the end of Up Next.")
+    }
+
+    private fun playSongNext(song: Song) {
+        if (player == null) return showQueueUnavailable()
+        if (!isAvailableLibrarySong(song)) return showUnavailableSong()
+        sendQueueSongCommand(song, KivoraPlaybackService.COMMAND_QUEUE_PLAY_NEXT, "Added to play next.")
+    }
+
+    private fun sendQueueSongCommand(song: Song, command: String, successMessage: String) {
+        val controller = player ?: return showQueueUnavailable()
+        val args = Bundle().apply {
+            putString(KivoraPlaybackService.KEY_QUEUE_URI, song.uri.toString())
+            putString(KivoraPlaybackService.KEY_QUEUE_TITLE, song.title)
+            putString(KivoraPlaybackService.KEY_QUEUE_ARTIST, song.artist)
+            putString(KivoraPlaybackService.KEY_QUEUE_ARTWORK_URI, song.artworkUri?.toString())
+        }
+        val future = controller.sendCustomCommand(
+            SessionCommand(command, Bundle.EMPTY),
+            args
+        )
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (isFinishing || isDestroyed) return@addListener
+            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
+                result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)
+            ) {
+                Toast.makeText(this, successMessage, Toast.LENGTH_SHORT).show()
+                refreshActiveQueue()
+            } else {
+                showQueueUnavailable()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun isAvailableLibrarySong(song: Song): Boolean =
+        songs.any { it.uri == song.uri } && song.uri.scheme in setOf("content", "file")
+
+    private fun showUnavailableSong() {
+        Toast.makeText(this, "This song is no longer available in your library.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun showQueueUnavailable() {
+        Toast.makeText(this, "The music queue is unavailable right now.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun openUpNextQueue() {
+        if (player == null) {
+            showQueueUnavailable()
+            return
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(4), dp(18), dp(8))
+        }
+        val summary = label("", 13f, Color.rgb(205, 177, 231), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(12))
+        }
+        upNextSummary = summary
+        content.addView(summary)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        upNextList = list
+        content.addView(ScrollView(this).apply {
+            isFillViewport = false
+            addView(list)
+        }, LinearLayout.LayoutParams(-1, dp(360)))
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Up next")
+            .setView(content)
+            .setPositiveButton("Done", null)
+            .create()
+        dialog.setOnDismissListener {
+            upNextDialog = null
+            upNextList = null
+            upNextSummary = null
+        }
+        upNextDialog = dialog
+        dialog.show()
+        requestQueueOrder()
+        renderUpNextQueue()
+    }
+
+    private fun renderUpNextQueue() {
+        val p = player ?: return
+        val list = upNextList
+        val entries = upcomingQueueEntries()
+        updateUpNextButton(entries.size)
+        val queueSummary = when (entries.size) {
+            0 -> "Nothing queued after the current song"
+            1 -> "1 upcoming song"
+            else -> "${entries.size} upcoming songs"
+        }
+        upNextSummary?.text = when {
+            entries.isEmpty() -> queueSummary
+            p.repeatMode == Player.REPEAT_MODE_ONE -> "$queueSummary · repeat one"
+            p.shuffleModeEnabled -> "$queueSummary · shuffle on"
+            else -> queueSummary
+        }
+        if (list == null) return
+        list.removeAllViews()
+        if (entries.isEmpty()) {
+            list.addView(label(
+                if (p.mediaItemCount == 0) "Your queue is empty. Add songs from the library to start listening." else "No upcoming songs. Add a track from your library to keep the music going.",
+                14f,
+                Color.rgb(190, 169, 211)
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(14), dp(22), dp(14), dp(22))
+                background = roundedBackground(Color.rgb(35, 23, 49), 18).apply {
+                    setStroke(dp(1), Color.rgb(108, 73, 139))
+                }
+            })
+            return
+        }
+
+        entries.forEachIndexed { queuePosition, (mediaIndex, mediaItem) ->
+            val metadata = mediaItem.mediaMetadata
+            val title = metadata.title?.toString()?.takeIf { it.isNotBlank() }
+                ?: mediaItem.localConfiguration?.uri?.lastPathSegment
+                ?: "Unavailable track"
+            val artist = metadata.artist?.toString()?.takeIf { it.isNotBlank() }
+                ?: "Local audio"
+            val song = songForMediaItem(mediaItem)
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(8), dp(8), dp(8))
+                background = roundedBackground(Color.rgb(35, 24, 48), 16).apply {
+                    setStroke(dp(1), Color.rgb(77, 54, 99))
+                }
+                isClickable = song != null
+                isFocusable = song != null
+                contentDescription = if (song != null) "Play $title next" else "$title is unavailable"
+                setOnClickListener {
+                    if (song == null) showUnavailableSong() else playQueuedItem(mediaIndex)
+                }
+            }
+            row.addView(label("${queuePosition + 1}", 12f, Color.rgb(196, 153, 236), true).apply {
+                gravity = Gravity.CENTER
+                minWidth = dp(28)
+            })
+            val cover = ImageView(this).apply {
+                setImageResource(R.drawable.ic_audio_placeholder)
+                background = roundedBackground(Color.rgb(57, 37, 78), 11).apply {
+                    setStroke(dp(1), Color.rgb(111, 75, 146))
+                }
+                clipToOutline = true
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "$title album artwork"
+            }
+            row.addView(cover, LinearLayout.LayoutParams(dp(42), dp(42)))
+            song?.let { loadArtworkInto(cover, it) }
+            val copy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(8), 0, dp(4), 0)
+            }
+            copy.addView(label(title, 14f, Color.WHITE, true).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            copy.addView(label(artist, 11f, Color.rgb(187, 168, 207)).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(3), 0, 0)
+            })
+            row.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(label("×", 24f, Color.rgb(255, 166, 197), true).apply {
+                gravity = Gravity.CENTER
+                minWidth = dp(44)
+                minHeight = dp(44)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Remove $title from queue"
+                setOnClickListener { removeQueuedItem(mediaIndex) }
+            })
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(7)
+            })
+        }
+    }
+
+    private fun upcomingQueueEntries(): List<Pair<Int, MediaItem>> {
+        val p = player ?: return emptyList()
+        if (!p.isCommandAvailable(Player.COMMAND_GET_TIMELINE)) return emptyList()
+        val count = p.mediaItemCount
+        if (count == 0) return emptyList()
+        val currentIndex = p.currentMediaItemIndex
+        val cachedOrder = queueOrderIndices?.takeIf {
+            queueOrderItemCount == count &&
+                queueOrderCurrentIndex == currentIndex &&
+                queueOrderShuffleEnabled == p.shuffleModeEnabled &&
+                queueOrderRepeatMode == p.repeatMode
+        }
+        if (cachedOrder != null) {
+            return cachedOrder.filter { it in 0 until count && it != currentIndex }
+                .map { it to p.getMediaItemAt(it) }
+        }
+        if (currentIndex !in 0 until count) {
+            return (0 until count).map { it to p.getMediaItemAt(it) }
+        }
+        val order = mutableListOf<Int>()
+        if (p.shuffleModeEnabled) {
+            val nextIndex = p.nextMediaItemIndex
+            if (nextIndex in 0 until count && nextIndex != currentIndex) order.add(nextIndex)
+            for (index in 0 until count) {
+                if (index != currentIndex && index !in order) order.add(index)
+            }
+        } else {
+            for (step in 1 until count) {
+                val index = (currentIndex + step) % count
+                if (p.repeatMode != Player.REPEAT_MODE_ALL && index < currentIndex) break
+                order.add(index)
+            }
+        }
+        return order.map { it to p.getMediaItemAt(it) }
+    }
+
+    private fun playQueuedItem(mediaIndex: Int) {
+        val p = player ?: return showQueueUnavailable()
+        if (mediaIndex !in 0 until p.mediaItemCount) {
+            renderUpNextQueue()
+            return
+        }
+        val item = p.getMediaItemAt(mediaIndex)
+        if (songForMediaItem(item) == null) return showUnavailableSong()
+        try {
+            p.seekTo(mediaIndex, 0L)
+            p.play()
+            upNextDialog?.dismiss()
+        } catch (_: Exception) {
+            showUnavailableSong()
+        }
+    }
+
+    private fun removeQueuedItem(mediaIndex: Int) {
+        val p = player ?: return showQueueUnavailable()
+        if (mediaIndex !in 0 until p.mediaItemCount || mediaIndex == p.currentMediaItemIndex) {
+            renderUpNextQueue()
+            return
+        }
+        if (!p.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) return showQueueUnavailable()
+        try {
+            p.removeMediaItem(mediaIndex)
+            renderUpNextQueue()
+        } catch (_: Exception) {
+            showQueueUnavailable()
+        }
+    }
+
+    private fun songForMediaItem(mediaItem: MediaItem): Song? {
+        val uri = mediaItem.localConfiguration?.uri ?: return null
+        return songs.firstOrNull { it.uri == uri }
+            ?.takeIf { isAvailableLibrarySong(it) }
+    }
+
+    private fun refreshActiveQueue() {
+        val p = player ?: return
+        if (!p.isCommandAvailable(Player.COMMAND_GET_TIMELINE)) return
+        activeQueue = (0 until p.mediaItemCount).mapNotNull { index ->
+            songForMediaItem(p.getMediaItemAt(index))
+        }
+        requestQueueOrder()
+        renderUpNextQueue()
+    }
+
+    private fun requestQueueOrder() {
+        val controller = player ?: return
+        if (!controller.isCommandAvailable(Player.COMMAND_GET_TIMELINE)) return
+        val requestId = ++queueOrderRequestId
+        queueOrderIndices = null
+        val itemCount = controller.mediaItemCount
+        val currentIndex = controller.currentMediaItemIndex
+        val shuffleEnabled = controller.shuffleModeEnabled
+        val repeatMode = controller.repeatMode
+        val future = controller.sendCustomCommand(
+            SessionCommand(KivoraPlaybackService.COMMAND_QUEUE_GET_ORDER, Bundle.EMPTY),
+            Bundle.EMPTY
+        )
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (requestId != queueOrderRequestId || isFinishing || isDestroyed) return@addListener
+            val indices = result?.extras?.getIntArray(KivoraPlaybackService.KEY_QUEUE_INDICES)
+            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS && indices != null) {
+                queueOrderIndices = indices
+                queueOrderItemCount = itemCount
+                queueOrderCurrentIndex = currentIndex
+                queueOrderShuffleEnabled = shuffleEnabled
+                queueOrderRepeatMode = repeatMode
+                renderUpNextQueue()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun updateUpNextButton(count: Int? = null) {
+        val button = upNextButton ?: return
+        val upcomingCount = count ?: upcomingQueueEntries().size
+        button.text = "UP NEXT · $upcomingCount"
+        button.contentDescription = "View $upcomingCount upcoming songs"
     }
 
     private fun updateNowPlaying() {
@@ -2634,6 +3002,10 @@ class MainActivity : AppCompatActivity() {
         sleepTimerDialog?.dismiss()
         sleepTimerDialog = null
         sleepTimerStatus = null
+        upNextDialog?.dismiss()
+        upNextDialog = null
+        upNextList = null
+        upNextSummary = null
 
         fullscreenVideoDialog?.dismiss()
         fullscreenVideoDialog = null

@@ -2,12 +2,14 @@ package com.kivora.music
 
 import android.media.audiofx.Equalizer
 import android.media.audiofx.BassBoost
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -58,6 +60,9 @@ class KivoraPlaybackService : MediaSessionService() {
                 commands.add(SessionCommand(COMMAND_SLEEP_TIMER_GET_STATE, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_SLEEP_TIMER_SET, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_SLEEP_TIMER_CANCEL, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_QUEUE_ADD_END, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_QUEUE_PLAY_NEXT, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_QUEUE_GET_ORDER, Bundle.EMPTY))
             }
             return MediaSession.ConnectionResult.accept(
                 commands.build(),
@@ -65,6 +70,7 @@ class KivoraPlaybackService : MediaSessionService() {
             )
         }
 
+        @androidx.media3.common.util.UnstableApi
         override fun onCustomCommand(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -129,6 +135,9 @@ class KivoraPlaybackService : MediaSessionService() {
                         sleepTimerExpired = false
                         sleepTimerState()
                     }
+                    COMMAND_QUEUE_ADD_END -> addQueueItem(args, playNext = false)
+                    COMMAND_QUEUE_PLAY_NEXT -> addQueueItem(args, playNext = true)
+                    COMMAND_QUEUE_GET_ORDER -> queueOrderState()
                     else -> Bundle().apply { putBoolean(KEY_SUPPORTED, false) }
                 }
             }.getOrElse { error ->
@@ -239,6 +248,113 @@ class KivoraPlaybackService : MediaSessionService() {
         Toast.makeText(this, "Sleep timer ended. Music paused.", Toast.LENGTH_LONG).show()
     }
 
+    @androidx.media3.common.util.UnstableApi
+    private fun addQueueItem(args: Bundle, playNext: Boolean): Bundle {
+        val player = musicPlayer ?: error("Music player is unavailable.")
+        val uri = Uri.parse(args.getString(KEY_QUEUE_URI).orEmpty())
+        require(uri.scheme == "content" || uri.scheme == "file") { "Invalid local audio URI." }
+        val title = args.getString(KEY_QUEUE_TITLE).orEmpty().ifBlank { "Unknown title" }
+        val artist = args.getString(KEY_QUEUE_ARTIST).orEmpty()
+        val artworkUri = args.getString(KEY_QUEUE_ARTWORK_URI)?.let(Uri::parse)
+        val mediaItem = androidx.media3.common.MediaItem.Builder()
+            .setMediaId(uri.toString())
+            .setUri(uri)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist)
+                    .apply { artworkUri?.let { setArtworkUri(it) } }
+                    .build()
+            )
+            .build()
+
+        val currentIndex = player.currentMediaItemIndex
+        val wasEmpty = player.mediaItemCount == 0
+        val previousShuffleOrder = if (player.shuffleModeEnabled && !wasEmpty) {
+            player.shuffleOrder
+        } else {
+            null
+        }
+        val insertionIndex = if (playNext && currentIndex in 0 until player.mediaItemCount) {
+            currentIndex + 1
+        } else player.mediaItemCount
+        player.addMediaItem(insertionIndex, mediaItem)
+
+        if (wasEmpty) {
+            player.prepare()
+            player.play()
+        } else if (previousShuffleOrder != null) {
+            val oldOrder = buildList {
+                var index = previousShuffleOrder.firstIndex
+                while (index != androidx.media3.common.C.INDEX_UNSET) {
+                    add(index)
+                    index = previousShuffleOrder.getNextIndex(index)
+                }
+            }
+            val remapIndex: (Int) -> Int = { index ->
+                if (index >= insertionIndex) index + 1 else index
+            }
+            val shuffleOrder = if (playNext && currentIndex in 0 until player.mediaItemCount) {
+                val currentPosition = oldOrder.indexOf(currentIndex)
+                if (currentPosition >= 0) {
+                    buildList {
+                        add(currentIndex)
+                        add(insertionIndex)
+                        addAll(oldOrder.drop(currentPosition + 1).map(remapIndex))
+                        addAll(oldOrder.take(currentPosition).map(remapIndex))
+                    }
+                } else {
+                    oldOrder.map(remapIndex) + insertionIndex
+                }
+            } else {
+                oldOrder.map(remapIndex) + (player.mediaItemCount - 1)
+            }
+            player.setShuffleOrder(
+                DefaultShuffleOrder(shuffleOrder.toIntArray(), SystemClock.elapsedRealtime())
+            )
+        }
+
+        return Bundle().apply { putBoolean(KEY_SUPPORTED, true) }
+    }
+
+    @androidx.media3.common.util.UnstableApi
+    private fun queueOrderState(): Bundle {
+        val player = musicPlayer ?: error("Music player is unavailable.")
+        val count = player.mediaItemCount
+        if (count == 0) return Bundle().apply { putIntArray(KEY_QUEUE_INDICES, intArrayOf()) }
+
+        val currentIndex = player.currentMediaItemIndex
+        val shuffleOrder = if (player.shuffleModeEnabled) player.shuffleOrder else null
+        val order = mutableListOf<Int>()
+        val seen = mutableSetOf<Int>()
+        if (currentIndex in 0 until count) seen.add(currentIndex)
+
+        var index = when {
+            currentIndex !in 0 until count -> shuffleOrder?.firstIndex ?: 0
+            shuffleOrder != null -> shuffleOrder.getNextIndex(currentIndex)
+            currentIndex + 1 < count -> currentIndex + 1
+            else -> androidx.media3.common.C.INDEX_UNSET
+        }
+        val wrapsQueue = player.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
+        val expectedSize = count - if (currentIndex in 0 until count) 1 else 0
+        while (order.size < expectedSize) {
+            if (index == androidx.media3.common.C.INDEX_UNSET) {
+                if (!wrapsQueue) break
+                index = shuffleOrder?.firstIndex ?: 0
+            }
+            if (index !in 0 until count || !seen.add(index)) break
+            order.add(index)
+            index = if (shuffleOrder != null) {
+                shuffleOrder.getNextIndex(index)
+            } else if (index + 1 < count) {
+                index + 1
+            } else {
+                androidx.media3.common.C.INDEX_UNSET
+            }
+        }
+        return Bundle().apply { putIntArray(KEY_QUEUE_INDICES, order.toIntArray()) }
+    }
+
     private fun requireEqualizer(): Equalizer = getOrCreateEqualizer()
         ?: error("Equalizer is unavailable for the current music audio session.")
 
@@ -301,6 +417,9 @@ class KivoraPlaybackService : MediaSessionService() {
         const val COMMAND_SLEEP_TIMER_GET_STATE = "com.kivora.music.SLEEP_TIMER_GET_STATE"
         const val COMMAND_SLEEP_TIMER_SET = "com.kivora.music.SLEEP_TIMER_SET"
         const val COMMAND_SLEEP_TIMER_CANCEL = "com.kivora.music.SLEEP_TIMER_CANCEL"
+        const val COMMAND_QUEUE_ADD_END = "com.kivora.music.QUEUE_ADD_END"
+        const val COMMAND_QUEUE_PLAY_NEXT = "com.kivora.music.QUEUE_PLAY_NEXT"
+        const val COMMAND_QUEUE_GET_ORDER = "com.kivora.music.QUEUE_GET_ORDER"
 
         val SLEEP_TIMER_OPTIONS_MINUTES = setOf(15, 30, 45, 60)
 
@@ -324,5 +443,10 @@ class KivoraPlaybackService : MediaSessionService() {
         const val KEY_REMAINING_MILLIS = "remaining_millis"
         const val KEY_TIMER_ACTIVE = "timer_active"
         const val KEY_TIMER_EXPIRED = "timer_expired"
+        const val KEY_QUEUE_URI = "queue_uri"
+        const val KEY_QUEUE_TITLE = "queue_title"
+        const val KEY_QUEUE_ARTIST = "queue_artist"
+        const val KEY_QUEUE_ARTWORK_URI = "queue_artwork_uri"
+        const val KEY_QUEUE_INDICES = "queue_indices"
     }
 }
