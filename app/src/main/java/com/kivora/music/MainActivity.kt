@@ -625,7 +625,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         playerCard.addView(
-            label("NOW PLAYING  ·  A1 SESSION", 10f, Color.rgb(211, 176, 255), true).apply {
+            label("NOW PLAYING", 11f, Color.rgb(211, 176, 255), true).apply {
                 gravity = Gravity.CENTER
                 letterSpacing = 0.16f
             },
@@ -647,15 +647,21 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
         }
 
+        val artworkSize = (resources.configuration.screenWidthDp - 100).coerceIn(240, 420)
         playerCard.addView(
             artwork,
-            LinearLayout.LayoutParams(dp(220), dp(220)).apply {
+            LinearLayout.LayoutParams(dp(artworkSize), dp(artworkSize)).apply {
                 gravity = Gravity.CENTER
-                bottomMargin = dp(18)
+                bottomMargin = dp(22)
             }
         )
 
-        nowTitle = label("Choose a song", 22f, Color.rgb(255, 252, 255), true).apply {
+        nowTitle = label(
+            "Choose a song",
+            if (resources.configuration.screenWidthDp >= 600) 29f else 26f,
+            Color.rgb(255, 252, 255),
+            true
+        ).apply {
             gravity = Gravity.CENTER
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -673,8 +679,8 @@ class MainActivity : AppCompatActivity() {
 
         nowArtist = label(
             "Your library is ready",
-            13f,
-            Color.rgb(203, 180, 225)
+            15f,
+            Color.rgb(211, 190, 235)
         ).apply {
             gravity = Gravity.CENTER
             maxLines = 1
@@ -724,9 +730,9 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         if (fromUser) {
                             val d = player?.duration ?: 0L
-                            elapsedText.text = formatTime(
-                                d * value / 1000L
-                            )
+                            val targetPosition = d * value / 1000L
+                            elapsedText.text = formatTime(targetPosition)
+                            durationText.text = "−${formatTime(d - targetPosition)}"
                         }
                     }
 
@@ -755,15 +761,15 @@ class MainActivity : AppCompatActivity() {
 
         elapsedText = label(
             "0:00",
-            10f,
-            Color.rgb(174, 159, 194)
+            12f,
+            Color.rgb(221, 207, 238)
         )
 
         durationText = label(
-            "0:00",
-            10f,
-            Color.rgb(174, 159, 194)
-        )
+            "−0:00",
+            12f,
+            Color.rgb(221, 207, 238)
+        ).apply { contentDescription = "Time remaining" }
 
         times.addView(
             elapsedText,
@@ -931,11 +937,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        controls.addView(shuffleButton)
-        controls.addView(previousButton)
-        controls.addView(playButton)
-        controls.addView(nextButton)
-        controls.addView(repeatButton)
+        fun transportParams(): LinearLayout.LayoutParams =
+            LinearLayout.LayoutParams(-2, -2).apply {
+                leftMargin = dp(4)
+                rightMargin = dp(4)
+            }
+
+        controls.addView(shuffleButton, transportParams())
+        controls.addView(previousButton, transportParams())
+        controls.addView(playButton, transportParams().apply {
+            topMargin = dp(2)
+            bottomMargin = dp(2)
+        })
+        controls.addView(nextButton, transportParams())
+        controls.addView(repeatButton, transportParams())
 
         playerCard.addView(controls)
 
@@ -2981,7 +2996,7 @@ class MainActivity : AppCompatActivity() {
             elapsedText.text = formatTime(position)
         }
 
-        durationText.text = formatTime(duration)
+        durationText.text = "−${formatTime(duration - position)}"
     }
 
     private fun formatTime(milliseconds: Long): String {
