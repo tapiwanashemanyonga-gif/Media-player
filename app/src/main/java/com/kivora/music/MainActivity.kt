@@ -35,6 +35,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -89,6 +90,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoStatus: TextView
     private lateinit var videoPlayerView: PlayerView
     private var videoPlayer: ExoPlayer? = null
+    private var navigationVideoUri: String? = null
+    private var lastFailedVideoUri: String? = null
+    private val videoPlayerErrorListener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            reportVideoPlaybackFailure()
+        }
+    }
     private var fullscreenVideoDialog: android.app.Dialog? = null
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
@@ -476,12 +484,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         videoPlayer = ExoPlayer.Builder(this).build()
+        videoPlayer?.addListener(videoPlayerErrorListener)
         videoPlayerView = PlayerView(this).apply {
             player = videoPlayer
             useController = true
-                setBackgroundColor(Color.rgb(8, 6, 13))
-                setShutterBackgroundColor(Color.rgb(8, 6, 13))
-                contentDescription = "Video player"
+            setBackgroundColor(Color.rgb(8, 6, 13))
+            setShutterBackgroundColor(Color.rgb(8, 6, 13))
+            contentDescription = "Video player"
         }
         val videoPlayerActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2090,6 +2099,7 @@ class MainActivity : AppCompatActivity() {
         if (::videoPlayerView.isInitialized) {
             videoPlayerView.player = null
         }
+        videoPlayer?.removeListener(videoPlayerErrorListener)
         videoPlayer?.release()
         videoPlayer = null
 
@@ -2226,16 +2236,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun playDeviceVideo(video: DeviceVideo) {
+    private fun playDeviceVideo(video: DeviceVideo): Boolean {
+        if (!isVideoAvailable(video)) {
+            Toast.makeText(this, "This video is unavailable.", Toast.LENGTH_SHORT).show()
+            return false
+        }
         selectedVideoUri = video.uri.toString()
+        navigationVideoUri = video.uri.toString()
+        lastFailedVideoUri = null
         renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
         // KIVORA_FIX_AUDIO_VIDEO_V1
         player?.pause()
-        videoPlayer?.apply {
-            setMediaItem(MediaItem.fromUri(video.uri))
-            prepare()
-            playWhenReady = true
+        return try {
+            videoPlayer?.apply {
+                setMediaItem(MediaItem.fromUri(video.uri))
+                prepare()
+                playWhenReady = true
+            } != null
+        } catch (_: RuntimeException) {
+            reportVideoPlaybackFailure(video.uri.toString())
+            false
         }
     }
 
@@ -2245,6 +2266,7 @@ class MainActivity : AppCompatActivity() {
         if (fullscreenVideoDialog?.isShowing == true) return
 
         val parent = videoPlayerView.parent as? android.view.ViewGroup ?: return
+        videoPlayerView.useController = false
         parent.removeView(videoPlayerView)
 
         val dialog = android.app.Dialog(
@@ -2262,11 +2284,235 @@ class MainActivity : AppCompatActivity() {
                 Gravity.CENTER
             )
         )
-        dialog.setContentView(fullscreenRoot)
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(25, 15, 37), Color.TRANSPARENT)
+            )
+        }
+        val topControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        var showControls: (() -> Unit)? = null
+        fun control(text: String, description: String, onClick: () -> Unit) =
+            label(text, 18f, Color.rgb(245, 235, 255), true).apply {
+                gravity = Gravity.CENTER
+                minWidth = dp(48)
+                minHeight = dp(48)
+                contentDescription = description
+                background = roundedBackground(Color.rgb(54, 35, 73), 14)
+                setOnClickListener {
+                    showControls?.invoke()
+                    onClick()
+                }
+            }
+        val exitButton = control("‹", "Exit fullscreen") { dialog.dismiss() }
+        val menuButton = label("☰", 18f, Color.rgb(245, 235, 255), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(48)
+            minHeight = dp(48)
+            contentDescription = "Open video list"
+            background = roundedBackground(Color.rgb(54, 35, 73), 14)
+        }
+        val currentTitle = label("", 14f, Color.WHITE, true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(12), 0, dp(8), 0)
+        }
+        topControls.addView(exitButton)
+        topControls.addView(currentTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        topControls.addView(menuButton)
+        controls.addView(topControls)
+
+        val menuPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = roundedBackground(Color.rgb(31, 21, 43), 16).apply {
+                setStroke(dp(1), Color.rgb(112, 72, 148))
+            }
+            visibility = View.GONE
+        }
+        val menuScroll = ScrollView(this)
+        menuScroll.addView(menuPanel)
+        controls.addView(menuScroll, LinearLayout.LayoutParams(-1, dp(220)).apply { topMargin = dp(8) })
+
+        val bottomControls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(12), dp(16), dp(16))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+                intArrayOf(Color.rgb(25, 15, 37), Color.TRANSPARENT)
+            )
+        }
+        val transport = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val previousButton = control("|◀", "Previous video") { navigateVideo(-1) }
+        val playPauseButton = control("Ⅱ", "Pause video") {
+            videoPlayer?.let { if (it.isPlaying) it.pause() else it.play() }
+        }
+        val nextButton = control("▶|", "Next video") { navigateVideo(1) }
+        transport.addView(previousButton)
+        transport.addView(playPauseButton, LinearLayout.LayoutParams(dp(64), dp(52)).apply {
+            leftMargin = dp(18); rightMargin = dp(18)
+        })
+        transport.addView(nextButton)
+        bottomControls.addView(transport)
+
+        val seekRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val elapsed = label("0:00", 12f, Color.rgb(223, 207, 241))
+        val duration = label("0:00", 12f, Color.rgb(223, 207, 241))
+        val seek = SeekBar(this).apply {
+            max = 1000
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(184, 126, 243))
+            thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(225, 196, 255))
+        }
+        var seeking = false
+        var scheduleHide: (() -> Unit)? = null
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(bar: SeekBar) {
+                seeking = true
+                showControls?.invoke()
+            }
+            override fun onStopTrackingTouch(bar: SeekBar) {
+                val length = videoPlayer?.duration ?: C.TIME_UNSET
+                if (length > 0 && length != C.TIME_UNSET) videoPlayer?.seekTo(length * bar.progress / 1000L)
+                seeking = false
+                if (videoPlayer?.isPlaying == true) scheduleHide?.invoke()
+            }
+            override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                if (fromUser) elapsed.text = formatTime((videoPlayer?.duration?.coerceAtLeast(0L) ?: 0L) * value / 1000L)
+            }
+        })
+        seekRow.addView(elapsed)
+        seekRow.addView(seek, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(8); rightMargin = dp(8) })
+        seekRow.addView(duration)
+        bottomControls.addView(seekRow)
+        fullscreenRoot.addView(controls, android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        fullscreenRoot.addView(bottomControls, android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+
+        fun refreshMenu() {
+            menuPanel.removeAllViews()
+            if (deviceVideos.isEmpty()) {
+                menuPanel.addView(label("No videos available", 14f, Color.rgb(190, 175, 210)))
+                return
+            }
+            deviceVideos.forEach { video ->
+                val selected = video.uri.toString() == selectedVideoUri
+                val row = label("${if (selected) "✓  " else ""}${video.title}", 14f,
+                    if (selected) Color.rgb(218, 177, 255) else Color.WHITE, selected).apply {
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    isClickable = true
+                    isFocusable = true
+                    background = roundedBackground(if (selected) Color.rgb(67, 42, 89) else Color.TRANSPARENT, 12)
+                    contentDescription = "Play ${video.title}${if (selected) ", current video" else ""}"
+                    setOnClickListener {
+                        val started = playDeviceVideo(video)
+                        refreshMenu()
+                        if (started) {
+                            menuPanel.visibility = View.GONE
+                            showControls?.invoke()
+                        }
+                    }
+                }
+                menuPanel.addView(row)
+            }
+        }
+
+        var controlsVisible = true
+        val hideControls = Runnable {
+            if (videoPlayer?.isPlaying == true && !seeking && menuPanel.visibility != View.VISIBLE) {
+                controls.visibility = View.GONE
+                bottomControls.visibility = View.GONE
+                controlsVisible = false
+            }
+        }
+        scheduleHide = {
+            handler.removeCallbacks(hideControls)
+            handler.postDelayed(hideControls, 3500)
+        }
+        fun updateControls() {
+            val p = videoPlayer ?: return
+            val position = p.currentPosition.coerceAtLeast(0L)
+            val length = p.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
+            if (!seeking) seek.progress = if (length > 0) (position * 1000L / length).toInt().coerceIn(0, 1000) else 0
+            elapsed.text = formatTime(position)
+            duration.text = formatTime(length)
+            currentTitle.text = deviceVideos.firstOrNull { it.uri.toString() == selectedVideoUri }?.title
+                ?: if (lastFailedVideoUri != null) "Playback error" else "Video"
+            val playing = p.isPlaying
+            playPauseButton.text = if (playing) "Ⅱ" else "▶"
+            playPauseButton.contentDescription = if (playing) "Pause video" else "Play video"
+            if (!playing) {
+                handler.removeCallbacks(hideControls)
+                controls.visibility = View.VISIBLE
+                bottomControls.visibility = View.VISIBLE
+                controlsVisible = true
+            }
+        }
+        showControls = {
+            controls.visibility = View.VISIBLE
+            bottomControls.visibility = View.VISIBLE
+            controlsVisible = true
+            updateControls()
+            if (videoPlayer?.isPlaying == true) scheduleHide?.invoke()
+            else handler.removeCallbacks(hideControls)
+        }
+        menuButton.setOnClickListener {
+            val open = menuPanel.visibility != View.VISIBLE
+            if (open) refreshMenu()
+            menuPanel.visibility = if (open) View.VISIBLE else View.GONE
+            showControls?.invoke()
+        }
+        videoPlayerView.setOnClickListener {
+            if (controlsVisible && videoPlayer?.isPlaying == true && !seeking) {
+                handler.removeCallbacks(hideControls)
+                controls.visibility = View.GONE
+                bottomControls.visibility = View.GONE
+                controlsVisible = false
+            } else showControls?.invoke()
+        }
+        val progressTick = object : Runnable {
+            override fun run() {
+                if (fullscreenVideoDialog === dialog && dialog.isShowing) {
+                    updateControls()
+                    handler.postDelayed(this, 500)
+                }
+            }
+        }
+        val playerListener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updateControls()
+                if (isPlaying && controlsVisible && !seeking) scheduleHide?.invoke()
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                refreshMenu()
+                updateControls()
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                refreshMenu()
+                updateControls()
+            }
+        }
+        videoPlayer?.addListener(playerListener)
         dialog.setOnDismissListener {
+            handler.removeCallbacks(hideControls)
+            handler.removeCallbacks(progressTick)
+            videoPlayer?.removeListener(playerListener)
+            videoPlayerView.setOnClickListener(null)
+            videoPlayerView.useController = true
             restoreVideoPlayerView()
             if (fullscreenVideoDialog === dialog) fullscreenVideoDialog = null
         }
+        dialog.setContentView(fullscreenRoot)
         fullscreenVideoDialog = dialog
         dialog.show()
         dialog.window?.setLayout(
@@ -2281,6 +2527,58 @@ class MainActivity : AppCompatActivity() {
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         }
+        refreshMenu()
+        updateControls()
+        handler.post(progressTick)
+        if (videoPlayer?.isPlaying == true) scheduleHide?.invoke()
+    }
+
+    private fun isVideoAvailable(video: DeviceVideo): Boolean = try {
+        contentResolver.openFileDescriptor(video.uri, "r")?.use { true } ?: false
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun navigateVideo(direction: Int) {
+        if (deviceVideos.isEmpty()) {
+            Toast.makeText(this, "No videos are available.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val currentUri = selectedVideoUri ?: navigationVideoUri
+        val current = deviceVideos.indexOfFirst { it.uri.toString() == currentUri }
+        val start = if (current < 0) if (direction > 0) -1 else 0 else current
+        var index = start
+        repeat(deviceVideos.size) {
+            index = (index + direction + deviceVideos.size) % deviceVideos.size
+            val candidate = deviceVideos[index]
+            if (isVideoAvailable(candidate)) {
+                playDeviceVideo(candidate)
+                return
+            }
+        }
+        Toast.makeText(this, "No playable videos are available.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun reportVideoPlaybackFailure(failedVideoUri: String? = null) {
+        if (isFinishing || isDestroyed) return
+        val currentUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
+        if (failedVideoUri == null && currentUri != null && navigationVideoUri != null &&
+            currentUri != navigationVideoUri
+        ) return
+        val failedUri = failedVideoUri ?: navigationVideoUri ?: selectedVideoUri
+        if (failedUri != null && failedUri == lastFailedVideoUri) return
+        lastFailedVideoUri = failedUri
+        val failedTitle = deviceVideos.firstOrNull { it.uri.toString() == failedUri }?.title ?: "video"
+        selectedVideoUri = null
+        if (::videoStatus.isInitialized) {
+            renderVideos(searchBox.text?.toString().orEmpty())
+            videoStatus.text = "Couldn't play $failedTitle. Choose another video or use previous/next."
+        }
+        Toast.makeText(
+            this,
+            "Couldn't play $failedTitle. Choose another video.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun restoreVideoPlayerView() {
