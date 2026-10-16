@@ -78,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
     private lateinit var searchBox: EditText
+    private lateinit var clearSearchButton: TextView
     private lateinit var progress: SeekBar
     private lateinit var elapsedText: TextView
     private lateinit var durationText: TextView
@@ -85,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var favoriteFilterButton: TextView
     private lateinit var playlistButton: TextView
     private lateinit var libraryHeader: LinearLayout
+    private lateinit var sortContainer: LinearLayout
+    private lateinit var sortButton: TextView
     private lateinit var songScroll: ScrollView
     private lateinit var playerCard: LinearLayout
     private lateinit var playerScroll: ScrollView
@@ -138,6 +141,7 @@ class MainActivity : AppCompatActivity() {
     private var libraryBrowseMode = "songs"
     private var selectedAlbumKey: String? = null
     private var selectedArtistName: String? = null
+    private var librarySortMode = "title"
     private var userSeeking = false
 
     private val handler = Handler(Looper.getMainLooper())
@@ -407,10 +411,23 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Search songs, artists and albums"
         }
 
-        root.addView(
-            searchBox,
-            LinearLayout.LayoutParams(-1, dp(54))
-        )
+        val searchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        searchRow.addView(searchBox, LinearLayout.LayoutParams(0, dp(54), 1f))
+        clearSearchButton = label("×", 25f, Color.rgb(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(48)
+            minHeight = dp(48)
+            visibility = View.GONE
+            contentDescription = "Clear search"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { searchBox.text?.clear() }
+        }
+        searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
+        root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
 
         libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -530,6 +547,25 @@ class MainActivity : AppCompatActivity() {
         libraryHeader.addView(libraryBrowseBar, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(12)
         })
+
+        sortButton = label("↕  SORT · TITLE A–Z", 10f, Color.rgb(224, 205, 245), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(13), dp(10), dp(13), dp(10))
+            background = roundedBackground(Color.rgb(39, 26, 54), 14).apply {
+                setStroke(dp(1), Color.rgb(89, 63, 115))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Sort library songs"
+            setOnClickListener { showSortOptions() }
+        }
+        sortContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dp(8), 0, 0)
+            addView(sortButton)
+        }
+        libraryHeader.addView(sortContainer)
 
         root.addView(libraryHeader)
 
@@ -1196,6 +1232,8 @@ class MainActivity : AppCompatActivity() {
                     before: Int,
                     count: Int
                 ) {
+                    clearSearchButton.visibility =
+                        if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                     if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
                 }
 
@@ -2664,7 +2702,8 @@ class MainActivity : AppCompatActivity() {
             val uri = song.uri.toString()
 
             val searchableText = normalizedSearchText.getOrPut(uri) {
-                (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
+                (song.title.trim() + " " + song.artist.trim() + " " + song.album.trim())
+                    .lowercase(Locale.ROOT)
             }
 
             val matchesQuery =
@@ -2683,17 +2722,20 @@ class MainActivity : AppCompatActivity() {
         val isLibraryBrowse = currentTab == "library"
         val isLibraryDetail = isLibraryBrowse &&
             (selectedAlbumKey != null || selectedArtistName != null)
-        val visibleSongs = matches.filter { song ->
+        val visibleSongs = sortLibrarySongs(matches.filter { song ->
             if (!isLibraryBrowse) return@filter true
             when {
                 selectedAlbumKey != null -> albumGroupKey(song) == selectedAlbumKey
                 selectedArtistName != null -> song.artist.equals(selectedArtistName, ignoreCase = true)
                 else -> true
             }
-        }
+        })
         val showingCollections = isLibraryBrowse &&
             selectedAlbumKey == null && selectedArtistName == null &&
             libraryBrowseMode != "songs"
+        if (::sortContainer.isInitialized) {
+            sortContainer.visibility = if (showingCollections) View.GONE else View.VISIBLE
+        }
         val albumCount = visibleSongs.map(::albumGroupKey).distinct().size
         val artistCount = visibleSongs.map { it.artist.lowercase(Locale.ROOT) }.distinct().size
 
@@ -2719,7 +2761,8 @@ class MainActivity : AppCompatActivity() {
                 showFavoritesOnly ->
                     "No favourites yet.\nTap ☆ beside a song to add it."
 
-                else -> "No songs match your search."
+                normalized.isNotEmpty() -> "No songs match your search. Use × to clear it."
+                else -> "No songs match your filters."
             }
 
             songList.addView(
@@ -3472,6 +3515,55 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateProgress()
+    }
+
+    private fun sortLibrarySongs(items: List<Song>): List<Song> = when (librarySortMode) {
+        "artist" -> items.sortedWith(
+            compareBy<Song> { it.artist.trim().lowercase(Locale.ROOT) }
+                .thenBy { it.title.trim().lowercase(Locale.ROOT) }
+        )
+        "recent" -> items.sortedWith(
+            compareBy<Song> {
+                recentlyPlayedUris.indexOf(it.uri.toString()).let { index ->
+                    if (index < 0) Int.MAX_VALUE else index
+                }
+            }.thenBy { it.title.trim().lowercase(Locale.ROOT) }
+        )
+        else -> items.sortedWith(
+            compareBy<Song> { it.title.trim().lowercase(Locale.ROOT) }
+                .thenBy { it.artist.trim().lowercase(Locale.ROOT) }
+        )
+    }
+
+    private fun updateSortButton() {
+        if (!::sortButton.isInitialized) return
+        val label = when (librarySortMode) {
+            "artist" -> "ARTIST A–Z"
+            "recent" -> "RECENTLY PLAYED"
+            else -> "TITLE A–Z"
+        }
+        sortButton.text = "↕  SORT · $label"
+        sortButton.contentDescription = "Sort library by $label"
+    }
+
+    private fun showSortOptions() {
+        val modes = mutableListOf("title", "artist")
+        val labels = mutableListOf("Title A–Z", "Artist A–Z")
+        if (recentlyPlayedUris.isNotEmpty()) {
+            modes.add("recent")
+            labels.add("Recently played")
+        }
+        val selected = modes.indexOf(librarySortMode).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Sort songs")
+            .setSingleChoiceItems(labels.toTypedArray(), selected) { dialog, which ->
+                librarySortMode = modes[which]
+                updateSortButton()
+                renderSongs(searchBox.text?.toString().orEmpty())
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun updatePlayButton() {
