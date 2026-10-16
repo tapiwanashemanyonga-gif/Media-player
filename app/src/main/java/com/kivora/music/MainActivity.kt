@@ -791,8 +791,21 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openEqualizer() }
         }
 
+        val bassBoostButton = label("♫  BASS BOOST", 11f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(12), dp(8), dp(12))
+            background = roundedBackground(Color.rgb(48, 31, 68), 15).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Open Bass Boost audio effect"
+            setOnClickListener { openBassBoost() }
+        }
+
         playerShortcuts.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
         playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        playerShortcuts.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
         playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
         playerCard.addView(playerShortcuts)
 
@@ -1217,6 +1230,110 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openBassBoost() {
+        val controller = player
+        if (controller == null) {
+            Toast.makeText(this, "Connecting to music service. Please wait.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val command = SessionCommand(KivoraPlaybackService.COMMAND_BASS_BOOST_GET_STATE, Bundle.EMPTY)
+        val future = controller.sendCustomCommand(command, Bundle.EMPTY)
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            val state = result?.extras
+            if (result?.resultCode != androidx.media3.session.SessionResult.RESULT_SUCCESS ||
+                state == null || !state.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)
+            ) {
+                Toast.makeText(
+                    this,
+                    state?.getString(KivoraPlaybackService.KEY_MESSAGE) ?: "Bass Boost is unavailable on this device.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@addListener
+            }
+
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(8), dp(20), dp(8))
+            }
+            var switchReady = false
+            var strengthReady = false
+            val enabledSwitch = android.widget.Switch(this).apply {
+                text = "Bass Boost on"
+                setTextColor(Color.WHITE)
+            }
+            content.addView(enabledSwitch)
+
+            val minStrength = state.getInt(KivoraPlaybackService.KEY_MIN_STRENGTH, 0)
+            val maxStrength = state.getInt(KivoraPlaybackService.KEY_MAX_STRENGTH, 1000)
+            var strengthSlider: SeekBar? = null
+            var strengthValue: TextView? = null
+            if (state.getBoolean(KivoraPlaybackService.KEY_STRENGTH_SUPPORTED)) {
+                content.addView(label("STRENGTH", 10f, Color.rgb(194, 163, 224), true).apply {
+                    setPadding(0, dp(12), 0, dp(4))
+                })
+                strengthValue = label("", 12f, Color.rgb(220, 198, 241))
+                content.addView(strengthValue)
+                strengthSlider = SeekBar(this).apply {
+                    max = (maxStrength - minStrength).coerceAtLeast(1)
+                    progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(196, 132, 255))
+                    thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(228, 202, 255))
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+                        override fun onProgressChanged(seekBar: SeekBar, value: Int, fromUser: Boolean) {
+                            if (fromUser) strengthValue?.text = "${minStrength + value} / $maxStrength"
+                        }
+                        override fun onStopTrackingTouch(seekBar: SeekBar) {
+                            if (!strengthReady) return
+                            sendAudioEffectCommand(
+                                KivoraPlaybackService.COMMAND_BASS_BOOST_SET_STRENGTH,
+                                Bundle().apply { putInt(KivoraPlaybackService.KEY_STRENGTH, minStrength + seekBar.progress) }
+                            ) { updated ->
+                                strengthReady = false
+                                val value = updated.getInt(KivoraPlaybackService.KEY_STRENGTH, minStrength)
+                                seekBar.progress = value - minStrength
+                                strengthValue?.text = "$value / $maxStrength"
+                                strengthReady = true
+                            }
+                        }
+                    })
+                }
+                content.addView(strengthSlider)
+            } else {
+                content.addView(label("Strength adjustment is unsupported on this device.", 12f, Color.rgb(174, 159, 194)))
+            }
+
+            enabledSwitch.setOnCheckedChangeListener { _, checked ->
+                if (!switchReady) return@setOnCheckedChangeListener
+                sendAudioEffectCommand(
+                    KivoraPlaybackService.COMMAND_BASS_BOOST_SET_ENABLED,
+                    Bundle().apply { putBoolean(KivoraPlaybackService.KEY_ENABLED, checked) }
+                ) { updated ->
+                    switchReady = false
+                    enabledSwitch.isChecked = updated.getBoolean(KivoraPlaybackService.KEY_ENABLED)
+                    switchReady = true
+                }
+            }
+
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("Bass Boost")
+                .setView(ScrollView(this).apply { addView(content) })
+                .setPositiveButton("Done", null)
+                .create()
+            switchReady = false
+            enabledSwitch.isChecked = state.getBoolean(KivoraPlaybackService.KEY_ENABLED)
+            switchReady = true
+            strengthSlider?.let { slider ->
+                strengthReady = false
+                val strength = state.getInt(KivoraPlaybackService.KEY_STRENGTH, minStrength)
+                slider.progress = (strength - minStrength).coerceIn(0, slider.max)
+                strengthValue?.text = "$strength / $maxStrength"
+                strengthReady = true
+            }
+            dialog.show()
+        }, ContextCompat.getMainExecutor(this))
+    }
+
     private fun formatEqualizerLevel(millibels: Int): String =
         String.format(Locale.getDefault(), "%.1f dB", millibels / 100f)
 
@@ -1270,6 +1387,34 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
                 requestEqualizerState(onComplete)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun sendAudioEffectCommand(
+        action: String,
+        args: Bundle,
+        onComplete: (Bundle) -> Unit
+    ) {
+        val controller = player
+        if (controller == null) {
+            Toast.makeText(this, "Music service is not connected; audio setting wasn't sent.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val future = controller.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
+                result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED, true)
+            ) {
+                onComplete(result.extras)
+            } else {
+                Toast.makeText(
+                    this,
+                    result?.extras?.getString(KivoraPlaybackService.KEY_MESSAGE)
+                        ?: "Audio setting couldn't be applied.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }, ContextCompat.getMainExecutor(this))
     }

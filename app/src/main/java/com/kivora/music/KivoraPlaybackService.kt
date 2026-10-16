@@ -1,6 +1,7 @@
 package com.kivora.music
 
 import android.media.audiofx.Equalizer
+import android.media.audiofx.BassBoost
 import android.os.Bundle
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
@@ -16,6 +17,8 @@ class KivoraPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var equalizer: Equalizer? = null
     private var equalizerAudioSessionId = 0
+    private var bassBoost: BassBoost? = null
+    private var bassBoostAudioSessionId = 0
 
     private val equalizerCallback = object : MediaSession.Callback {
         override fun onConnect(
@@ -29,6 +32,9 @@ class KivoraPlaybackService : MediaSessionService() {
                 commands.add(SessionCommand(COMMAND_SET_ENABLED, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_SET_BAND, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_SET_PRESET, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_BASS_BOOST_GET_STATE, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_BASS_BOOST_SET_ENABLED, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_BASS_BOOST_SET_STRENGTH, Bundle.EMPTY))
             }
             return MediaSession.ConnectionResult.accept(
                 commands.build(),
@@ -68,6 +74,19 @@ class KivoraPlaybackService : MediaSessionService() {
                         effect.usePreset(preset.toShort())
                         equalizerState()
                     }
+                    COMMAND_BASS_BOOST_GET_STATE -> bassBoostState()
+                    COMMAND_BASS_BOOST_SET_ENABLED -> {
+                        requireBassBoost().enabled = args.getBoolean(KEY_ENABLED)
+                        bassBoostState()
+                    }
+                    COMMAND_BASS_BOOST_SET_STRENGTH -> {
+                        val effect = requireBassBoost()
+                        require(effect.strengthSupported) { "Bass Boost strength adjustment is unsupported." }
+                        val strength = args.getInt(KEY_STRENGTH)
+                        require(strength in 0..1000) { "Invalid Bass Boost strength." }
+                        effect.setStrength(strength.toShort())
+                        bassBoostState()
+                    }
                     else -> Bundle().apply { putBoolean(KEY_SUPPORTED, false) }
                 }
             }.getOrElse { error ->
@@ -76,7 +95,7 @@ class KivoraPlaybackService : MediaSessionService() {
                         SessionResult.RESULT_ERROR_UNKNOWN,
                         Bundle().apply {
                             putBoolean(KEY_SUPPORTED, false)
-                            putString(KEY_MESSAGE, error.message ?: "Equalizer command failed.")
+                            putString(KEY_MESSAGE, error.message ?: "Audio effect command failed.")
                         }
                     )
                 )
@@ -100,12 +119,56 @@ class KivoraPlaybackService : MediaSessionService() {
             runCatching { equalizer?.release() }
             equalizer = null
             equalizerAudioSessionId = sessionId
+            releaseBassBoost()
         }
         if (sessionId == 0) return null
         equalizer?.let { return it }
         return runCatching {
             Equalizer(0, sessionId).also { equalizer = it }
         }.getOrNull()
+    }
+
+    private fun getOrCreateBassBoost(): BassBoost? {
+        val sessionId = musicPlayer?.audioSessionId ?: 0
+        if (sessionId != bassBoostAudioSessionId) {
+            releaseBassBoost()
+            bassBoostAudioSessionId = sessionId
+        }
+        if (sessionId == 0) return null
+        bassBoost?.let { return it }
+        return runCatching { BassBoost(0, sessionId).also { bassBoost = it } }.getOrNull()
+    }
+
+    private fun releaseBassBoost() {
+        runCatching { bassBoost?.release() }
+        bassBoost = null
+        bassBoostAudioSessionId = 0
+    }
+
+    private fun requireBassBoost(): BassBoost = getOrCreateBassBoost()
+        ?: error("Bass Boost is unavailable for the current music audio session.")
+
+    private fun bassBoostState(): Bundle {
+        val effect = getOrCreateBassBoost()
+            ?: return Bundle().apply {
+                putBoolean(KEY_SUPPORTED, false)
+                putString(KEY_MESSAGE, "Play a song first. Bass Boost is unavailable for the current audio session.")
+            }
+        return runCatching {
+            Bundle().apply {
+                putBoolean(KEY_SUPPORTED, true)
+                putBoolean(KEY_ENABLED, effect.enabled)
+                putInt(KEY_STRENGTH, effect.properties?.strength?.toInt() ?: 0)
+                putBoolean(KEY_STRENGTH_SUPPORTED, effect.strengthSupported)
+                putInt(KEY_MIN_STRENGTH, 0)
+                putInt(KEY_MAX_STRENGTH, 1000)
+            }
+        }.getOrElse {
+            Bundle().apply {
+                putBoolean(KEY_SUPPORTED, false)
+                putString(KEY_MESSAGE, "Bass Boost is unsupported or could not be initialized.")
+            }
+        }
     }
 
     private fun requireEqualizer(): Equalizer = getOrCreateEqualizer()
@@ -146,6 +209,7 @@ class KivoraPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         runCatching { equalizer?.release() }
+        releaseBassBoost()
         equalizer = null
         equalizerAudioSessionId = 0
         mediaSession?.release()
@@ -160,6 +224,9 @@ class KivoraPlaybackService : MediaSessionService() {
         const val COMMAND_SET_ENABLED = "com.kivora.music.EQUALIZER_SET_ENABLED"
         const val COMMAND_SET_BAND = "com.kivora.music.EQUALIZER_SET_BAND"
         const val COMMAND_SET_PRESET = "com.kivora.music.EQUALIZER_SET_PRESET"
+        const val COMMAND_BASS_BOOST_GET_STATE = "com.kivora.music.BASS_BOOST_GET_STATE"
+        const val COMMAND_BASS_BOOST_SET_ENABLED = "com.kivora.music.BASS_BOOST_SET_ENABLED"
+        const val COMMAND_BASS_BOOST_SET_STRENGTH = "com.kivora.music.BASS_BOOST_SET_STRENGTH"
 
         const val KEY_SUPPORTED = "supported"
         const val KEY_MESSAGE = "message"
@@ -173,5 +240,9 @@ class KivoraPlaybackService : MediaSessionService() {
         const val KEY_LEVELS = "levels"
         const val KEY_PRESETS = "presets"
         const val KEY_CURRENT_PRESET = "current_preset"
+        const val KEY_STRENGTH = "strength"
+        const val KEY_MIN_STRENGTH = "min_strength"
+        const val KEY_MAX_STRENGTH = "max_strength"
+        const val KEY_STRENGTH_SUPPORTED = "strength_supported"
     }
 }
