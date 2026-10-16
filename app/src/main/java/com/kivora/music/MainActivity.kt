@@ -687,18 +687,36 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
         }
 
-        val artworkSize = (resources.configuration.screenWidthDp - 100).coerceIn(240, 420)
+        val artworkSize = (resources.configuration.screenWidthDp - 86).coerceIn(160, 460)
+        val artworkFrame = android.widget.FrameLayout(this).apply {
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(
+                    Color.rgb(196, 132, 255),
+                    Color.rgb(99, 53, 151),
+                    Color.rgb(157, 93, 226)
+                )
+            ).apply {
+                cornerRadius = dp(36).toFloat()
+                setStroke(dp(1), Color.rgb(219, 185, 255))
+            }
+            elevation = dp(12).toFloat()
+            clipChildren = false
+            clipToPadding = false
+            addView(artwork, android.widget.FrameLayout.LayoutParams(-1, -1))
+        }
         playerCard.addView(
-            artwork,
-            LinearLayout.LayoutParams(dp(artworkSize), dp(artworkSize)).apply {
+            artworkFrame,
+            LinearLayout.LayoutParams(dp(artworkSize + 10), dp(artworkSize + 10)).apply {
                 gravity = Gravity.CENTER
-                bottomMargin = dp(22)
+                bottomMargin = dp(24)
             }
         )
 
         nowTitle = label(
             "Choose a song",
-            if (resources.configuration.screenWidthDp >= 600) 29f else 26f,
+            if (resources.configuration.screenWidthDp >= 600) 32f else 28f,
             Color.rgb(255, 252, 255),
             true
         ).apply {
@@ -719,12 +737,13 @@ class MainActivity : AppCompatActivity() {
 
         nowArtist = label(
             "Your library is ready",
-            15f,
+            if (resources.configuration.screenWidthDp >= 600) 17f else 16f,
             Color.rgb(211, 190, 235)
         ).apply {
             gravity = Gravity.CENTER
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+            letterSpacing = 0.015f
         }
 
         playerCard.addView(
@@ -737,6 +756,8 @@ class MainActivity : AppCompatActivity() {
 
         progress = SeekBar(this).apply {
             max = 1000
+            minHeight = dp(42)
+            setPadding(dp(2), 0, dp(2), 0)
 
             progressTintList =
                 android.content.res.ColorStateList.valueOf(
@@ -793,7 +814,9 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        playerCard.addView(progress)
+        playerCard.addView(progress, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(14)
+        })
 
         val times = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -817,6 +840,10 @@ class MainActivity : AppCompatActivity() {
         )
 
         times.addView(durationText)
+        playerCard.addView(times, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(1)
+            bottomMargin = dp(4)
+        })
         val sleepTimerButton = label("☾ TIMER", 10f, Color.rgb(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Open sleep timer options"
@@ -829,9 +856,6 @@ class MainActivity : AppCompatActivity() {
             }
             setOnClickListener { openSleepTimer() }
         }
-        times.addView(sleepTimerButton, LinearLayout.LayoutParams(-2, -2).apply {
-            leftMargin = dp(12)
-        })
         upNextButton = label("UP NEXT · 0", 10f, Color.rgb(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "View upcoming songs"
@@ -844,10 +868,17 @@ class MainActivity : AppCompatActivity() {
             }
             setOnClickListener { openUpNextQueue() }
         }
-        times.addView(upNextButton, LinearLayout.LayoutParams(-2, -2).apply {
-            leftMargin = dp(8)
+        val sessionActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(3))
+        }
+        sessionActions.addView(sleepTimerButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            rightMargin = dp(5)
         })
-        playerCard.addView(times)
+        sessionActions.addView(upNextButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            leftMargin = dp(5)
+        })
 
         val playerShortcuts = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -905,12 +936,11 @@ class MainActivity : AppCompatActivity() {
         playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
         playerShortcuts.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
         playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
-        playerCard.addView(playerShortcuts)
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(14), 0, dp(4))
         }
 
         shuffleButton = control("⤨") {
@@ -983,16 +1013,25 @@ class MainActivity : AppCompatActivity() {
                 rightMargin = dp(4)
             }
 
-        controls.addView(shuffleButton, transportParams())
         controls.addView(previousButton, transportParams())
         controls.addView(playButton, transportParams().apply {
             topMargin = dp(2)
             bottomMargin = dp(2)
         })
         controls.addView(nextButton, transportParams())
-        controls.addView(repeatButton, transportParams())
-
         playerCard.addView(controls)
+
+        val playbackModes = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(5), 0, dp(2))
+        }
+        playbackModes.addView(shuffleButton, transportParams())
+        playbackModes.addView(repeatButton, transportParams())
+        playerCard.addView(playbackModes)
+        val availableCardWidth = (resources.configuration.screenWidthDp - 76).coerceAtLeast(180)
+        playerCard.addView(sessionActions, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(480)), -2))
+        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(600)), -2))
 
         playerScroll = ScrollView(this).apply {
             clipToPadding = false
@@ -1160,12 +1199,12 @@ class MainActivity : AppCompatActivity() {
         action: () -> Unit
     ): TextView =
         TextView(this).apply {
+            val isPrimary = symbol == "▶" || symbol == "Ⅱ"
             text = symbol
-            textSize =
-                if (symbol == "▶" || symbol == "Ⅱ") 22f else 19f
+            textSize = if (isPrimary) 25f else 19f
             gravity = Gravity.CENTER
-            minWidth = dp(48)
-            minHeight = dp(48)
+            minWidth = dp(if (isPrimary) 72 else 52)
+            minHeight = dp(if (isPrimary) 72 else 52)
             contentDescription = when (symbol) {
                 "⤨" -> "Shuffle"
                 "⏮" -> "Previous track"
@@ -1174,20 +1213,21 @@ class MainActivity : AppCompatActivity() {
                 else -> "Playback control"
             }
             setTextColor(Color.WHITE)
-            setPadding(dp(if (symbol == "▶" || symbol == "Ⅱ") 18 else 12), dp(if (symbol == "▶" || symbol == "Ⅱ") 14 else 9), dp(if (symbol == "▶" || symbol == "Ⅱ") 18 else 12), dp(if (symbol == "▶" || symbol == "Ⅱ") 14 else 9))
-            background = roundedBackground(
-                if (symbol == "▶" || symbol == "Ⅱ")
-                    Color.rgb(137, 75, 226)
-                else
-                    Color.rgb(51, 34, 70),
-                if (symbol == "▶" || symbol == "Ⅱ") 29 else 24
-            )
+            setPadding(if (isPrimary) 0 else dp(10), if (isPrimary) 0 else dp(8), if (isPrimary) 0 else dp(10), if (isPrimary) 0 else dp(8))
+            background = if (isPrimary) {
+                android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.rgb(190, 111, 255), Color.rgb(112, 55, 205))
+                ).apply { cornerRadius = dp(36).toFloat() }
+            } else {
+                roundedBackground(Color.rgb(43, 30, 59), 26)
+            }
             // KIVORA_ROUND13_CONTROL_BORDER
             (background as android.graphics.drawable.GradientDrawable).setStroke(
-                dp(if (symbol == "▶" || symbol == "Ⅱ") 2 else 1),
-                if (symbol == "▶" || symbol == "Ⅱ") Color.rgb(226, 202, 255) else Color.rgb(126, 88, 157)
+                dp(if (isPrimary) 2 else 1),
+                if (isPrimary) Color.rgb(235, 216, 255) else Color.rgb(126, 88, 157)
             )
-            elevation = dp(if (symbol == "▶" || symbol == "Ⅱ") 6 else 1).toFloat()
+            elevation = dp(if (isPrimary) 10 else 2).toFloat()
             isFocusable = true
             setOnClickListener { action() }
         }
