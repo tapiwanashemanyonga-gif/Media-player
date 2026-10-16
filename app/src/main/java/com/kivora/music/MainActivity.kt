@@ -40,6 +40,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONArray
@@ -778,14 +779,21 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showTab("library") }
         }
 
-        playerShortcuts.addView(
-            minimizePlayerButton,
-            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(6) }
-        )
-        playerShortcuts.addView(
-            songListButton,
-            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(6) }
-        )
+        val equalizerButton = label("♫  EQUALIZER", 11f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(12), dp(8), dp(12))
+            background = roundedBackground(Color.rgb(48, 31, 68), 15).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Open audio equalizer"
+            setOnClickListener { openEqualizer() }
+        }
+
+        playerShortcuts.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+        playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
         playerCard.addView(playerShortcuts)
 
         val controls = LinearLayout(this).apply {
@@ -1062,6 +1070,209 @@ class MainActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener { action() }
         }
+
+    private fun openEqualizer() {
+        requestEqualizerState { state ->
+            if (!state.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)) {
+                Toast.makeText(
+                    this,
+                    state.getString(KivoraPlaybackService.KEY_MESSAGE)
+                        ?: "Equalizer is unavailable on this device.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@requestEqualizerState
+            }
+
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(8), dp(20), dp(8))
+            }
+            var equalizerSwitchReady = false
+            var updateDialogState: ((Bundle) -> Unit)? = null
+            var presetSpinner: android.widget.Spinner? = null
+            var suppressedPresetPosition: Int? = null
+            var presetSelectionInitialized = false
+            val enabledSwitch = android.widget.Switch(this).apply {
+                text = "Equalizer on"
+                setTextColor(Color.WHITE)
+                setOnCheckedChangeListener { _, checked ->
+                    if (equalizerSwitchReady) {
+                        sendEqualizerCommand(
+                            KivoraPlaybackService.COMMAND_SET_ENABLED,
+                            Bundle().apply { putBoolean(KivoraPlaybackService.KEY_ENABLED, checked) }
+                        ) { updateDialogState?.invoke(it) }
+                    }
+                }
+            }
+            content.addView(enabledSwitch)
+
+            val presetNames = state.getStringArray(KivoraPlaybackService.KEY_PRESETS).orEmpty()
+            if (presetNames.isNotEmpty()) {
+                content.addView(label("PRESET", 10f, Color.rgb(194, 163, 224), true).apply {
+                    setPadding(0, dp(12), 0, dp(4))
+                })
+                presetSpinner = android.widget.Spinner(this).apply {
+                    adapter = android.widget.ArrayAdapter(
+                        this@MainActivity,
+                        android.R.layout.simple_spinner_dropdown_item,
+                        presetNames.toList()
+                    )
+                }
+                val currentPreset = state.getInt(KivoraPlaybackService.KEY_CURRENT_PRESET, -1)
+                presetSpinner?.setSelection(currentPreset.takeIf { it in presetNames.indices } ?: -1)
+                presetSpinner?.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                    override fun onItemSelected(
+                        parent: android.widget.AdapterView<*>?,
+                        view: View?,
+                        position: Int,
+                        id: Long
+                    ) {
+                        if (!presetSelectionInitialized) {
+                            presetSelectionInitialized = true
+                            return
+                        }
+                        val restoredPosition = suppressedPresetPosition
+                        if (restoredPosition != null) {
+                            suppressedPresetPosition = null
+                            if (position == restoredPosition) return
+                        }
+                        sendEqualizerCommand(
+                            KivoraPlaybackService.COMMAND_SET_PRESET,
+                            Bundle().apply { putInt(KivoraPlaybackService.KEY_PRESET, position) }
+                        ) { updateDialogState?.invoke(it) }
+                    }
+                }
+                content.addView(presetSpinner!!, LinearLayout.LayoutParams(-1, dp(48)))
+            }
+
+            val frequencies = state.getIntArray(KivoraPlaybackService.KEY_FREQUENCIES).orEmpty()
+            val minLevel = state.getInt(KivoraPlaybackService.KEY_MIN_LEVEL)
+            val maxLevel = state.getInt(KivoraPlaybackService.KEY_MAX_LEVEL)
+            val levelLabels = mutableListOf<TextView>()
+            val bandSliders = mutableListOf<SeekBar>()
+
+            frequencies.indices.forEach { band ->
+                val frequency = frequencies[band]
+                val frequencyLabel = if (frequency >= 1000) {
+                    String.format(Locale.getDefault(), "%.1f kHz", frequency / 1000f)
+                } else "$frequency Hz"
+                val valueLabel = label("", 12f, Color.rgb(220, 198, 241))
+                levelLabels.add(valueLabel)
+                content.addView(label(frequencyLabel, 13f, Color.WHITE, true).apply {
+                    setPadding(0, dp(10), 0, 0)
+                })
+                content.addView(valueLabel)
+                val slider = SeekBar(this).apply {
+                    max = (maxLevel - minLevel).coerceAtLeast(1)
+                    progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(196, 132, 255))
+                    thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(228, 202, 255))
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+                        override fun onProgressChanged(seekBar: SeekBar, value: Int, fromUser: Boolean) {
+                            if (fromUser) valueLabel.text = formatEqualizerLevel(minLevel + value)
+                        }
+                        override fun onStopTrackingTouch(seekBar: SeekBar) {
+                            sendEqualizerCommand(
+                                KivoraPlaybackService.COMMAND_SET_BAND,
+                                Bundle().apply {
+                                    putInt(KivoraPlaybackService.KEY_BAND, band)
+                                    putInt(KivoraPlaybackService.KEY_LEVEL, minLevel + seekBar.progress)
+                                }
+                            ) { updateDialogState?.invoke(it) }
+                        }
+                    })
+                }
+                bandSliders.add(slider)
+                content.addView(slider)
+            }
+
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("Audio equalizer")
+                .setView(ScrollView(this).apply { addView(content) })
+                .setPositiveButton("Done", null)
+                .create()
+
+            fun applyState(updated: Bundle) {
+                equalizerSwitchReady = false
+                enabledSwitch.isChecked = updated.getBoolean(KivoraPlaybackService.KEY_ENABLED)
+                equalizerSwitchReady = true
+                val currentPreset = updated.getInt(KivoraPlaybackService.KEY_CURRENT_PRESET, -1)
+                val selectedPreset = currentPreset.takeIf { it in presetNames.indices } ?: -1
+                presetSpinner?.let { spinner ->
+                    if (spinner.selectedItemPosition != selectedPreset) {
+                        suppressedPresetPosition = selectedPreset
+                        spinner.setSelection(selectedPreset)
+                    }
+                }
+                val levels = updated.getIntArray(KivoraPlaybackService.KEY_LEVELS) ?: return
+                levels.indices.filter { it < bandSliders.size }.forEach { band ->
+                    bandSliders[band].progress = levels[band] - minLevel
+                    levelLabels[band].text = formatEqualizerLevel(levels[band])
+                }
+            }
+            updateDialogState = ::applyState
+            applyState(state)
+            dialog.show()
+        }
+    }
+
+    private fun formatEqualizerLevel(millibels: Int): String =
+        String.format(Locale.getDefault(), "%.1f dB", millibels / 100f)
+
+    private fun requestEqualizerState(onReady: (Bundle) -> Unit) {
+        val controller = player
+        if (controller == null) {
+            Toast.makeText(this, "Connecting to music service. Please wait.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val future = controller.sendCustomCommand(
+            SessionCommand(KivoraPlaybackService.COMMAND_GET_STATE, Bundle.EMPTY),
+            Bundle.EMPTY
+        )
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS) {
+                onReady(result.extras)
+            } else {
+                Toast.makeText(
+                    this,
+                    result?.extras?.getString(KivoraPlaybackService.KEY_MESSAGE)
+                        ?: "Couldn't read equalizer settings.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun sendEqualizerCommand(
+        action: String,
+        args: Bundle,
+        onComplete: (Bundle) -> Unit
+    ) {
+        val controller = player
+        if (controller == null) {
+            Toast.makeText(this, "Music service is not connected; equalizer setting wasn't sent.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val future = controller.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
+                result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED, true)
+            ) {
+                onComplete(result.extras)
+            } else {
+                Toast.makeText(
+                    this,
+                    result?.extras?.getString(KivoraPlaybackService.KEY_MESSAGE)
+                        ?: "Equalizer setting couldn't be applied.",
+                    Toast.LENGTH_LONG
+                ).show()
+                requestEqualizerState(onComplete)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
 
     // ---------------- FAVOURITES ----------------
 
