@@ -88,6 +88,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var songScroll: ScrollView
     private lateinit var playerCard: LinearLayout
     private lateinit var playerScroll: ScrollView
+    private lateinit var homeScroll: ScrollView
+    private lateinit var homeContent: LinearLayout
     private lateinit var videoPlaceholder: LinearLayout
     private lateinit var videoList: LinearLayout
     private lateinit var videoStatus: TextView
@@ -127,6 +129,7 @@ class MainActivity : AppCompatActivity() {
 
     private val songs = mutableListOf<Song>()
     private var activeQueue: List<Song> = emptyList()
+    private val recentlyPlayedUris = mutableListOf<String>()
     private val favoriteSongUris = mutableSetOf<String>()
     private val playlists = linkedMapOf<String, MutableSet<String>>()
 
@@ -190,6 +193,7 @@ class MainActivity : AppCompatActivity() {
             mediaItem: MediaItem?,
             reason: Int
         ) {
+            recordRecentlyPlayed(mediaItem)
             refreshActiveQueue()
             updateNowPlaying()
         }
@@ -283,6 +287,7 @@ class MainActivity : AppCompatActivity() {
                     connected.addListener(playerListener)
 
                     syncPlaylistToPlayer()
+                    recordRecentlyPlayed(connected.currentMediaItem)
                     updateNowPlaying()
                     updatePlayButton()
                     updateShuffleButton()
@@ -1041,6 +1046,21 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(playerScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
+        homeContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(8), dp(2), dp(14))
+        }
+        homeScroll = ScrollView(this).apply {
+            clipToPadding = false
+            isFillViewport = false
+            addView(homeContent, android.widget.FrameLayout.LayoutParams(-1, -2))
+        }
+        root.addView(
+            homeScroll,
+            root.indexOfChild(playerScroll),
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
+
         miniPlayer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1053,7 +1073,7 @@ class MainActivity : AppCompatActivity() {
                 setStroke(dp(1), Color.rgb(111, 77, 143))
             }
             elevation = dp(5).toFloat()
-            setOnClickListener { showTab("home") }
+            setOnClickListener { showTab("nowPlaying") }
         }
 
         miniArtwork = ImageView(this).apply {
@@ -1062,7 +1082,7 @@ class MainActivity : AppCompatActivity() {
             background = roundedBackground(Color.rgb(57, 37, 78), 12)
             clipToOutline = true
             contentDescription = "Current song album artwork"
-            setOnClickListener { showTab("home") }
+            setOnClickListener { showTab("nowPlaying") }
         }
         miniPlayer.addView(miniArtwork, LinearLayout.LayoutParams(dp(44), dp(44)))
 
@@ -1075,12 +1095,12 @@ class MainActivity : AppCompatActivity() {
         miniTitle = label("Choose a song", 13f, Color.WHITE, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setOnClickListener { showTab("home") }
+            setOnClickListener { showTab("nowPlaying") }
         }
         miniArtist = label("Your library is ready", 11f, Color.rgb(190, 175, 210)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setOnClickListener { showTab("home") }
+            setOnClickListener { showTab("nowPlaying") }
         }
         miniInfo.addView(miniTitle)
         miniInfo.addView(miniArtist)
@@ -1146,7 +1166,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 contentDescription = when (tab) {
-                    "home" -> "Open Now Playing"
+                    "home" -> "Open Home"
                     "search" -> "Search music"
                     "library" -> "Open music library and playlists"
                     else -> "Browse videos"
@@ -1191,6 +1211,7 @@ class MainActivity : AppCompatActivity() {
         updateFavoriteFilterButton()
         updatePlaylistButton()
         updateLibraryBrowseButtons()
+        renderHomeDashboard()
         showTab("home")
     }
 
@@ -2196,6 +2217,259 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- MUSIC LIBRARY ----------------
 
+    private fun recordRecentlyPlayed(mediaItem: MediaItem?) {
+        val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
+        if (songs.none { it.uri.toString() == uri }) return
+        recentlyPlayedUris.remove(uri)
+        recentlyPlayedUris.add(0, uri)
+        while (recentlyPlayedUris.size > 12) recentlyPlayedUris.removeAt(recentlyPlayedUris.lastIndex)
+        if (::homeContent.isInitialized && currentTab == "home") renderHomeDashboard()
+    }
+
+    private fun renderHomeDashboard() {
+        if (!::homeContent.isInitialized) return
+        homeContent.removeAllViews()
+
+        homeContent.addView(label("HOME", 11f, Color.rgb(203, 162, 242), true).apply {
+            letterSpacing = 0.16f
+            setPadding(dp(2), dp(2), 0, dp(5))
+        })
+        homeContent.addView(label("Your music, ready", 27f, Color.rgb(252, 248, 255), true).apply {
+            setPadding(dp(2), 0, 0, dp(4))
+        })
+        homeContent.addView(label("Pick up where you left off.", 13f, Color.rgb(192, 173, 214)).apply {
+            setPadding(dp(2), 0, 0, dp(18))
+        })
+
+        homeContent.addView(label("QUICK ACCESS", 12f, Color.rgb(215, 194, 236), true).apply {
+            letterSpacing = 0.08f
+            setPadding(dp(2), dp(2), 0, dp(10))
+        })
+        val shortcuts = listOf(
+            Triple("♫", "Songs", "songs"),
+            Triple("▤", "Albums", "albums"),
+            Triple("♙", "Artists", "artists"),
+            Triple("☆", "Favourites", "favourites")
+        )
+        shortcuts.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            pair.forEach { (symbol, title, destination) ->
+                val shortcut = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(13), dp(12), dp(10), dp(12))
+                    background = roundedBackground(Color.rgb(38, 25, 55), 17).apply {
+                        setStroke(dp(1), Color.rgb(91, 63, 119))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    contentDescription = "Browse $title"
+                    setOnClickListener { openHomeShortcut(destination) }
+                }
+                shortcut.addView(label(symbol, 21f, Color.rgb(213, 165, 255), true))
+                shortcut.addView(label(title, 13f, Color.rgb(248, 242, 255), true).apply {
+                    setPadding(dp(9), 0, 0, 0)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                row.addView(shortcut, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
+                    if (row.childCount == 0) rightMargin = dp(6) else leftMargin = dp(6)
+                    bottomMargin = dp(8)
+                })
+            }
+            homeContent.addView(row)
+        }
+
+        addHomeSection("Recently played", "YOUR RECENT LISTENS")
+        val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
+        if (recentSongs.isEmpty()) {
+            homeContent.addView(homeEmptyCard("Tracks you play will appear here."))
+        } else {
+            val row = horizontalHomeRow()
+            recentSongs.take(8).forEach { song ->
+                row.addView(homeSongCard(song, song.title, song.artist) {
+                    playSong(song)
+                    showTab("nowPlaying")
+                }, homeCardParams())
+            }
+            homeContent.addView(horizontalHomeScroller(row))
+        }
+
+        addHomeSection("Albums", "FROM YOUR LIBRARY")
+        val albumGroups = songs.groupBy(::albumGroupKey).values
+            .sortedBy { it.first().album.lowercase(Locale.ROOT) }
+        if (albumGroups.isEmpty()) {
+            homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
+        } else {
+            val row = horizontalHomeRow()
+            albumGroups.take(10).forEach { group ->
+                val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
+                row.addView(homeSongCard(
+                    representative,
+                    group.first().album,
+                    "${group.first().artist} · ${group.size} ${if (group.size == 1) "song" else "songs"}"
+                ) {
+                    selectedPlaylist = null
+                    showFavoritesOnly = false
+                    libraryBrowseMode = "albums"
+                    selectedAlbumKey = albumGroupKey(group.first())
+                    selectedArtistName = null
+                    updateFavoriteFilterButton()
+                    updatePlaylistButton()
+                    showTab("library")
+                }, homeCardParams())
+            }
+            homeContent.addView(horizontalHomeScroller(row))
+        }
+
+        addHomeSection("Playlists", "YOUR COLLECTION")
+        val playlistRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val availablePlaylists = playlists.entries.toList().take(8)
+        if (availablePlaylists.isEmpty()) {
+            homeContent.addView(homeEmptyCard("Create a playlist from the Library to see it here."))
+        } else {
+            availablePlaylists.forEach { (name, members) ->
+                val tracks = songs.filter { members.contains(it.uri.toString()) }
+                val representative = tracks.firstOrNull { it.artworkUri != null } ?: tracks.firstOrNull()
+                playlistRow.addView(homePlaylistCard(name, tracks.size, representative) {
+                    selectedAlbumKey = null
+                    selectedArtistName = null
+                    selectedPlaylist = null
+                    showFavoritesOnly = false
+                    libraryBrowseMode = "songs"
+                    showTab("library")
+                    updateLibraryBrowseButtons()
+                    showPlaylistActionsDialog(name)
+                }, homeCardParams())
+            }
+            homeContent.addView(horizontalHomeScroller(playlistRow))
+        }
+        homeContent.addView(label("Tap the mini-player to open Now Playing", 11f, Color.rgb(164, 145, 186)).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(15), 0, dp(3))
+        })
+    }
+
+    private fun openHomeShortcut(destination: String) {
+        selectedAlbumKey = null
+        selectedArtistName = null
+        selectedPlaylist = null
+        showFavoritesOnly = destination == "favourites"
+        libraryBrowseMode = if (destination == "favourites") "songs" else destination
+        showTab("library")
+        updateFavoriteFilterButton()
+        updatePlaylistButton()
+        updateLibraryBrowseButtons()
+        renderSongs(searchBox.text?.toString().orEmpty())
+    }
+
+    private fun addHomeSection(title: String, caption: String) {
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(17), dp(2), dp(9))
+        }
+        heading.addView(label(title, 19f, Color.rgb(250, 246, 255), true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        heading.addView(label(caption, 9f, Color.rgb(179, 150, 208), true).apply {
+            letterSpacing = 0.07f
+            gravity = Gravity.CENTER_VERTICAL
+        })
+        homeContent.addView(heading)
+    }
+
+    private fun horizontalHomeRow(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+    }
+
+    private fun horizontalHomeScroller(row: LinearLayout): View =
+        android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipToPadding = false
+            addView(row, android.widget.FrameLayout.LayoutParams(-2, -2))
+        }
+
+    private fun homeCardParams() = LinearLayout.LayoutParams(
+        dp((resources.configuration.screenWidthDp - 64).coerceIn(150, 210)), -2
+    ).apply { rightMargin = dp(10) }
+
+    private fun homeSongCard(song: Song, title: String, subtitle: String, onClick: () -> Unit): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(11))
+            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
+                setStroke(dp(1), Color.rgb(82, 58, 108))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "$title, $subtitle"
+            setOnClickListener { onClick() }
+        }
+        val cover = ImageView(this).apply {
+            setImageResource(R.drawable.ic_audio_placeholder)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
+                setStroke(dp(1), Color.rgb(131, 88, 164))
+            }
+            clipToOutline = true
+            contentDescription = "Artwork for ${song.title}"
+        }
+        card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
+        loadArtworkInto(cover, song)
+        card.addView(label(title, 14f, Color.rgb(250, 246, 255), true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(1), dp(9), dp(1), 0)
+        })
+        card.addView(label(subtitle, 11f, Color.rgb(187, 166, 210)).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(1), dp(3), dp(1), 0)
+        })
+        return card
+    }
+
+    private fun homePlaylistCard(name: String, count: Int, representative: Song?, onClick: () -> Unit): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(11))
+            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
+                setStroke(dp(1), Color.rgb(82, 58, 108))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Playlist $name, $count songs"
+            setOnClickListener { onClick() }
+        }
+        val cover = ImageView(this).apply {
+            setImageResource(R.drawable.ic_audio_placeholder)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
+                setStroke(dp(1), Color.rgb(131, 88, 164))
+            }
+            clipToOutline = true
+            contentDescription = "Playlist artwork for $name"
+        }
+        card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
+        representative?.let { loadArtworkInto(cover, it) }
+        card.addView(label(name, 14f, Color.rgb(250, 246, 255), true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(1), dp(9), dp(1), 0)
+        })
+        card.addView(label("$count ${if (count == 1) "song" else "songs"}", 11f, Color.rgb(187, 166, 210)).apply {
+            setPadding(dp(1), dp(3), dp(1), 0)
+        })
+        return card
+    }
+
+    private fun homeEmptyCard(message: String): View = label(message, 13f, Color.rgb(183, 163, 204)).apply {
+        setPadding(dp(15), dp(16), dp(15), dp(16))
+        background = roundedBackground(Color.rgb(31, 22, 44), 16).apply {
+            setStroke(dp(1), Color.rgb(71, 51, 93))
+        }
+    }
+
     private fun loadSongs() {
         songs.clear()
         normalizedSearchText.clear()
@@ -2305,6 +2579,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         syncPlaylistToPlayer()
+        recordRecentlyPlayed(player?.currentMediaItem)
+        renderHomeDashboard()
         renderSongs(searchBox.text?.toString().orEmpty())
     }
 
@@ -3812,6 +4088,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTab(tab: String) {
         currentTab = tab
+        if (tab == "home") renderHomeDashboard()
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
         libraryHeader.visibility =
@@ -3832,9 +4109,9 @@ class MainActivity : AppCompatActivity() {
                 videoPermissionLauncher.launch(permission)
             }
         }
-        playerScroll.visibility =
-            if (tab == "home") View.VISIBLE else View.GONE
-        miniPlayer.visibility = if (tab == "home") View.GONE else View.VISIBLE
+        homeScroll.visibility = if (tab == "home") View.VISIBLE else View.GONE
+        playerScroll.visibility = if (tab == "nowPlaying") View.VISIBLE else View.GONE
+        miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
 
         if (tab == "search") {
             showFavoritesOnly = false
@@ -3848,7 +4125,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         navigationButtons.forEach { (name, button) ->
-            val selected = name == tab
+            val selected = name == tab || (name == "home" && tab == "nowPlaying")
             button.setTextColor(
                 if (selected) Color.rgb(232, 213, 255)
                 else Color.rgb(174, 159, 194)
