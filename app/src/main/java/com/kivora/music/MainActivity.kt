@@ -51,6 +51,8 @@ import java.util.concurrent.Executors
 data class Song(
     val title: String,
     val artist: String,
+    val album: String,
+    val albumId: Long,
     val uri: Uri,
     val artworkUri: Uri?
 )
@@ -121,6 +123,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var miniArtist: TextView
     private lateinit var miniPlayButton: TextView
     private val navigationButtons = linkedMapOf<String, TextView>()
+    private val libraryBrowseButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
     private var activeQueue: List<Song> = emptyList()
@@ -129,6 +132,9 @@ class MainActivity : AppCompatActivity() {
 
     private var showFavoritesOnly = false
     private var selectedPlaylist: String? = null
+    private var libraryBrowseMode = "songs"
+    private var selectedAlbumKey: String? = null
+    private var selectedArtistName: String? = null
     private var userSeeking = false
 
     private val handler = Handler(Looper.getMainLooper())
@@ -485,6 +491,40 @@ class MainActivity : AppCompatActivity() {
             leftMargin = dp(5)
         })
         libraryHeader.addView(collectionActions)
+
+        val libraryBrowseBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = roundedBackground(Color.rgb(25, 17, 38), 18).apply {
+                setStroke(dp(1), Color.rgb(76, 53, 99))
+            }
+        }
+        listOf("songs" to "SONGS", "albums" to "ALBUMS", "artists" to "ARTISTS").forEach { (mode, title) ->
+            val button = label(title, 11f, Color.rgb(190, 175, 210), true).apply {
+                gravity = Gravity.CENTER
+                minHeight = dp(44)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Browse library by ${title.lowercase(Locale.ROOT)}"
+                setOnClickListener {
+                    libraryBrowseMode = mode
+                    selectedAlbumKey = null
+                    selectedArtistName = null
+                    updateLibraryBrowseButtons()
+                    renderSongs(searchBox.text?.toString().orEmpty())
+                }
+            }
+            libraryBrowseButtons[mode] = button
+            libraryBrowseBar.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        libraryHeader.addView(libraryBrowseBar, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(12)
+        })
 
         root.addView(libraryHeader)
 
@@ -1111,6 +1151,7 @@ class MainActivity : AppCompatActivity() {
         updateRepeatButton()
         updateFavoriteFilterButton()
         updatePlaylistButton()
+        updateLibraryBrowseButtons()
         showTab("home")
     }
 
@@ -1787,6 +1828,21 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun updateLibraryBrowseButtons() {
+        libraryBrowseButtons.forEach { (mode, button) ->
+            val selected = mode == libraryBrowseMode
+            button.setTextColor(
+                if (selected) Color.rgb(250, 239, 255) else Color.rgb(190, 175, 210)
+            )
+            button.background = roundedBackground(
+                if (selected) Color.rgb(91, 48, 132) else Color.TRANSPARENT,
+                14
+            ).apply {
+                if (selected) setStroke(dp(1), Color.rgb(172, 112, 224))
+            }
+        }
+    }
+
     // ---------------- PLAYLIST MENUS ----------------
 
     private fun showPlaylistMenu() {
@@ -2111,6 +2167,7 @@ class MainActivity : AppCompatActivity() {
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.ALBUM_ID
         )
 
@@ -2136,6 +2193,9 @@ class MainActivity : AppCompatActivity() {
                 val artistColumn = it.getColumnIndexOrThrow(
                     MediaStore.Audio.Media.ARTIST
                 )
+                val albumNameColumn = it.getColumnIndexOrThrow(
+                    MediaStore.Audio.Media.ALBUM
+                )
                 val albumColumn = it.getColumnIndexOrThrow(
                     MediaStore.Audio.Media.ALBUM_ID
                 )
@@ -2160,10 +2220,18 @@ class MainActivity : AppCompatActivity() {
                     val artistValue = it.getString(artistColumn)
 
                     val artist = artistValue?.takeIf { value ->
-                        value.isNotBlank() && value != "<unknown>"
+                        value.isNotBlank() &&
+                            !value.equals("<unknown>", ignoreCase = true) &&
+                            !value.equals("unknown", ignoreCase = true)
                     } ?: "Unknown artist"
 
                     val albumId = it.getLong(albumColumn)
+                    val rawAlbum = it.getString(albumNameColumn)?.trim().orEmpty()
+                    val album = rawAlbum.takeIf { value ->
+                        value.isNotBlank() &&
+                            !value.equals("<unknown>", ignoreCase = true) &&
+                            !value.equals("unknown", ignoreCase = true)
+                    } ?: "Unknown album"
 
                     val artUri = if (albumId > 0L) {
                         ContentUris.withAppendedId(
@@ -2180,6 +2248,8 @@ class MainActivity : AppCompatActivity() {
                         Song(
                             title,
                             artist,
+                            album,
+                            albumId,
                             ContentUris.withAppendedId(collection, id),
                             artUri
                         )
@@ -2274,12 +2344,11 @@ class MainActivity : AppCompatActivity() {
 
         val normalized = query.trim().lowercase(Locale.ROOT)
 
-        val matches = songs.withIndex().filter { entry ->
-            val song = entry.value
+        val matches = songs.filter { song ->
             val uri = song.uri.toString()
 
             val searchableText = normalizedSearchText.getOrPut(uri) {
-                (song.title + " " + song.artist).lowercase(Locale.ROOT)
+                (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
             }
 
             val matchesQuery =
@@ -2295,14 +2364,35 @@ class MainActivity : AppCompatActivity() {
             matchesQuery && matchesFavorites && matchesPlaylist
         }
 
+        val isLibraryBrowse = currentTab == "library"
+        val isLibraryDetail = isLibraryBrowse &&
+            (selectedAlbumKey != null || selectedArtistName != null)
+        val visibleSongs = matches.filter { song ->
+            if (!isLibraryBrowse) return@filter true
+            when {
+                selectedAlbumKey != null -> albumGroupKey(song) == selectedAlbumKey
+                selectedArtistName != null -> song.artist.equals(selectedArtistName, ignoreCase = true)
+                else -> true
+            }
+        }
+        val showingCollections = isLibraryBrowse &&
+            selectedAlbumKey == null && selectedArtistName == null &&
+            libraryBrowseMode != "songs"
+        val albumCount = visibleSongs.map(::albumGroupKey).distinct().size
+        val artistCount = visibleSongs.map { it.artist.lowercase(Locale.ROOT) }.distinct().size
+
         libraryCount.text = when {
-            selectedPlaylist != null -> "${matches.size} in playlist"
-            showFavoritesOnly -> "${matches.size} favourites"
-            normalized.isEmpty() -> "${songs.size} songs"
-            else -> "${matches.size} found"
+            isLibraryBrowse && selectedAlbumKey != null -> "${visibleSongs.size} tracks · ${songs.firstOrNull { albumGroupKey(it) == selectedAlbumKey }?.album ?: "Album"}"
+            isLibraryBrowse && selectedArtistName != null -> "${visibleSongs.size} tracks · $selectedArtistName"
+            showingCollections && libraryBrowseMode == "albums" -> "$albumCount albums"
+            showingCollections && libraryBrowseMode == "artists" -> "$artistCount artists"
+            selectedPlaylist != null -> "${visibleSongs.size} in playlist"
+            showFavoritesOnly -> "${visibleSongs.size} favourites"
+            normalized.isEmpty() -> "${visibleSongs.size} songs"
+            else -> "${visibleSongs.size} found"
         }
 
-        if (matches.isEmpty()) {
+        if (visibleSongs.isEmpty() && !isLibraryDetail) {
             val message = when {
                 songs.isEmpty() ->
                     "No music found yet.\nAdd audio files to your device and try again."
@@ -2332,8 +2422,52 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        matches.forEach { entry ->
-            val song = entry.value
+        if (showingCollections) {
+            if (libraryBrowseMode == "albums") renderAlbumGroups(visibleSongs)
+            else renderArtistGroups(visibleSongs)
+            return
+        }
+
+        if (isLibraryDetail) {
+            val modeTitle = if (selectedAlbumKey != null) "Albums" else "Artists"
+            val detailTitle = selectedAlbumKey?.let { albumKey ->
+                songs.firstOrNull { albumGroupKey(it) == albumKey }?.album ?: "Album"
+            } ?: selectedArtistName.orEmpty()
+            val backButton = label("‹  ALL $modeTitle", 12f, Color.rgb(224, 197, 248), true).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = roundedBackground(Color.rgb(44, 29, 62), 15).apply {
+                    setStroke(dp(1), Color.rgb(104, 73, 134))
+                }
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Back to $modeTitle"
+                setOnClickListener {
+                    selectedAlbumKey = null
+                    selectedArtistName = null
+                    renderSongs(searchBox.text?.toString().orEmpty())
+                }
+            }
+            songList.addView(backButton, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+            })
+            songList.addView(label(detailTitle, 18f, Color.WHITE, true).apply {
+                setPadding(dp(4), 0, dp(4), dp(10))
+                contentDescription = "${visibleSongs.size} songs in $detailTitle"
+            })
+        }
+
+        if (visibleSongs.isEmpty()) {
+            songList.addView(label("No songs match this selection.", 14f, Color.rgb(190, 175, 210)).apply {
+                setPadding(dp(16), dp(18), dp(16), dp(18))
+                background = roundedBackground(Color.rgb(34, 16, 56), 18).apply {
+                    setStroke(dp(1), Color.rgb(115, 76, 151))
+                }
+            })
+            return
+        }
+
+        visibleSongs.forEach { song ->
             val uri = song.uri.toString()
 
             val row = LinearLayout(this).apply {
@@ -2466,6 +2600,106 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun albumGroupKey(song: Song): String =
+        if (song.albumId > 0L) {
+            "id:${song.albumId}"
+        } else {
+            "name:${song.album.lowercase(Locale.ROOT)}|artist:${song.artist.lowercase(Locale.ROOT)}"
+        }
+
+    private fun renderAlbumGroups(items: List<Song>) {
+        items.groupBy(::albumGroupKey).values
+            .sortedBy { group -> group.first().album.lowercase(Locale.ROOT) }
+            .forEach { group ->
+                val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
+                val artistNames = group.map { it.artist }.distinct().joinToString(", ")
+                addLibraryCollectionRow(
+                    title = group.first().album,
+                    subtitle = "$artistNames · ${group.size} ${if (group.size == 1) "song" else "songs"}",
+                    coverSong = representative,
+                    description = "Open album ${group.first().album}, $artistNames, ${group.size} songs"
+                ) {
+                    selectedAlbumKey = albumGroupKey(group.first())
+                    selectedArtistName = null
+                    renderSongs(searchBox.text?.toString().orEmpty())
+                }
+            }
+    }
+
+    private fun renderArtistGroups(items: List<Song>) {
+        items.groupBy { it.artist.lowercase(Locale.ROOT) }.values
+            .sortedBy { group -> group.first().artist.lowercase(Locale.ROOT) }
+            .forEach { group ->
+                val artistName = group.first().artist
+                val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
+                addLibraryCollectionRow(
+                    title = artistName,
+                    subtitle = "${group.size} ${if (group.size == 1) "song" else "songs"}",
+                    coverSong = representative,
+                    description = "Open artist $artistName, ${group.size} songs"
+                ) {
+                    selectedAlbumKey = null
+                    selectedArtistName = artistName
+                    renderSongs(searchBox.text?.toString().orEmpty())
+                }
+            }
+    }
+
+    private fun addLibraryCollectionRow(
+        title: String,
+        subtitle: String,
+        coverSong: Song,
+        description: String,
+        onClick: () -> Unit
+    ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(11), dp(14), dp(11))
+            background = roundedBackground(Color.rgb(34, 23, 49), 19).apply {
+                setStroke(dp(1), Color.rgb(90, 62, 117))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = description
+            setOnClickListener { onClick() }
+        }
+        val cover = ImageView(this).apply {
+            setImageResource(R.drawable.ic_audio_placeholder)
+            background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
+                setStroke(dp(1), Color.rgb(145, 96, 190))
+            }
+            clipToOutline = true
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = "$title artwork"
+        }
+        row.addView(cover, LinearLayout.LayoutParams(dp(68), dp(68)))
+        loadArtworkInto(cover, coverSong)
+
+        val details = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(8), 0)
+        }
+        details.addView(label(title, 16f, Color.rgb(251, 247, 255), true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        details.addView(label(subtitle, 12f, Color.rgb(194, 174, 216)).apply {
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(4), 0, 0)
+        })
+        row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(label("›", 28f, Color.rgb(190, 145, 224), true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Open $title"
+        })
+        songList.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(9)
+        })
+    }
+
     private fun playSong(song: Song) {
         val p = player
 
@@ -2478,19 +2712,19 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val queue: List<Song> = when {
+        val queueCandidates = when {
             selectedPlaylist != null -> {
                 val members = playlists[selectedPlaylist].orEmpty()
                 songs.filter { members.contains(it.uri.toString()) }
             }
-
-            showFavoritesOnly -> {
-                songs.filter {
-                    favoriteSongUris.contains(it.uri.toString())
-                }
-            }
-
+            showFavoritesOnly -> songs.filter { favoriteSongUris.contains(it.uri.toString()) }
             else -> songs.toList()
+        }
+        val queue = queueCandidates.filter { queuedSong ->
+            (currentTab != "library" || selectedAlbumKey == null ||
+                albumGroupKey(queuedSong) == selectedAlbumKey) &&
+                (currentTab != "library" || selectedArtistName == null ||
+                    queuedSong.artist.equals(selectedArtistName, ignoreCase = true))
         }
 
         val startIndex = queue.indexOfFirst { it.uri == song.uri }
@@ -3567,6 +3801,9 @@ class MainActivity : AppCompatActivity() {
             selectedPlaylist = null
             updateFavoriteFilterButton()
             updatePlaylistButton()
+            renderSongs(searchBox.text?.toString().orEmpty())
+        } else if (tab == "library") {
+            updateLibraryBrowseButtons()
             renderSongs(searchBox.text?.toString().orEmpty())
         }
 
