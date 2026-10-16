@@ -1146,7 +1146,7 @@ class MainActivity : AppCompatActivity() {
                 content.addView(presetSpinner!!, LinearLayout.LayoutParams(-1, dp(48)))
             }
 
-            val frequencies = state.getIntArray(KivoraPlaybackService.KEY_FREQUENCIES).orEmpty()
+            val frequencies = state.getIntArray(KivoraPlaybackService.KEY_FREQUENCIES) ?: intArrayOf()
             val minLevel = state.getInt(KivoraPlaybackService.KEY_MIN_LEVEL)
             val maxLevel = state.getInt(KivoraPlaybackService.KEY_MAX_LEVEL)
             val levelLabels = mutableListOf<TextView>()

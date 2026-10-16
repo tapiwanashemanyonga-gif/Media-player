@@ -73,7 +73,7 @@ class KivoraPlaybackService : MediaSessionService() {
             }.getOrElse { error ->
                 return Futures.immediateFuture(
                     SessionResult(
-                        SessionResult.RESULT_ERROR,
+                        SessionResult.RESULT_ERROR_UNKNOWN,
                         Bundle().apply {
                             putBoolean(KEY_SUPPORTED, false)
                             putString(KEY_MESSAGE, error.message ?: "Equalizer command failed.")
