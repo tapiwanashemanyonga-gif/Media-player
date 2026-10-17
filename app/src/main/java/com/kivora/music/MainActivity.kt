@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
+import android.util.LruCache
 import android.util.Size
 import android.os.Bundle
 import android.os.Handler
@@ -150,6 +151,12 @@ class MainActivity : AppCompatActivity() {
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
     private var artworkRequestId = 0
+    private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    ) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
+            (value.byteCount / 1024).coerceAtLeast(1)
+    }
 
     // Optimization: cache lowercase search text for each song.
     private val normalizedSearchText = mutableMapOf<String, String>()
@@ -2756,28 +2763,74 @@ class MainActivity : AppCompatActivity() {
         updateNowPlaying()
     }
 
-    private fun loadArtworkInto(imageView: ImageView, song: Song) {
+    private fun loadArtworkInto(
+        imageView: ImageView,
+        song: Song,
+        targetSizePx: Int? = null,
+        requestId: Int? = null
+    ) {
         val songKey = song.uri.toString()
         imageView.tag = songKey
         val artworkUri = song.artworkUri ?: return
+        val params = imageView.layoutParams
+        val targetSize = targetSizePx ?: maxOf(
+            imageView.width,
+            imageView.height,
+            params?.width?.takeIf { it > 0 } ?: 0,
+            params?.height?.takeIf { it > 0 } ?: 0
+        ).takeIf { it > 0 } ?: dp(192)
+        val cacheKey = "$artworkUri@$targetSize"
+
+        fun applyIfCurrent(bitmap: android.graphics.Bitmap) {
+            if (
+                !isFinishing && !isDestroyed && imageView.tag == songKey &&
+                (requestId == null || requestId == artworkRequestId)
+            ) {
+                imageView.clearColorFilter()
+                imageView.setImageBitmap(bitmap)
+            }
+        }
+
+        artworkCache.get(cacheKey)?.let { cachedBitmap ->
+            applyIfCurrent(cachedBitmap)
+            return
+        }
 
         artworkExecutor.execute {
-            val bitmap = try {
-                contentResolver.openInputStream(artworkUri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
-            } catch (_: Exception) {
-                null
-            }
+            val bitmap = artworkCache.get(cacheKey) ?: decodeArtwork(artworkUri, targetSize)
+                ?.also { artworkCache.put(cacheKey, it) }
 
             if (bitmap != null) {
                 runOnUiThread {
-                    if (!isFinishing && !isDestroyed && imageView.tag == songKey) {
-                        imageView.clearColorFilter()
-                        imageView.setImageBitmap(bitmap)
-                    }
+                    applyIfCurrent(bitmap)
                 }
             }
+        }
+    }
+
+    private fun decodeArtwork(artworkUri: Uri, targetSizePx: Int): android.graphics.Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(artworkUri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, bounds)
+            } ?: return null
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            val target = targetSizePx.coerceAtLeast(dp(32))
+            var sampleSize = 1
+            while (maxOf(
+                    bounds.outWidth / (sampleSize * 2),
+                    bounds.outHeight / (sampleSize * 2)
+                ) >= target
+            ) {
+                sampleSize *= 2
+            }
+            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            contentResolver.openInputStream(artworkUri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -2863,7 +2916,13 @@ class MainActivity : AppCompatActivity() {
                 showFavoritesOnly ->
                     "No favourites yet.\nTap ☆ beside a song to add it."
 
+                normalized.isNotEmpty() && showingCollections && libraryBrowseMode == "albums" ->
+                    "No albums match your search. Use × to clear it."
+                normalized.isNotEmpty() && showingCollections && libraryBrowseMode == "artists" ->
+                    "No artists match your search. Use × to clear it."
                 normalized.isNotEmpty() -> "No songs match your search. Use × to clear it."
+                showingCollections && libraryBrowseMode == "albums" -> "No albums available."
+                showingCollections && libraryBrowseMode == "artists" -> "No artists available."
                 else -> "No songs match your filters."
             }
 
@@ -2940,7 +2999,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 isClickable = true
                 isFocusable = true
-                contentDescription = "Play ${song.title} by ${song.artist}"
+                contentDescription = "Play ${song.title} by ${song.artist}, from ${song.album}"
                 elevation = dp(1).toFloat()
                 setOnClickListener { playSong(song) }
             }
@@ -2971,7 +3030,7 @@ class MainActivity : AppCompatActivity() {
 
             info.addView(
                 label(
-                    song.artist,
+                    "${song.artist} · ${song.album}",
                     12f,
                     Color.rgb(190, 175, 210)
                 ).apply {
@@ -3751,6 +3810,7 @@ class MainActivity : AppCompatActivity() {
             nowArtist.text = "Your library is ready"
             if (::miniArtist.isInitialized) miniArtist.text = nowArtist.text
             artwork.setImageResource(R.drawable.ic_audio_placeholder)
+            artwork.tag = null
             if (::miniArtwork.isInitialized) miniArtwork.setImageResource(R.drawable.ic_audio_placeholder)
             if (::miniArtwork.isInitialized) miniArtwork.clearColorFilter()
             if (::miniArtwork.isInitialized) miniArtwork.tag = null
@@ -3766,31 +3826,12 @@ class MainActivity : AppCompatActivity() {
         if (::miniArtwork.isInitialized) miniArtwork.setImageResource(R.drawable.ic_audio_placeholder)
         if (::miniArtwork.isInitialized) miniArtwork.clearColorFilter()
         if (::miniArtwork.isInitialized) loadArtworkInto(miniArtwork, song)
-
-        val artworkUri = song.artworkUri
-
-        if (artworkUri != null) {
-            artworkExecutor.execute {
-                val bitmap = try {
-                    contentResolver.openInputStream(artworkUri)?.use { stream ->
-                        BitmapFactory.decodeStream(stream)
-                    }
-                } catch (_: Exception) {
-                    null
-                }
-
-                runOnUiThread {
-                    if (
-                        !isFinishing &&
-                        !isDestroyed &&
-                        requestId == artworkRequestId &&
-                        bitmap != null
-                    ) {
-                        artwork.setImageBitmap(bitmap)
-                    }
-                }
-            }
-        }
+        loadArtworkInto(
+            artwork,
+            song,
+            targetSizePx = dp((resources.configuration.screenWidthDp - 86).coerceIn(160, 460)),
+            requestId = requestId
+        )
 
         updateProgress()
     }
