@@ -8,7 +8,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.kivora.music.preview"
+        applicationId = "com.a1family.media"
         minSdk = 24
         targetSdk = 35
         versionCode = 3

@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Toast.makeText(
                         this,
-                        "Couldn't connect to the music service. Reopen Kivora Music Player.",
+                        "Couldn't connect to the music service. Reopen A1 Family.",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -370,7 +370,7 @@ class MainActivity : AppCompatActivity() {
                 intArrayOf(Color.rgb(174, 98, 255), Color.rgb(104, 48, 190))
             ).apply { cornerRadius = dp(16).toFloat() }
             elevation = dp(5).toFloat()
-            contentDescription = "A1 Family Media Player"
+            contentDescription = "A1 Family"
         }
         header.addView(brandMark, LinearLayout.LayoutParams(dp(42), dp(42)))
 
@@ -379,7 +379,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(11), 0, 0, 0)
         }
-        brandCopy.addView(label("A1 FAMILY", 15f, Color.rgb(250, 247, 255), true))
+        brandCopy.addView(label("A1 Family", 15f, Color.rgb(250, 247, 255), true))
         brandCopy.addView(label("MEDIA PLAYER", 9f, Color.rgb(182, 157, 213), true).apply {
             letterSpacing = 0.16f
             setPadding(0, dp(2), 0, 0)
