@@ -255,6 +255,7 @@ class KivoraPlaybackService : MediaSessionService() {
         require(uri.scheme == "content" || uri.scheme == "file") { "Invalid local audio URI." }
         val title = args.getString(KEY_QUEUE_TITLE).orEmpty().ifBlank { "Unknown title" }
         val artist = args.getString(KEY_QUEUE_ARTIST).orEmpty()
+        val album = args.getString(KEY_QUEUE_ALBUM).orEmpty().ifBlank { "Unknown album" }
         val artworkUri = args.getString(KEY_QUEUE_ARTWORK_URI)?.let(Uri::parse)
         val mediaItem = androidx.media3.common.MediaItem.Builder()
             .setMediaId(uri.toString())
@@ -263,6 +264,7 @@ class KivoraPlaybackService : MediaSessionService() {
                 androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(title)
                     .setArtist(artist)
+                    .setAlbumTitle(album)
                     .apply { artworkUri?.let { setArtworkUri(it) } }
                     .build()
             )
@@ -441,6 +443,7 @@ class KivoraPlaybackService : MediaSessionService() {
         const val KEY_QUEUE_URI = "queue_uri"
         const val KEY_QUEUE_TITLE = "queue_title"
         const val KEY_QUEUE_ARTIST = "queue_artist"
+        const val KEY_QUEUE_ALBUM = "queue_album"
         const val KEY_QUEUE_ARTWORK_URI = "queue_artwork_uri"
         const val KEY_QUEUE_INDICES = "queue_indices"
     }

@@ -2719,6 +2719,7 @@ class MainActivity : AppCompatActivity() {
             val metadata = MediaMetadata.Builder()
                 .setTitle(song.title)
                 .setArtist(song.artist)
+                .setAlbumTitle(song.album)
                 .apply {
                     song.artworkUri?.let { setArtworkUri(it) }
                 }
@@ -3260,6 +3261,7 @@ class MainActivity : AppCompatActivity() {
             putString(KivoraPlaybackService.KEY_QUEUE_URI, song.uri.toString())
             putString(KivoraPlaybackService.KEY_QUEUE_TITLE, song.title)
             putString(KivoraPlaybackService.KEY_QUEUE_ARTIST, song.artist)
+            putString(KivoraPlaybackService.KEY_QUEUE_ALBUM, song.album)
             putString(KivoraPlaybackService.KEY_QUEUE_ARTWORK_URI, song.artworkUri?.toString())
         }
         val future = controller.sendCustomCommand(
