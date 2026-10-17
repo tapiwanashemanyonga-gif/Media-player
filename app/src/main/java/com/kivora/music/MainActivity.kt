@@ -2811,9 +2811,10 @@ class MainActivity : AppCompatActivity() {
     private fun decodeArtwork(artworkUri: Uri, targetSizePx: Int): android.graphics.Bitmap? {
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            contentResolver.openInputStream(artworkUri)?.use { stream ->
+            val boundsStream = contentResolver.openInputStream(artworkUri) ?: return null
+            boundsStream.use { stream ->
                 BitmapFactory.decodeStream(stream, null, bounds)
-            } ?: return null
+            }
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
             val target = targetSizePx.coerceAtLeast(dp(32))
@@ -2826,7 +2827,8 @@ class MainActivity : AppCompatActivity() {
                 sampleSize *= 2
             }
             val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-            contentResolver.openInputStream(artworkUri)?.use { stream ->
+            val decodeStream = contentResolver.openInputStream(artworkUri) ?: return null
+            decodeStream.use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
             }
         } catch (_: Exception) {
