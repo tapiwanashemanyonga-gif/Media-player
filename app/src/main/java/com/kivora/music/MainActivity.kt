@@ -113,6 +113,7 @@ class MainActivity : AppCompatActivity() {
     private var upNextDialog: AlertDialog? = null
     private var upNextList: LinearLayout? = null
     private var upNextSummary: TextView? = null
+    private var upNextClearButton: TextView? = null
     private var queueOrderIndices: IntArray? = null
     private var queueOrderItemCount = -1
     private var queueOrderCurrentIndex = -1
@@ -3301,11 +3302,26 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(18), dp(4), dp(18), dp(8))
         }
         val summary = label("", 13f, Color.rgb(205, 177, 231), true).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(12))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), dp(8), dp(12))
         }
         upNextSummary = summary
-        content.addView(summary)
+        val clearButton = label("Clear upcoming", 12f, Color.rgb(255, 166, 197), true).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(44)
+            setPadding(dp(8), 0, 0, dp(8))
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Clear upcoming tracks"
+            setOnClickListener { confirmClearUpcomingItems() }
+        }
+        upNextClearButton = clearButton
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(summary, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(clearButton, LinearLayout.LayoutParams(-2, -2))
+        })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         upNextList = list
         content.addView(ScrollView(this).apply {
@@ -3322,6 +3338,7 @@ class MainActivity : AppCompatActivity() {
             upNextDialog = null
             upNextList = null
             upNextSummary = null
+            upNextClearButton = null
         }
         upNextDialog = dialog
         dialog.show()
@@ -3334,19 +3351,80 @@ class MainActivity : AppCompatActivity() {
         val list = upNextList
         val entries = upcomingQueueEntries()
         updateUpNextButton(entries.size)
+        val currentIndex = p.currentMediaItemIndex
+        val canClear = currentIndex in 0 until p.mediaItemCount &&
+            currentIndex < p.mediaItemCount - 1 &&
+            p.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)
         val queueSummary = when (entries.size) {
             0 -> "Nothing queued after the current song"
             1 -> "1 upcoming song"
             else -> "${entries.size} upcoming songs"
         }
         upNextSummary?.text = when {
-            entries.isEmpty() -> queueSummary
-            p.repeatMode == Player.REPEAT_MODE_ONE -> "$queueSummary · repeat one"
-            p.shuffleModeEnabled -> "$queueSummary · shuffle on"
+            p.shuffleModeEnabled -> "$queueSummary · reorder unavailable in shuffle"
+            p.repeatMode == Player.REPEAT_MODE_ONE -> "$queueSummary · reorder unavailable in repeat one"
+            p.repeatMode == Player.REPEAT_MODE_ALL -> "$queueSummary · reorder stays within current-track boundary"
             else -> queueSummary
+        }
+        upNextClearButton?.apply {
+            isEnabled = canClear
+            alpha = if (canClear) 1f else 0.45f
         }
         if (list == null) return
         list.removeAllViews()
+
+        if (currentIndex in 0 until p.mediaItemCount) {
+            val currentItem = p.getMediaItemAt(currentIndex)
+            val metadata = currentItem.mediaMetadata
+            val title = metadata.title?.toString()?.takeIf { it.isNotBlank() }
+                ?: currentItem.localConfiguration?.uri?.lastPathSegment
+                ?: "Unavailable track"
+            val artist = metadata.artist?.toString()?.takeIf { it.isNotBlank() } ?: "Local audio"
+            val currentSong = songForMediaItem(currentItem)
+            val currentRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBackground(Color.rgb(62, 38, 83), 17).apply {
+                    setStroke(dp(2), Color.rgb(177, 117, 231))
+                }
+                contentDescription = "Currently playing: $title"
+            }
+            val cover = ImageView(this).apply {
+                setImageResource(R.drawable.ic_audio_placeholder)
+                background = roundedBackground(Color.rgb(57, 37, 78), 11)
+                clipToOutline = true
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "$title album artwork"
+            }
+            currentRow.addView(cover, LinearLayout.LayoutParams(dp(46), dp(46)))
+            currentSong?.let { loadArtworkInto(cover, it) }
+            val copy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10), 0, 0, 0)
+            }
+            copy.addView(label("NOW PLAYING", 10f, Color.rgb(213, 171, 255), true))
+            copy.addView(label(title, 14f, Color.WHITE, true).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(3), 0, 0)
+            })
+            copy.addView(label(artist, 11f, Color.rgb(205, 187, 219)).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, 0)
+            })
+            currentRow.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            currentRow.addView(label("♫", 20f, Color.rgb(213, 171, 255), true).apply {
+                gravity = Gravity.CENTER
+                minWidth = dp(34)
+                contentDescription = "Current track"
+            })
+            list.addView(currentRow, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+            })
+        }
+
         if (entries.isEmpty()) {
             list.addView(label(
                 if (p.mediaItemCount == 0) "Your queue is empty. Add songs from the library to start listening." else "No upcoming songs. Add a track from your library to keep the music going.",
@@ -3413,6 +3491,22 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(3), 0, 0)
             })
             row.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            val canReorder = !p.shuffleModeEnabled &&
+                p.repeatMode != Player.REPEAT_MODE_ONE &&
+                p.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+            val controls = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+            }
+            controls.addView(queueMoveButton("↑", "Move $title up", canReorder &&
+                canMoveQueueEntry(entries, queuePosition, -1, p.currentMediaItemIndex)) {
+                moveQueuedItem(mediaIndex, -1)
+            })
+            controls.addView(queueMoveButton("↓", "Move $title down", canReorder &&
+                canMoveQueueEntry(entries, queuePosition, 1, p.currentMediaItemIndex)) {
+                moveQueuedItem(mediaIndex, 1)
+            })
+            row.addView(controls)
             row.addView(label("×", 24f, Color.rgb(255, 166, 197), true).apply {
                 gravity = Gravity.CENTER
                 minWidth = dp(44)
@@ -3494,6 +3588,91 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             showQueueUnavailable()
         }
+    }
+
+    private fun queueMoveButton(
+        text: String,
+        description: String,
+        enabled: Boolean,
+        onClick: () -> Unit
+    ): TextView = label(text, 18f, Color.rgb(213, 171, 255), true).apply {
+        gravity = Gravity.CENTER
+        minWidth = dp(38)
+        minHeight = dp(30)
+        isEnabled = enabled
+        isClickable = enabled
+        isFocusable = true
+        alpha = if (enabled) 1f else 0.35f
+        contentDescription = description
+        setOnClickListener { if (isEnabled) onClick() }
+    }
+
+    private fun canMoveQueueEntry(
+        entries: List<Pair<Int, MediaItem>>,
+        position: Int,
+        direction: Int,
+        currentIndex: Int
+    ): Boolean {
+        val targetPosition = position + direction
+        if (position !in entries.indices || targetPosition !in entries.indices) return false
+        val fromIndex = entries[position].first
+        val toIndex = entries[targetPosition].first
+        return fromIndex != currentIndex && toIndex != currentIndex &&
+            kotlin.math.abs(fromIndex - toIndex) == 1
+    }
+
+    private fun moveQueuedItem(mediaIndex: Int, direction: Int) {
+        val p = player ?: return showQueueUnavailable()
+        val entries = upcomingQueueEntries()
+        val position = entries.indexOfFirst { it.first == mediaIndex }
+        if (position < 0 || p.shuffleModeEnabled || p.repeatMode == Player.REPEAT_MODE_ONE ||
+            !p.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS) ||
+            !canMoveQueueEntry(entries, position, direction, p.currentMediaItemIndex)
+        ) {
+            renderUpNextQueue()
+            return
+        }
+        val targetIndex = entries[position + direction].first
+        try {
+            p.moveMediaItem(mediaIndex, targetIndex)
+            queueOrderIndices = null
+            requestQueueOrder()
+            renderUpNextQueue()
+        } catch (_: Exception) {
+            showQueueUnavailable()
+        }
+    }
+
+    private fun clearUpcomingItems() {
+        val p = player ?: return showQueueUnavailable()
+        val itemCount = p.mediaItemCount
+        val currentIndex = p.currentMediaItemIndex
+        if (itemCount == 0 || currentIndex !in 0 until itemCount || currentIndex >= itemCount - 1) {
+            renderUpNextQueue()
+            return
+        }
+        if (!p.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) return showQueueUnavailable()
+        val currentItem = p.getMediaItemAt(currentIndex)
+        try {
+            p.removeMediaItems(currentIndex + 1, itemCount)
+            if (p.currentMediaItem != currentItem) {
+                showQueueUnavailable()
+            }
+            queueOrderIndices = null
+            requestQueueOrder()
+            renderUpNextQueue()
+        } catch (_: Exception) {
+            showQueueUnavailable()
+        }
+    }
+
+    private fun confirmClearUpcomingItems() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear upcoming tracks?")
+            .setMessage("The current song will keep playing. Previous playlist tracks will stay in the queue.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear") { _, _ -> clearUpcomingItems() }
+            .show()
     }
 
     private fun songForMediaItem(mediaItem: MediaItem): Song? {
