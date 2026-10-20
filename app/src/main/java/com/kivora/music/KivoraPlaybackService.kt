@@ -29,6 +29,7 @@ class KivoraPlaybackService : MediaSessionService() {
     private var sleepTimerDeadlineElapsedRealtime = 0L
     private var sleepTimerDurationMinutes = 0
     private var sleepTimerExpired = false
+    private val appliedPlaybackRequestIds = linkedSetOf<String>()
 
     private val sleepTimerRunnable = object : Runnable {
         override fun run() {
@@ -63,6 +64,7 @@ class KivoraPlaybackService : MediaSessionService() {
                 commands.add(SessionCommand(COMMAND_QUEUE_ADD_END, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_QUEUE_PLAY_NEXT, Bundle.EMPTY))
                 commands.add(SessionCommand(COMMAND_QUEUE_GET_ORDER, Bundle.EMPTY))
+                commands.add(SessionCommand(COMMAND_PLAYBACK_REQUEST, Bundle.EMPTY))
             }
             return MediaSession.ConnectionResult.accept(
                 commands.build(),
@@ -138,6 +140,7 @@ class KivoraPlaybackService : MediaSessionService() {
                     COMMAND_QUEUE_ADD_END -> addQueueItem(args, playNext = false)
                     COMMAND_QUEUE_PLAY_NEXT -> addQueueItem(args, playNext = true)
                     COMMAND_QUEUE_GET_ORDER -> queueOrderState()
+                    COMMAND_PLAYBACK_REQUEST -> applyPlaybackRequest(args)
                     else -> Bundle().apply { putBoolean(KEY_SUPPORTED, false) }
                 }
             }.getOrElse { error ->
@@ -246,6 +249,81 @@ class KivoraPlaybackService : MediaSessionService() {
         sleepTimerExpired = true
         musicPlayer?.pause()
         Toast.makeText(this, "Sleep timer ended. Music paused.", Toast.LENGTH_LONG).show()
+    }
+
+    @androidx.media3.common.util.UnstableApi
+    private fun applyPlaybackRequest(args: Bundle): Bundle {
+        val requestId = args.getString(KEY_PLAYBACK_REQUEST_ID).orEmpty()
+        require(requestId.isNotBlank()) { "Missing playback request ID." }
+        if (requestId in appliedPlaybackRequestIds) {
+            return Bundle().apply {
+                putBoolean(KEY_SUPPORTED, true)
+                putBoolean(KEY_DUPLICATE, true)
+            }
+        }
+        val player = musicPlayer ?: error("Music player is unavailable.")
+        when (args.getString(KEY_PLAYBACK_KIND)) {
+            "resume_music" -> player.play()
+            "play_queue" -> {
+                val uris = args.getStringArrayList(KEY_PLAYBACK_URIS).orEmpty()
+                val titles = args.getStringArrayList(KEY_PLAYBACK_TITLES).orEmpty()
+                val artists = args.getStringArrayList(KEY_PLAYBACK_ARTISTS).orEmpty()
+                val albums = args.getStringArrayList(KEY_PLAYBACK_ALBUMS).orEmpty()
+                val artwork = args.getStringArrayList(KEY_PLAYBACK_ARTWORK).orEmpty()
+                require(uris.isNotEmpty() && uris.size == titles.size && uris.size == artists.size &&
+                    uris.size == albums.size && uris.size == artwork.size) { "Invalid playback queue." }
+                val items = uris.indices.map { index ->
+                    val uri = Uri.parse(uris[index])
+                    require(uri.scheme == "content" || uri.scheme == "file") { "Invalid local audio URI." }
+                    androidx.media3.common.MediaItem.Builder().setUri(uri).setMediaId(uri.toString())
+                        .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+                            .setTitle(titles[index]).setArtist(artists[index]).setAlbumTitle(albums[index])
+                            .apply { artwork[index].takeIf(String::isNotBlank)?.let { setArtworkUri(Uri.parse(it)) } }
+                            .build()).build()
+                }
+                val startIndex = args.getInt(KEY_PLAYBACK_INDEX)
+                require(startIndex in items.indices) { "Invalid playback queue index." }
+                player.setMediaItems(items, startIndex, 0L)
+                player.prepare()
+                player.play()
+            }
+            "play_queue_item" -> {
+                val targetUri = args.getString(KEY_PLAYBACK_URI)
+                val index = if (targetUri != null) {
+                    (0 until player.mediaItemCount).firstOrNull { itemIndex ->
+                        player.getMediaItemAt(itemIndex).localConfiguration?.uri?.toString() == targetUri
+                    }
+                } else args.getInt(KEY_PLAYBACK_INDEX).takeIf { it in 0 until player.mediaItemCount }
+                if (index != null) {
+                    player.seekTo(index, 0L)
+                    player.play()
+                } else {
+                    val uri = targetUri?.let(Uri::parse)
+                        ?: error("Requested queue item is unavailable.")
+                    require(uri.scheme == "content" || uri.scheme == "file") {
+                        "Invalid local audio URI."
+                    }
+                    // The queue may be gone after service/process recreation. Recover the
+                    // explicitly requested item instead of leaving its durable request stuck.
+                    val item = androidx.media3.common.MediaItem.Builder()
+                        .setUri(uri)
+                        .setMediaId(uri.toString())
+                        .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+                            .setTitle("Unknown title")
+                            .build())
+                        .build()
+                    player.setMediaItem(item)
+                    player.prepare()
+                    player.play()
+                }
+            }
+            else -> error("Unsupported music playback request.")
+        }
+        appliedPlaybackRequestIds.add(requestId)
+        while (appliedPlaybackRequestIds.size > 128) {
+            appliedPlaybackRequestIds.remove(appliedPlaybackRequestIds.first())
+        }
+        return Bundle().apply { putBoolean(KEY_SUPPORTED, true) }
     }
 
     @androidx.media3.common.util.UnstableApi
@@ -417,6 +495,7 @@ class KivoraPlaybackService : MediaSessionService() {
         const val COMMAND_QUEUE_ADD_END = "com.kivora.music.QUEUE_ADD_END"
         const val COMMAND_QUEUE_PLAY_NEXT = "com.kivora.music.QUEUE_PLAY_NEXT"
         const val COMMAND_QUEUE_GET_ORDER = "com.kivora.music.QUEUE_GET_ORDER"
+        const val COMMAND_PLAYBACK_REQUEST = "com.kivora.music.PLAYBACK_REQUEST"
 
         val SLEEP_TIMER_OPTIONS_MINUTES = setOf(15, 30, 45, 60)
 
@@ -446,5 +525,15 @@ class KivoraPlaybackService : MediaSessionService() {
         const val KEY_QUEUE_ALBUM = "queue_album"
         const val KEY_QUEUE_ARTWORK_URI = "queue_artwork_uri"
         const val KEY_QUEUE_INDICES = "queue_indices"
+        const val KEY_PLAYBACK_REQUEST_ID = "playback_request_id"
+        const val KEY_PLAYBACK_KIND = "playback_kind"
+        const val KEY_PLAYBACK_URIS = "playback_uris"
+        const val KEY_PLAYBACK_TITLES = "playback_titles"
+        const val KEY_PLAYBACK_ARTISTS = "playback_artists"
+        const val KEY_PLAYBACK_ALBUMS = "playback_albums"
+        const val KEY_PLAYBACK_ARTWORK = "playback_artwork"
+        const val KEY_PLAYBACK_INDEX = "playback_index"
+        const val KEY_PLAYBACK_URI = "playback_uri"
+        const val KEY_DUPLICATE = "duplicate"
     }
 }

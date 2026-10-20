@@ -105,6 +105,14 @@ class MainActivity : AppCompatActivity() {
         override fun onPlayerError(error: PlaybackException) {
             reportVideoPlaybackFailure()
         }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            tryRunPendingPlaybackAfterAd()
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            tryRunPendingPlaybackAfterAd()
+        }
     }
     private var fullscreenVideoDialog: android.app.Dialog? = null
     private var sleepTimerDialog: AlertDialog? = null
@@ -145,6 +153,16 @@ class MainActivity : AppCompatActivity() {
     private var selectedArtistName: String? = null
     private var librarySortMode = "title"
     private var userSeeking = false
+    private var activityResumed = false
+    private var pendingPlaybackAfterAd: PendingPlayback? = null
+    private var playbackContinuesAfterAd = false
+    private var musicDispatchRetryId: String? = null
+    private var musicDispatchRetryCount = 0
+    private var musicDispatchRetry: Runnable? = null
+    private enum class PlaybackState { STOPPED, ACTIVE, UNKNOWN }
+    private var songsLoaded = false
+    private var controllerRetryRunnable: Runnable? = null
+    private var controllerReconnectAttempt = 0
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -216,6 +234,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updatePlayButton()
+            tryRunPendingPlaybackAfterAd()
         }
 
         override fun onShuffleModeEnabledChanged(
@@ -234,6 +253,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             updateProgress()
+            tryRunPendingPlaybackAfterAd()
         }
     }
 
@@ -276,7 +296,327 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun connectToPlaybackService() {
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Start.io requires saving the state of the same StartAppAd used for the interstitial.
+        StartIoVideoAds.saveInstanceState(this, outState)
+        pendingPlaybackAfterAd?.writeTo(outState, "activity_pending_playback_")
+        outState.putBoolean("activity_playback_continues_after_ad", playbackContinuesAfterAd)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        // Restore the StartAppAd instance before the Activity restores its own state, as required
+        // for Start.io video interstitials.
+        pendingPlaybackAfterAd = PendingPlayback.readFrom(
+            savedInstanceState,
+            "activity_pending_playback_"
+        )
+        playbackContinuesAfterAd = savedInstanceState.getBoolean("activity_playback_continues_after_ad")
+        StartIoVideoAds.restoreInstanceState(this, savedInstanceState)
+        super.onRestoreInstanceState(savedInstanceState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        StartIoVideoAds.attach(this)
+        pendingPlaybackAfterAd?.let { intent ->
+            tryRunPendingPlaybackAfterAd()
+        }
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
+    }
+
+    internal fun isAdHostResumedAndFocused(): Boolean =
+        activityResumed && hasWindowFocus() && !isFinishing && !isDestroyed
+
+    /** Called by the ad coordinator without retaining this Activity in SDK callbacks. */
+    internal fun runPlaybackAfterAd(intent: PendingPlayback?) {
+        if (intent == null || isFinishing || isDestroyed) return
+        pendingPlaybackAfterAd = intent
+        playbackContinuesAfterAd = true
+        tryRunPendingPlaybackAfterAd()
+    }
+
+    private fun retainPlaybackForUnresolvedAd(intent: PendingPlayback) {
+        pendingPlaybackAfterAd = intent
+        playbackContinuesAfterAd = true
+        if (!StartIoVideoAds.retainPendingPlayback(intent)) {
+            Toast.makeText(
+                this,
+                "Playback request could not be saved yet. Keep A1 Family open; playback remains paused.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun discardExpiredPlaybackRequest(intent: PendingPlayback): Boolean {
+        if (!StartIoVideoAds.isPlaybackRequestExpired(intent)) return false
+        if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
+            pendingPlaybackAfterAd = null
+            playbackContinuesAfterAd = false
+        }
+        return true
+    }
+
+    private fun tryRunPendingPlaybackAfterAd() {
+        val intent = pendingPlaybackAfterAd ?: return
+        if (discardExpiredPlaybackRequest(intent)) return
+        if (StartIoVideoAds.wasPlaybackAcknowledged(intent)) {
+            pendingPlaybackAfterAd = null
+            playbackContinuesAfterAd = false
+            return
+        }
+        if (!activityResumed) return
+        if (StartIoVideoAds.hasUnresolvedDisplay()) {
+            retainPlaybackForUnresolvedAd(intent)
+            return
+        }
+        val state = playbackState()
+        if (state == PlaybackState.UNKNOWN) {
+            StartIoVideoAds.savePendingPlayback(intent)
+            return
+        }
+        if (intent.kind == "play_queue" && !songsLoaded) return
+        val alreadyShown = playbackContinuesAfterAd
+        if (!alreadyShown && state == PlaybackState.STOPPED) {
+            when (StartIoVideoAds.showIfReady(this, intent)) {
+                StartIoVideoAds.ShowResult.SHOWN -> {
+                    pendingPlaybackAfterAd = null
+                    playbackContinuesAfterAd = false
+                    return
+                }
+                StartIoVideoAds.ShowResult.BLOCKED_UNRESOLVED -> {
+                    retainPlaybackForUnresolvedAd(intent)
+                    return
+                }
+                StartIoVideoAds.ShowResult.EXPIRED -> {
+                    discardExpiredPlaybackRequest(intent)
+                    return
+                }
+                StartIoVideoAds.ShowResult.UNAVAILABLE -> Unit
+            }
+        }
+        if (!executePlayback(intent)) {
+            pendingPlaybackAfterAd = intent
+            StartIoVideoAds.savePendingPlayback(intent)
+            return
+        }
+        pendingPlaybackAfterAd = null
+        playbackContinuesAfterAd = false
+        StartIoVideoAds.acknowledgePendingPlayback(intent)
+    }
+
+    private fun playbackState(): PlaybackState {
+        val controller = player ?: return PlaybackState.UNKNOWN
+        val future = controllerFuture ?: return PlaybackState.UNKNOWN
+        if (!future.isDone || future.isCancelled || videoPlayer == null) {
+            return PlaybackState.UNKNOWN
+        }
+
+        fun isActive(p: Player): Boolean = p.isPlaying ||
+            p.playbackState == Player.STATE_BUFFERING ||
+            (p.playWhenReady && p.playbackState != Player.STATE_IDLE &&
+                p.playbackState != Player.STATE_ENDED)
+
+        return if (isActive(controller) || isActive(videoPlayer!!)) {
+            PlaybackState.ACTIVE
+        } else {
+            PlaybackState.STOPPED
+        }
+    }
+
+    private fun continueUserPlayback(intent: PendingPlayback) {
+        if (discardExpiredPlaybackRequest(intent)) return
+        if (StartIoVideoAds.hasUnresolvedDisplay()) {
+            retainPlaybackForUnresolvedAd(intent)
+            return
+        }
+        when (playbackState()) {
+            PlaybackState.UNKNOWN -> {
+                pendingPlaybackAfterAd = intent
+                playbackContinuesAfterAd = false
+                StartIoVideoAds.savePendingPlayback(intent)
+                return
+            }
+            PlaybackState.ACTIVE -> {
+                if (!executePlayback(intent)) {
+                    pendingPlaybackAfterAd = intent
+                    StartIoVideoAds.savePendingPlayback(intent)
+                }
+                return
+            }
+            PlaybackState.STOPPED -> Unit
+        }
+        when (StartIoVideoAds.showIfReady(this, intent)) {
+            StartIoVideoAds.ShowResult.SHOWN -> Unit
+            StartIoVideoAds.ShowResult.BLOCKED_UNRESOLVED -> {
+                retainPlaybackForUnresolvedAd(intent)
+            }
+            StartIoVideoAds.ShowResult.EXPIRED -> {
+                discardExpiredPlaybackRequest(intent)
+            }
+            StartIoVideoAds.ShowResult.UNAVAILABLE -> {
+                if (!executePlayback(intent)) {
+                    pendingPlaybackAfterAd = intent
+                    StartIoVideoAds.savePendingPlayback(intent)
+                } else {
+                    StartIoVideoAds.acknowledgePendingPlayback(intent)
+                }
+            }
+        }
+    }
+
+    private fun executePlayback(intent: PendingPlayback): Boolean {
+        if (discardExpiredPlaybackRequest(intent)) return true
+        when (intent.kind) {
+            "resume_music" -> {
+                if (player == null) return false
+                videoPlayer?.pause()
+                dispatchMusicPlayback(intent)
+                return false
+            }
+            "play_queue" -> {
+                if (player == null) return false
+                val queue = intent.queue.orEmpty().mapNotNull { uri ->
+                    songs.firstOrNull { it.uri.toString() == uri }
+                }
+                val selectedUri = intent.queue?.getOrNull(intent.index)
+                val selectedIndex = queue.indexOfFirst { it.uri.toString() == selectedUri }
+                if (queue.isNotEmpty() && selectedIndex >= 0) {
+                    activeQueue = queue
+                    videoPlayer?.pause()
+                    // Service-owned request dispatch preserves the request ID across retries.
+                    dispatchMusicPlayback(intent, queue, selectedIndex)
+                    updateNowPlaying()
+                    updatePlayButton()
+                    return false
+                }
+                return false
+            }
+            "play_queue_item" -> {
+                val p = player ?: return false
+                val index = if (intent.uri != null) {
+                    (0 until p.mediaItemCount).firstOrNull { itemIndex ->
+                        p.getMediaItemAt(itemIndex).localConfiguration?.uri?.toString() == intent.uri
+                    }
+                } else {
+                    intent.index.takeIf { it in 0 until p.mediaItemCount }
+                } ?: return false
+                dispatchMusicPlayback(intent, index = index)
+                upNextDialog?.dismiss()
+                return false
+            }
+            "play_video" -> {
+                val uri = intent.uri?.let(Uri::parse) ?: return false
+                val video = videoPlayer ?: return false
+                if (video.currentMediaItem?.localConfiguration?.uri == uri &&
+                    video.playbackState != Player.STATE_IDLE &&
+                    video.playbackState != Player.STATE_ENDED) {
+                    videoPlayer?.play()
+                    player?.pause()
+                    return true
+                }
+                selectedVideoUri = uri.toString()
+                navigationVideoUri = uri.toString()
+                lastFailedVideoUri = null
+                renderVideos(searchBox.text?.toString().orEmpty())
+                videoStatus.text = "Playing: ${intent.title.orEmpty()}"
+                player?.pause()
+                try {
+                    video.setMediaItem(MediaItem.Builder().setUri(uri).setMediaId(intent.requestId).build())
+                    video.prepare()
+                    video.playWhenReady = true
+                } catch (_: RuntimeException) {
+                    reportVideoPlaybackFailure(uri.toString())
+                    return false
+                }
+                return true
+            }
+            "resume_video" -> {
+                val video = videoPlayer ?: return false
+                val uri = intent.uri?.let(Uri::parse)
+                if (uri != null && video.currentMediaItem?.localConfiguration?.uri != uri) {
+                    video.setMediaItem(MediaItem.Builder().setUri(uri).setMediaId(intent.requestId).build())
+                    video.prepare()
+                }
+                player?.pause()
+                video.play()
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun dispatchMusicPlayback(
+        intent: PendingPlayback,
+        queue: List<Song>? = null,
+        index: Int = intent.index
+    ) {
+        val controller = player ?: return
+        if (musicDispatchRetryId != intent.requestId) {
+            musicDispatchRetry?.let(handler::removeCallbacks)
+            musicDispatchRetry = null
+            musicDispatchRetryId = intent.requestId
+            musicDispatchRetryCount = 0
+        }
+        val args = Bundle().apply {
+            putString(KivoraPlaybackService.KEY_PLAYBACK_REQUEST_ID, intent.requestId)
+            putString(KivoraPlaybackService.KEY_PLAYBACK_KIND, intent.kind)
+            putInt(KivoraPlaybackService.KEY_PLAYBACK_INDEX, index)
+            putString(KivoraPlaybackService.KEY_PLAYBACK_URI, intent.uri)
+            if (queue != null) {
+                putStringArrayList(KivoraPlaybackService.KEY_PLAYBACK_URIS,
+                    ArrayList(queue.map { it.uri.toString() }))
+                putStringArrayList(KivoraPlaybackService.KEY_PLAYBACK_TITLES,
+                    ArrayList(queue.map { it.title }))
+                putStringArrayList(KivoraPlaybackService.KEY_PLAYBACK_ARTISTS,
+                    ArrayList(queue.map { it.artist }))
+                putStringArrayList(KivoraPlaybackService.KEY_PLAYBACK_ALBUMS,
+                    ArrayList(queue.map { it.album }))
+                putStringArrayList(KivoraPlaybackService.KEY_PLAYBACK_ARTWORK,
+                    ArrayList(queue.map { it.artworkUri?.toString().orEmpty() }))
+            }
+        }
+        val future = controller.sendCustomCommand(
+            SessionCommand(KivoraPlaybackService.COMMAND_PLAYBACK_REQUEST, Bundle.EMPTY), args
+        )
+        future.addListener({
+            val result = runCatching { future.get() }.getOrNull()
+            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
+                result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)) {
+                if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
+                    pendingPlaybackAfterAd = null
+                    playbackContinuesAfterAd = false
+                }
+                musicDispatchRetry?.let(handler::removeCallbacks)
+                musicDispatchRetry = null
+                musicDispatchRetryId = null
+                musicDispatchRetryCount = 0
+                StartIoVideoAds.acknowledgePendingPlayback(intent)
+            } else if (!isFinishing && !isDestroyed &&
+                pendingPlaybackAfterAd?.requestId == intent.requestId) {
+                StartIoVideoAds.savePendingPlayback(intent)
+                if (musicDispatchRetryCount < 3) {
+                    musicDispatchRetryCount++
+                    val retry = Runnable {
+                        musicDispatchRetry = null
+                        if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
+                            tryRunPendingPlaybackAfterAd()
+                        }
+                    }
+                    musicDispatchRetry?.let(handler::removeCallbacks)
+                    musicDispatchRetry = retry
+                    handler.postDelayed(retry, 5_000L)
+                }
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun connectToPlaybackService(isRetry: Boolean = false) {
         val token = SessionToken(
             this,
             ComponentName(this, KivoraPlaybackService::class.java)
@@ -288,15 +628,17 @@ class MainActivity : AppCompatActivity() {
         future.addListener(
             {
                 try {
-                    val connected = future.get()
-
-                    if (isFinishing || isDestroyed) {
+                    if (controllerFuture !== future || isFinishing || isDestroyed) {
                         MediaController.releaseFuture(future)
                         return@addListener
                     }
+                    val connected = future.get()
 
                     player = connected
                     connected.addListener(playerListener)
+                    controllerRetryRunnable?.let(handler::removeCallbacks)
+                    controllerRetryRunnable = null
+                    controllerReconnectAttempt = 0
 
                     syncPlaylistToPlayer()
                     recordRecentlyPlayed(connected.currentMediaItem)
@@ -305,17 +647,42 @@ class MainActivity : AppCompatActivity() {
                     updateShuffleButton()
                     updateRepeatButton()
                     updateProgress()
+                    tryRunPendingPlaybackAfterAd()
 
                 } catch (e: Exception) {
-                    Toast.makeText(
-                        this,
-                        "Couldn't connect to the music service. Reopen A1 Family.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    if (controllerFuture === future && !isFinishing && !isDestroyed) {
+                        if (!isRetry) {
+                            Toast.makeText(
+                                this,
+                                "Couldn't connect to the music service. Retrying…",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        schedulePlaybackServiceReconnect(future)
+                    }
                 }
             },
             ContextCompat.getMainExecutor(this)
         )
+    }
+
+    private fun schedulePlaybackServiceReconnect(
+        failedFuture: ListenableFuture<MediaController>
+    ) {
+        if (controllerRetryRunnable != null || isFinishing || isDestroyed) return
+        val delayMs = (1_000L shl controllerReconnectAttempt.coerceAtMost(5))
+            .coerceAtMost(30_000L)
+        controllerReconnectAttempt++
+        val retry = Runnable {
+            controllerRetryRunnable = null
+            if (!isFinishing && !isDestroyed && player == null &&
+                controllerFuture === failedFuture
+            ) {
+                connectToPlaybackService(isRetry = true)
+            }
+        }
+        controllerRetryRunnable = retry
+        handler.postDelayed(retry, delayMs)
     }
 
     private fun dp(value: Int): Int =
@@ -1025,9 +1392,7 @@ class MainActivity : AppCompatActivity() {
             } else if (p.isPlaying) {
                 p.pause()
             } else {
-                // KIVORA_FIX_AUDIO_VIDEO_V2
-                videoPlayer?.pause()
-                p.play()
+                continueUserPlayback(PendingPlayback("resume_music"))
             }
 
             updatePlayButton()
@@ -1170,9 +1535,7 @@ class MainActivity : AppCompatActivity() {
                     if (p.isPlaying) {
                         p.pause()
                     } else {
-                        // KIVORA_FIX_AUDIO_VIDEO_V2
-                        videoPlayer?.pause()
-                        p.play()
+                        continueUserPlayback(PendingPlayback("resume_music"))
                     }
                     updatePlayButton()
                 } else {
@@ -2719,6 +3082,8 @@ class MainActivity : AppCompatActivity() {
         recordRecentlyPlayed(player?.currentMediaItem)
         renderHomeDashboard()
         renderSongs(searchBox.text?.toString().orEmpty())
+        songsLoaded = true
+        tryRunPendingPlaybackAfterAd()
     }
 
     private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
@@ -3225,15 +3590,6 @@ class MainActivity : AppCompatActivity() {
     private fun playSong(song: Song) {
         val p = player
 
-        if (p == null) {
-            Toast.makeText(
-                this,
-                "Connecting to music service. Please wait.",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
         val queueCandidates = when {
             selectedPlaylist != null -> playlistSongs(selectedPlaylist.orEmpty())
             showFavoritesOnly -> songs.filter { favoriteSongUris.contains(it.uri.toString()) }
@@ -3259,14 +3615,22 @@ class MainActivity : AppCompatActivity() {
 
         activeQueue = queue
 
-        // KIVORA_FIX_AUDIO_VIDEO_V1
-        videoPlayer?.pause()
-        p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
-        p.prepare()
-        p.play()
-
-        updateNowPlaying()
-        updatePlayButton()
+        val request = PendingPlayback(
+            kind = "play_queue",
+            queue = ArrayList(activeQueue.map { it.uri.toString() }),
+            index = startIndex
+        )
+        if (p == null) {
+            pendingPlaybackAfterAd = request
+            StartIoVideoAds.savePendingPlayback(request)
+            Toast.makeText(
+                this,
+                "Connecting to music service. Please wait.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        continueUserPlayback(request)
     }
 
     private fun showQueueActions(song: Song) {
@@ -3622,7 +3986,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playQueuedItem(mediaIndex: Int) {
-        val p = player ?: return showQueueUnavailable()
+        val p = player ?: run {
+            val request = PendingPlayback(
+                kind = "play_queue_item",
+                index = mediaIndex
+            )
+            pendingPlaybackAfterAd = request
+            StartIoVideoAds.savePendingPlayback(request)
+            showQueueUnavailable()
+            return
+        }
         if (mediaIndex !in 0 until p.mediaItemCount) {
             renderUpNextQueue()
             return
@@ -3630,9 +4003,12 @@ class MainActivity : AppCompatActivity() {
         val item = p.getMediaItemAt(mediaIndex)
         if (songForMediaItem(item) == null) return showUnavailableSong()
         try {
-            p.seekTo(mediaIndex, 0L)
-            p.play()
-            upNextDialog?.dismiss()
+            continueUserPlayback(
+                PendingPlayback(
+                    kind = "play_queue_item",
+                    uri = item.localConfiguration?.uri?.toString()
+                )
+            )
         } catch (_: Exception) {
             showUnavailableSong()
         }
@@ -3975,6 +4351,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        pendingPlaybackAfterAd = null
+        musicDispatchRetry?.let(handler::removeCallbacks)
+        musicDispatchRetry = null
+        StartIoVideoAds.detach(this)
+        controllerRetryRunnable?.let(handler::removeCallbacks)
+        controllerRetryRunnable = null
         handler.removeCallbacks(progressUpdater)
         stopSleepTimerPolling()
         sleepTimerDialog?.dismiss()
@@ -4147,23 +4529,10 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "This video is unavailable.", Toast.LENGTH_SHORT).show()
             return false
         }
-        selectedVideoUri = video.uri.toString()
-        navigationVideoUri = video.uri.toString()
-        lastFailedVideoUri = null
-        renderVideos(searchBox.text?.toString().orEmpty())
-        videoStatus.text = "Playing: ${video.title}"
-        // KIVORA_FIX_AUDIO_VIDEO_V1
-        player?.pause()
-        return try {
-            videoPlayer?.apply {
-                setMediaItem(MediaItem.fromUri(video.uri))
-                prepare()
-                playWhenReady = true
-            } != null
-        } catch (_: RuntimeException) {
-            reportVideoPlaybackFailure(video.uri.toString())
-            false
-        }
+        continueUserPlayback(
+            PendingPlayback("play_video", uri = video.uri.toString(), title = video.title)
+        )
+        return videoPlayer != null
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
@@ -4260,7 +4629,11 @@ class MainActivity : AppCompatActivity() {
         }
         val previousButton = control("|◀", "Previous video") { navigateVideo(-1) }
         val playPauseButton = control("Ⅱ", "Pause video") {
-            videoPlayer?.let { if (it.isPlaying) it.pause() else it.play() }
+            videoPlayer?.let {
+                if (it.isPlaying) it.pause() else continueUserPlayback(
+                    PendingPlayback("resume_video", uri = it.currentMediaItem?.localConfiguration?.uri?.toString())
+                )
+            }
         }
         val nextButton = control("▶|", "Next video") { navigateVideo(1) }
         transport.addView(previousButton)
