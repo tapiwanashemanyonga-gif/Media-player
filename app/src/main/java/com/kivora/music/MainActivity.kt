@@ -557,6 +557,7 @@ class MainActivity : AppCompatActivity() {
         index: Int = intent.index
     ) {
         val controller = player ?: return
+        val dispatchGeneration = StartIoVideoAds.beginPlaybackDispatch(intent) ?: return
         if (musicDispatchRetryId != intent.requestId) {
             musicDispatchRetry?.let(handler::removeCallbacks)
             musicDispatchRetry = null
@@ -586,8 +587,10 @@ class MainActivity : AppCompatActivity() {
         )
         future.addListener({
             val result = runCatching { future.get() }.getOrNull()
-            if (result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
-                result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)) {
+            val succeeded = result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
+                result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)
+            if (succeeded) {
+                if (!StartIoVideoAds.canAcknowledgePlayback(intent)) return@addListener
                 if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
                     pendingPlaybackAfterAd = null
                     playbackContinuesAfterAd = false
@@ -597,8 +600,8 @@ class MainActivity : AppCompatActivity() {
                 musicDispatchRetryId = null
                 musicDispatchRetryCount = 0
                 StartIoVideoAds.acknowledgePendingPlayback(intent)
-            } else if (!isFinishing && !isDestroyed &&
-                pendingPlaybackAfterAd?.requestId == intent.requestId) {
+            } else if (StartIoVideoAds.isCurrentPlaybackDispatch(intent, dispatchGeneration) &&
+                !isFinishing && !isDestroyed && pendingPlaybackAfterAd?.requestId == intent.requestId) {
                 StartIoVideoAds.savePendingPlayback(intent)
                 if (musicDispatchRetryCount < 3) {
                     musicDispatchRetryCount++

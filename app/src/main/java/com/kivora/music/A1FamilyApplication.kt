@@ -174,6 +174,8 @@ internal object StartIoVideoAds {
     private var pendingPersistenceFailed = false
     private var pendingPersistenceTarget: PendingPlayback? = null
     private var pendingPersistenceRetry: Runnable? = null
+    private var dispatchAfterPendingPersistenceRequestId: String? = null
+    private var playbackDispatchGeneration = 0L
     private var expiryRetry: Runnable? = null
     private var acknowledgementRetryIntent: String? = null
     private var acknowledgementRetry: Runnable? = null
@@ -201,7 +203,10 @@ internal object StartIoVideoAds {
         } else if (parsed != null) {
             // An in-flight ad cannot be resumed safely after process death. Never replay it;
             // preserve its request and mark the ad outcome explicitly unknown.
-            val processDiedDuringAd = parsed.adState == PlaybackJournal.AdState.IN_FLIGHT ||
+            val processDiedDuringAd = parsed.adState in setOf(
+                PlaybackJournal.AdState.IN_FLIGHT,
+                PlaybackJournal.AdState.DISPLAYED
+            ) ||
                 preferences.getBoolean(DISPLAY_UNRESOLVED, false)
             journal = when {
                 processDiedDuringAd -> parsed.copy(
@@ -264,7 +269,9 @@ internal object StartIoVideoAds {
     }
 
     fun attach(activity: MainActivity) {
+        val isNewActivity = activeActivity.get() !== activity
         activeActivity = WeakReference(activity)
+        if (isNewActivity) recoverDispatchedPlayback()
         if (loadedAd != null && loadedOwner.get() !== activity) {
             // A preloaded StartAppAd belongs to its creating Activity. Recreate it from the
             // saved SDK state instead of showing an ad tied to a destroyed Activity.
@@ -274,6 +281,41 @@ internal object StartIoVideoAds {
         dispatchPendingIfReady()
         preloadForActiveActivity()
     }
+
+    /** Reclaim a request whose prior Activity may have been destroyed before its result arrived. */
+    private fun recoverDispatchedPlayback() {
+        val intent = journal.request ?: return
+        if (journal.requestState != PlaybackJournal.RequestState.DISPATCHED) return
+        val recovered = journal.copy(requestState = PlaybackJournal.RequestState.PENDING)
+        if (!writeJournal(recovered)) {
+            pendingPersistenceFailed = true
+            dispatchAfterPendingPersistenceRequestId = intent.requestId
+            schedulePendingPersistenceRetry(intent)
+            return
+        }
+        pendingPlayback = intent
+        pendingPersistenceFailed = false
+    }
+
+    /** Give each dispatch attempt a token so an older callback cannot reset a newer attempt. */
+    fun beginPlaybackDispatch(intent: PendingPlayback): Long? {
+        val current = journal.request
+        if (current != null && (current.requestId != intent.requestId ||
+                journal.requestState == PlaybackJournal.RequestState.ACKNOWLEDGED)) return null
+        return ++playbackDispatchGeneration
+    }
+
+    fun isCurrentPlaybackDispatch(intent: PendingPlayback, generation: Long): Boolean {
+        val current = journal.request
+        return generation == playbackDispatchGeneration &&
+            (current == null || (current.requestId == intent.requestId &&
+                journal.requestState != PlaybackJournal.RequestState.ACKNOWLEDGED))
+    }
+
+    /** A successful older attempt may acknowledge the same request, but never a replacement. */
+    fun canAcknowledgePlayback(intent: PendingPlayback): Boolean =
+        journal.request?.requestId == intent.requestId &&
+            journal.requestState != PlaybackJournal.RequestState.ACKNOWLEDGED
 
     fun hasUnresolvedDisplay(): Boolean = showing || pendingPersistenceFailed
 
@@ -326,6 +368,10 @@ internal object StartIoVideoAds {
 
     /** Persist a user request deferred because playback state or its controller is unknown. */
     fun savePendingPlayback(intent: PendingPlayback): Boolean {
+        if (dispatchAfterPendingPersistenceRequestId != null &&
+            dispatchAfterPendingPersistenceRequestId != intent.requestId) {
+            dispatchAfterPendingPersistenceRequestId = null
+        }
         pendingPersistenceTarget = intent
         pendingPersistenceFailed = true
         return persistPendingPlayback(intent, dispatchWhenSaved = false)
@@ -337,7 +383,10 @@ internal object StartIoVideoAds {
         if (!prefs.edit().putBoolean(PENDING_WRITE_UNCERTAIN, true).commit()) return false
         if (!prefs.edit().putString(JOURNAL, next.toJson())
                 .putString(PENDING_PLAYBACK_JSON, next.request?.toJson())
-                .putBoolean(DISPLAY_UNRESOLVED, next.adState == PlaybackJournal.AdState.IN_FLIGHT)
+                .putBoolean(DISPLAY_UNRESOLVED, next.adState in setOf(
+                    PlaybackJournal.AdState.IN_FLIGHT,
+                    PlaybackJournal.AdState.DISPLAYED
+                ))
                 .putBoolean(PENDING_WRITE_UNCERTAIN, false).commit()) return false
         journal = next
         return true
@@ -378,7 +427,12 @@ internal object StartIoVideoAds {
         pendingPersistenceRetry = null
         expiryRetry?.let(mainHandler::removeCallbacks)
         expiryRetry = null
-        if (dispatchWhenSaved) dispatchPendingIfReady()
+        val shouldDispatch = dispatchWhenSaved ||
+            dispatchAfterPendingPersistenceRequestId == intent.requestId
+        if (dispatchAfterPendingPersistenceRequestId == intent.requestId) {
+            dispatchAfterPendingPersistenceRequestId = null
+        }
+        if (shouldDispatch) dispatchPendingIfReady()
         return true
     }
 
