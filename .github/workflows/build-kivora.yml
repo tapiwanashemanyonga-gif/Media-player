@@ -1,4 +1,3 @@
-
 name: Build Kivora Music Player
 
 on:
@@ -6,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - safety/a1-family-stage-1
 
 permissions:
   contents: read
@@ -50,12 +50,55 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Restore release signing keystore
+        shell: bash
+        env:
+          A1_KEYSTORE_BASE64: ${{ secrets.A1_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${A1_KEYSTORE_BASE64}" ]]; then
+            echo "Missing GitHub Actions secret: A1_KEYSTORE_BASE64"
+            exit 1
+          fi
+          printf '%s' "$A1_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/a1-family-release.jks"
+          test -s "$RUNNER_TEMP/a1-family-release.jks"
+          chmod 600 "$RUNNER_TEMP/a1-family-release.jks"
+          echo "Release keystore restored to temporary runner storage."
 
-      - name: Upload APK
+      - name: Build debug APK, signed release APK, and release AAB
+        shell: bash
+        env:
+          A1_KEYSTORE_FILE: ${{ runner.temp }}/a1-family-release.jks
+          A1_KEYSTORE_PASSWORD: ${{ secrets.A1_KEYSTORE_PASSWORD }}
+          A1_KEY_PASSWORD: ${{ secrets.A1_KEY_PASSWORD }}
+          A1_KEY_ALIAS: a1family
+        run: |
+          set -euo pipefail
+          gradle assembleDebug assembleRelease bundleRelease
+
+      - name: Verify release APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+
+      - name: Verify release AAB signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$AAB"
+          jarsigner -verify "$AAB"
+          echo "Release AAB signature verification passed."
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kivora-Music-Player-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: A1-Family-Android-Builds
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
