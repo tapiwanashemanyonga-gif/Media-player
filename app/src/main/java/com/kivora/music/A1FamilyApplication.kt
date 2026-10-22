@@ -367,14 +367,17 @@ internal object StartIoVideoAds {
     }
 
     /** Persist a user request deferred because playback state or its controller is unknown. */
-    fun savePendingPlayback(intent: PendingPlayback): Boolean {
+    fun savePendingPlayback(
+        intent: PendingPlayback,
+        dispatchWhenSaved: Boolean = false
+    ): Boolean {
         if (dispatchAfterPendingPersistenceRequestId != null &&
             dispatchAfterPendingPersistenceRequestId != intent.requestId) {
             dispatchAfterPendingPersistenceRequestId = null
         }
         pendingPersistenceTarget = intent
         pendingPersistenceFailed = true
-        return persistPendingPlayback(intent, dispatchWhenSaved = false)
+        return persistPendingPlayback(intent, dispatchWhenSaved = dispatchWhenSaved)
     }
 
     /** Two-commit envelope: an interrupted replacement is always detected on next startup. */
@@ -814,7 +817,9 @@ internal object StartIoVideoAds {
         mainHandler.postDelayed(timeout, LOAD_TIMEOUT_MS)
 
         try {
-            request.loadAd(AdMode.VIDEO, object : AdEventListener {
+            // Automatic mode lets Start.io choose the best available interstitial format;
+            // the SDK owns the creative's skip/close controls.
+            request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
                 override fun onReceiveAd(ad: Ad) {
                     mainHandler.post {
                         mainHandler.removeCallbacks(timeout)
