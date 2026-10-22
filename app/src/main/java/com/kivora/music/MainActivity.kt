@@ -443,10 +443,17 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             PlaybackState.ACTIVE -> {
-                if (!executePlayback(intent)) {
-                    pendingPlaybackAfterAd = intent
-                    StartIoVideoAds.savePendingPlayback(intent)
+                // Register the new user request before dispatching it. Otherwise the ad
+                // coordinator rejects it as a different request from the previously
+                // acknowledged song, leaving it pending until the Activity is resumed.
+                pendingPlaybackAfterAd = intent
+                playbackContinuesAfterAd = false
+                if (!StartIoVideoAds.savePendingPlayback(intent)) return
+                if (executePlayback(intent)) {
+                    pendingPlaybackAfterAd = null
+                    StartIoVideoAds.acknowledgePendingPlayback(intent)
                 }
+                // Music dispatch completes asynchronously and clears/acknowledges this request.
                 return
             }
             PlaybackState.STOPPED -> Unit
