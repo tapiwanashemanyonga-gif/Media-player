@@ -443,7 +443,13 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             PlaybackState.ACTIVE -> {
-                if (!executePlayback(intent)) {
+                if (intent.kind == "play_queue" || intent.kind == "play_queue_item") {
+                    // Persist the new selection before dispatch. A previous acknowledged request
+                    // must not leave a new tap stranded as PENDING without a dispatch trigger.
+                    pendingPlaybackAfterAd = intent
+                    playbackContinuesAfterAd = false
+                    StartIoVideoAds.savePendingPlayback(intent, dispatchWhenSaved = true)
+                } else if (!executePlayback(intent)) {
                     pendingPlaybackAfterAd = intent
                     StartIoVideoAds.savePendingPlayback(intent)
                 }
@@ -460,7 +466,13 @@ class MainActivity : AppCompatActivity() {
                 discardExpiredPlaybackRequest(intent)
             }
             StartIoVideoAds.ShowResult.UNAVAILABLE -> {
-                if (!executePlayback(intent)) {
+                if (intent.kind == "play_queue" || intent.kind == "play_queue_item") {
+                    // Queue through the journal so playback is dispatched after persistence,
+                    // rather than relying on an immediate command that may be rejected.
+                    pendingPlaybackAfterAd = intent
+                    playbackContinuesAfterAd = false
+                    StartIoVideoAds.savePendingPlayback(intent, dispatchWhenSaved = true)
+                } else if (!executePlayback(intent)) {
                     pendingPlaybackAfterAd = intent
                     StartIoVideoAds.savePendingPlayback(intent)
                 } else {
