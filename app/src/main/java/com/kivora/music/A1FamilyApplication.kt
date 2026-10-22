@@ -142,7 +142,8 @@ internal object StartIoVideoAds {
     enum class ShowResult { SHOWN, UNAVAILABLE, BLOCKED_UNRESOLVED, EXPIRED }
 
     private const val TAG = "A1FamilyAds"
-    private const val STARTIO_APP_ID = "209140404"
+    private const val STARTIO_TEST_APP_ID = "205489527"
+    private const val STARTIO_LIVE_APP_ID = "209140404"
     private const val FREQUENCY_CAP_MS = 30 * 60 * 1000L
     private const val PREFS = "a1_family_ad_policy"
     private const val LAST_SHOWN_AT = "last_video_interstitial_shown_at"
@@ -254,17 +255,21 @@ internal object StartIoVideoAds {
         }
         expireStalePendingRequest()
         try {
-            // Keep test ads enabled until production configuration is explicitly approved.
-            StartAppSDK.setTestAdsEnabled(true)
-            StartAppSDK.initParams(application, STARTIO_APP_ID)
+            // Debug APKs use Start.io's official demo App ID and test mode so test creatives can be requested without relying on live inventory. Release builds retain this app's registered App ID and disable test mode.
+            val isDebugBuild = com.kivora.music.BuildConfig.DEBUG
+            StartAppSDK.setTestAdsEnabled(isDebugBuild)
+            val startIoAppId = if (isDebugBuild) STARTIO_TEST_APP_ID else STARTIO_LIVE_APP_ID
+            Log.i(TAG, "Initializing Start.io; debug=$isDebugBuild, testAds=$isDebugBuild, appId=$startIoAppId")
+            StartAppSDK.initParams(application, startIoAppId)
                 .setReturnAdsEnabled(false)
                 .setCallback {
                     sdkReady = true
+                    Log.i(TAG, "Start.io SDK initialization completed successfully")
                     preloadForActiveActivity()
                 }
                 .init()
         } catch (error: RuntimeException) {
-            Log.w(TAG, "Start.io initialization failed; playback remains available", error)
+            Log.e(TAG, "Start.io initialization failed; playback remains available", error)
         }
     }
 
@@ -678,7 +683,7 @@ internal object StartIoVideoAds {
                 override fun adClicked(ad: Ad) = Unit
             })
         } catch (error: RuntimeException) {
-            Log.w(TAG, "Start.io could not show the video interstitial", error)
+            Log.e(TAG, "Start.io could not show the video interstitial", error)
             // A synchronous show failure is not itself proof that the host is visible again.
             // Recover only after the host Activity is resumed and owns window focus.
             scheduleShowFailureRecovery(generation, WeakReference(activity))
@@ -808,7 +813,7 @@ internal object StartIoVideoAds {
             StartAppAd(activity)
         } catch (error: RuntimeException) {
             loading = false
-            Log.w(TAG, "Start.io video preload could not start", error)
+            Log.e(TAG, "Start.io video preload could not start", error)
             return
         }
         currentAd = request
@@ -817,10 +822,10 @@ internal object StartIoVideoAds {
         mainHandler.postDelayed(timeout, LOAD_TIMEOUT_MS)
 
         try {
-            // Automatic mode lets Start.io choose the best available interstitial format;
-            // the SDK owns the creative's skip/close controls.
-            request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
+            // Request video-only inventory for the user-requested playback transition.
+            request.loadAd(AdMode.VIDEO, object : AdEventListener {
                 override fun onReceiveAd(ad: Ad) {
+                    Log.i(TAG, "Start.io video test/live ad loaded successfully")
                     mainHandler.post {
                         mainHandler.removeCallbacks(timeout)
                         completeLoad(generation, owner, request, received = true)
@@ -830,12 +835,12 @@ internal object StartIoVideoAds {
                 override fun onFailedToReceiveAd(ad: Ad?) {
                     // Start.io documents that it retries after this callback. Keep the request
                     // active and let the watchdog recover only if no later callback arrives.
-                    Log.w(TAG, "Start.io video preload was unavailable; leaving playback unaffected")
+                    Log.w(TAG, "Start.io video preload failed; ad=$ad; leaving playback unaffected")
                 }
             })
         } catch (error: RuntimeException) {
             mainHandler.removeCallbacks(timeout)
-            Log.w(TAG, "Start.io video preload failed", error)
+            Log.e(TAG, "Start.io video preload threw an exception", error)
             completeLoad(generation, owner, request, received = false)
         }
     }
