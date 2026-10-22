@@ -3,6 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val a1KeystoreFile = System.getenv("A1_KEYSTORE_FILE")
+val a1KeystorePassword = System.getenv("A1_KEYSTORE_PASSWORD")
+val a1KeyPassword = System.getenv("A1_KEY_PASSWORD")
+val a1KeyAlias = System.getenv("A1_KEY_ALIAS") ?: "a1family"
+val hasA1SigningSecrets =
+    !a1KeystoreFile.isNullOrBlank() &&
+    !a1KeystorePassword.isNullOrBlank() &&
+    !a1KeyPassword.isNullOrBlank()
+
 android {
     namespace = "com.kivora.music"
     compileSdk = 36
@@ -13,6 +22,25 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "1.2"
+    }
+
+    signingConfigs {
+        if (hasA1SigningSecrets) {
+            create("release") {
+                storeFile = file(requireNotNull(a1KeystoreFile))
+                storePassword = requireNotNull(a1KeystorePassword)
+                keyAlias = a1KeyAlias
+                keyPassword = requireNotNull(a1KeyPassword)
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (hasA1SigningSecrets) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     buildFeatures {
