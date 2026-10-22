@@ -52,12 +52,21 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Run unit tests and build debug APK
-        run: gradle testDebugUnitTest assembleDebug
+      - name: Test and build debug plus unsigned release outputs
+        run: gradle testDebugUnitTest assembleDebug assembleRelease bundleRelease
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: A1-Family-Debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload unsigned release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: A1-Family-Unsigned-Release-Candidates
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
