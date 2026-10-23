@@ -5794,8 +5794,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTab(tab: String) {
-        currentTab = tab
         val previousTab = currentTab
+        currentTab = tab
         if (tab == "home") renderHomeDashboard()
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
