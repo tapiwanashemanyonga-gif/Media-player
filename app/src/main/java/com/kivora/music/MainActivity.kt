@@ -202,6 +202,7 @@ class MainActivity : AppCompatActivity() {
     private var controllerReconnectAttempt = 0
 
     private val handler = Handler(Looper.getMainLooper())
+    private var pendingSearchRender: Runnable? = null
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
     private var artworkRequestId = 0
@@ -1762,7 +1763,7 @@ class MainActivity : AppCompatActivity() {
                 ) {
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
-                    if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
+                    scheduleSearchRender(s?.toString().orEmpty())
                 }
 
                 override fun afterTextChanged(
@@ -3382,6 +3383,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Coalesces rapid keystrokes so large local libraries are filtered and their rows
+     * rebuilt only after the user pauses typing. Rendering stays on the main thread.
+     */
+    private fun scheduleSearchRender(query: String) {
+        pendingSearchRender?.let(handler::removeCallbacks)
+        val task = Runnable {
+            pendingSearchRender = null
+            if (isFinishing || isDestroyed) return@Runnable
+            when (currentTab) {
+                "videos" -> renderVideos(query)
+                "search", "library" -> renderSongs(query)
+            }
+        }
+        pendingSearchRender = task
+        handler.postDelayed(task, 140L)
+    }
+
     private fun renderSongs(query: String) {
         if (
             !::songList.isInitialized ||
@@ -4576,6 +4595,8 @@ class MainActivity : AppCompatActivity() {
         controllerRetryRunnable?.let(handler::removeCallbacks)
         controllerRetryRunnable = null
         handler.removeCallbacks(progressUpdater)
+        pendingSearchRender?.let(handler::removeCallbacks)
+        pendingSearchRender = null
         stopSleepTimerPolling()
         sleepTimerDialog?.dismiss()
         sleepTimerDialog = null
