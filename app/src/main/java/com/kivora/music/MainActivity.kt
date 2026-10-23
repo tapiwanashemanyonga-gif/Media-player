@@ -2992,7 +2992,7 @@ class MainActivity : AppCompatActivity() {
             }
             elevation = dp(3).toFloat()
         }
-        hero.addView(label("NEON MUSIC STUDIO  •  YOUR LOCAL LIBRARY", 10f, Color.rgb(66, 244, 255), true).apply {
+        hero.addView(label("A1 FAMILY MEDIA  •  YOUR LOCAL LIBRARY", 10f, Color.rgb(66, 244, 255), true).apply {
             letterSpacing = 0.08f
             setPadding(0, 0, 0, dp(8))
         })
@@ -5538,6 +5538,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun attachStartIoNativeAd(sponsoredCard: View, details: NativeAdDetails) {
+        // Home content is rebuilt after library/playback updates; resolve the current SmartLink
+        // card instead of attaching the native ad to an obsolete view from an earlier render.
+        val currentSponsoredCard = homeContent.findViewWithTag<View>("adsterra_smartlink_card") ?: sponsoredCard
         val existing = homeContent.findViewWithTag<View>("startio_native_ad_card")
         if (existing != null) return
         val nativeCard = LinearLayout(this).apply {
@@ -5575,7 +5578,7 @@ class MainActivity : AppCompatActivity() {
             })
         }
         details.registerViewForInteraction(nativeCard)
-        val position = homeContent.indexOfChild(sponsoredCard)
+        val position = homeContent.indexOfChild(currentSponsoredCard)
         if (position >= 0) {
             homeContent.addView(nativeCard, position + 1, LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = dp(6)
