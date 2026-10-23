@@ -25,6 +25,10 @@ import android.view.Gravity
 import android.view.View
 import android.widget.EditText
 import com.startapp.sdk.ads.banner.Banner
+import com.startapp.sdk.ads.nativead.StartAppNativeAd
+import com.startapp.sdk.ads.nativead.NativeAdDetails
+import com.startapp.sdk.ads.nativead.NativeAdPreferences
+import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -56,7 +60,7 @@ import java.util.concurrent.Executors
 
 // Do not populate until the publisher confirms the link is Active and mainstream-only,
 // with unsuitable offer categories excluded and the destination appropriate for the app's rating.
-private const val ADSTERRA_SMARTLINK_URL = ""
+private const val ADSTERRA_SMARTLINK_URL = "https://asiafilm.org/4/d52fd43d84340c6fa7784c326206088f"
 
 data class Song(
     val title: String,
@@ -93,6 +97,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var miniArtwork: ImageView
     private var artworkMotionAnimator: android.animation.AnimatorSet? = null
     private var playerBannerContainer: LinearLayout? = null
+    private var startIoNativeAdRequested = false
+    private var loadedStartIoNativeAd: NativeAdDetails? = null
     private var hasSeenFirstResume = false
     private var returnedFromBackground = false
     private var suppressNextResumeAd = false
@@ -3071,6 +3077,8 @@ class MainActivity : AppCompatActivity() {
             })
         }
         homeContent.addView(sponsoredCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(14) })
+        sponsoredCard.tag = "adsterra_smartlink_card"
+        ensureStartIoNativeAd(sponsoredCard)
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
@@ -5489,6 +5497,92 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Weekly listening reminders enabled when internet is available.", Toast.LENGTH_LONG).show()
     }
 
+
+    /**
+     * Loads one Start.io native ad per Activity instance and places it beside the clearly
+     * labelled Adsterra SmartLink card. Native ads are optional; a no-fill response is silent.
+     */
+    private fun ensureStartIoNativeAd(sponsoredCard: View) {
+        if (loadedStartIoNativeAd != null) {
+            attachStartIoNativeAd(sponsoredCard, loadedStartIoNativeAd!!)
+            return
+        }
+        if (startIoNativeAdRequested) return
+        startIoNativeAdRequested = true
+        val nativeRequest = try {
+            StartAppNativeAd(this)
+        } catch (error: RuntimeException) {
+            android.util.Log.w("A1FamilyAds", "Could not create Start.io native ad", error)
+            return
+        }
+        try {
+            nativeRequest.loadAd(
+                NativeAdPreferences().setAutoBitmapDownload(true),
+                object : AdEventListener {
+                    override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
+                        runOnUiThread {
+                            if (isFinishing || isDestroyed) return@runOnUiThread
+                            loadedStartIoNativeAd = nativeRequest.getNativeAds()?.firstOrNull()
+                            loadedStartIoNativeAd?.let { attachStartIoNativeAd(sponsoredCard, it) }
+                        }
+                    }
+
+                    override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                        android.util.Log.i("A1FamilyAds", "Start.io native ad unavailable; continuing without it")
+                    }
+                }
+            )
+        } catch (error: RuntimeException) {
+            android.util.Log.w("A1FamilyAds", "Start.io native ad request failed", error)
+        }
+    }
+
+    private fun attachStartIoNativeAd(sponsoredCard: View, details: NativeAdDetails) {
+        val existing = homeContent.findViewWithTag<View>("startio_native_ad_card")
+        if (existing != null) return
+        val nativeCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            background = roundedBackground(themeColor(25, 17, 38), 18).apply {
+                setStroke(dp(1), themeColor(79, 54, 103))
+            }
+            tag = "startio_native_ad_card"
+            contentDescription = "Sponsored Start.io native advertisement"
+        }
+        nativeCard.addView(label("ADVERTISEMENT  •  START.IO", 9f, themeColor(40, 224, 255), true).apply {
+            letterSpacing = 0.12f
+        })
+        val title = details.getTitle().orEmpty().trim()
+        if (title.isNotEmpty()) {
+            nativeCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
+                setPadding(0, dp(7), 0, dp(4))
+            })
+        }
+        val description = details.getDescription().orEmpty().trim()
+        if (description.isNotEmpty()) {
+            nativeCard.addView(label(description, 12f, themeColor(211, 194, 232)).apply {
+                setPadding(0, 0, 0, dp(4))
+            })
+        }
+        details.getImageBitmap()?.let { bitmap ->
+            nativeCard.addView(ImageView(this).apply {
+                setImageBitmap(bitmap)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "Sponsored image"
+            }, LinearLayout.LayoutParams(-1, dp(132)).apply {
+                topMargin = dp(7)
+                bottomMargin = dp(7)
+            })
+        }
+        details.registerViewForInteraction(nativeCard)
+        val position = homeContent.indexOfChild(sponsoredCard)
+        if (position >= 0) {
+            homeContent.addView(nativeCard, position + 1, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(6)
+                bottomMargin = dp(14)
+            })
+        }
+    }
 
     private fun openSponsoredOffers() {
         val rawUrl = ADSTERRA_SMARTLINK_URL.trim()
