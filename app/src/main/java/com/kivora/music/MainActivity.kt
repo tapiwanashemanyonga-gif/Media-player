@@ -5321,13 +5321,17 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("a1_family_ad_policy", MODE_PRIVATE)
         val opens = prefs.getInt("app_open_count", 0) + 1
         prefs.edit().putInt("app_open_count", opens).apply()
-        handler.postDelayed({
-            if (!isFinishing && !isDestroyed && hasWindowFocus() &&
-                player?.isPlaying != true && videoPlayer?.isPlaying != true
-            ) {
-                StartIoVideoAds.showOptionalAd(this) { }
-            }
-        }, 1_800L)
+        handler.postDelayed({ tryShowOpenAdWhenReady() }, 1_800L)
+    }
+
+    private fun tryShowOpenAdWhenReady(attempt: Int = 0) {
+        if (isFinishing || isDestroyed || player?.isPlaying == true || videoPlayer?.isPlaying == true) return
+        if (hasWindowFocus()) {
+            StartIoVideoAds.showOptionalAd(this) { }
+        } else if (attempt < 10) {
+            // Wait through Android permission prompts and the first-launch notification explainer.
+            handler.postDelayed({ tryShowOpenAdWhenReady(attempt + 1) }, 900L)
+        }
     }
 
     private fun openOnlineMusicSearch() {
@@ -5405,8 +5409,12 @@ class MainActivity : AppCompatActivity() {
         content.addView(directDownloadButton, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(6)
         })
+        val downloaderScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+        }
         val dialog = AlertDialog.Builder(this).setTitle("Music & media downloader")
-            .setView(content).setNegativeButton("Close", null).create()
+            .setView(downloaderScroll).setNegativeButton("Close", null).create()
         fun performSearch() {
             val query = queryInput.text.toString().trim()
             if (query.length < 2) {
