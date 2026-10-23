@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - safety/a1-family-stage-1
+      - feature/a1-family-media-upgrade
 
 permissions:
   contents: read
