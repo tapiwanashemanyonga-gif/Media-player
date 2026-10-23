@@ -111,6 +111,7 @@ class MainActivity : AppCompatActivity() {
     private var hasSeenFirstResume = false
     private var returnedFromBackground = false
     private var suppressNextResumeAd = false
+    private var musicTabAdAttempted = false
     private var notificationPromptQueued = false
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
@@ -313,6 +314,14 @@ class MainActivity : AppCompatActivity() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updatePlayButton()
             updateArtworkMotion(isPlaying)
+            if (!isPlaying && currentTab == "search" && !musicTabAdAttempted && videoPlayer?.isPlaying != true) {
+                musicTabAdAttempted = true
+                handler.postDelayed({
+                    if (!isFinishing && !isDestroyed && currentTab == "search" &&
+                        player?.isPlaying != true && videoPlayer?.isPlaying != true
+                    ) StartIoVideoAds.showOptionalAd(this@MainActivity) { }
+                }, 500L)
+            }
             tryRunPendingPlaybackAfterAd()
             maybeShowPendingDownloadMilestoneAd()
         }
@@ -5822,12 +5831,16 @@ class MainActivity : AppCompatActivity() {
         miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
 
         if (tab == "search") {
-            if (previousTab != "search" && player?.isPlaying != true && videoPlayer?.isPlaying != true) {
-                handler.postDelayed({
-                    if (!isFinishing && !isDestroyed && currentTab == "search" &&
-                        player?.isPlaying != true && videoPlayer?.isPlaying != true
-                    ) StartIoVideoAds.showOptionalAd(this) { }
-                }, 650L)
+            if (previousTab != "search") {
+                musicTabAdAttempted = false
+                if (player?.isPlaying != true && videoPlayer?.isPlaying != true) {
+                    musicTabAdAttempted = true
+                    handler.postDelayed({
+                        if (!isFinishing && !isDestroyed && currentTab == "search" &&
+                            player?.isPlaying != true && videoPlayer?.isPlaying != true
+                        ) StartIoVideoAds.showOptionalAd(this) { }
+                    }, 650L)
+                }
             }
             showFavoritesOnly = false
             selectedPlaylist = null
