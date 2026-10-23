@@ -102,6 +102,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
     private lateinit var searchBox: EditText
+    private lateinit var searchRow: LinearLayout
+    private lateinit var searchVisibilityToggle: TextView
+    private lateinit var libraryVisibilityToggle: TextView
+    private var searchRowVisible = true
+    private var libraryHeaderVisible = true
     private lateinit var clearSearchButton: TextView
     private lateinit var progress: SeekBar
     private lateinit var elapsedText: TextView
@@ -330,11 +335,11 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
-        // This upgrade adopts the user's chosen Neon Music Studio design by default.
+        // Keep the established A1 Family purple look; do not force the Neon theme.
         if (preferences.getString("theme", null) == null ||
-            preferences.getString("theme", null) == "purple"
+            preferences.getString("theme", null) == "neon"
         ) {
-            preferences.edit().putString("theme", "neon").apply()
+            preferences.edit().putString("theme", "purple").apply()
         }
 
         favoriteSongUris.addAll(
@@ -856,9 +861,9 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(11), 0, 0, 0)
         }
-        brandCopy.addView(label("A1 Family", 15f, themeColor(250, 247, 255), true))
-        brandCopy.addView(label("NEON MUSIC STUDIO", 9f, themeColor(40, 224, 255), true).apply {
-            letterSpacing = 0.16f
+        brandCopy.addView(label("A1 FAMILY MEDIA", 15f, themeColor(250, 247, 255), true))
+        brandCopy.addView(label("MUSIC & VIDEO PLAYER", 9f, themeColor(192, 160, 232), true).apply {
+            letterSpacing = 0.12f
             setPadding(0, dp(2), 0, 0)
         })
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
@@ -908,7 +913,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Search songs, artists and albums"
         }
 
-        val searchRow = LinearLayout(this).apply {
+        searchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
@@ -925,6 +930,48 @@ class MainActivity : AppCompatActivity() {
         }
         searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
         root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
+
+        // Always-visible controls let the user collapse search and library chrome.
+        val displayOptionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(7), 0, dp(7))
+        }
+        searchVisibilityToggle = label("Hide search", 11f, themeColor(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBackground(themeColor(42, 25, 64), 14).apply {
+                setStroke(dp(1), themeColor(119, 78, 159))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                searchRowVisible = !searchRowVisible
+                searchRow.visibility = if (searchRowVisible) View.VISIBLE else View.GONE
+                text = if (searchRowVisible) "Hide search" else "Show search"
+            }
+        }
+        libraryVisibilityToggle = label("Hide library header", 11f, themeColor(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBackground(themeColor(42, 25, 64), 14).apply {
+                setStroke(dp(1), themeColor(119, 78, 159))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                libraryHeaderVisible = !libraryHeaderVisible
+                libraryHeader.visibility = if (currentTab == "library" && libraryHeaderVisible) View.VISIBLE else View.GONE
+                text = if (libraryHeaderVisible) "Hide library header" else "Show library header"
+            }
+        }
+        displayOptionsRow.addView(searchVisibilityToggle, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            rightMargin = dp(5)
+        })
+        displayOptionsRow.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            leftMargin = dp(5)
+        })
+        root.addView(displayOptionsRow, LinearLayout.LayoutParams(-1, -2))
 
         // Keep a live-capable Start.io banner visible on the main library screen,
         // rather than limiting banner inventory to the Now Playing card.
@@ -5241,8 +5288,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openThemePicker() {
-        val names = arrayOf("Neon Music Studio", "Midnight Purple", "Ocean Blue", "Forest Green", "Rose Pink")
-        val ids = arrayOf("neon", "purple", "ocean", "forest", "rose")
+        val names = arrayOf("A1 Family Media", "Midnight Purple", "Ocean Blue", "Forest Green", "Rose Pink")
+        val ids = arrayOf("purple", "purple", "ocean", "forest", "rose")
         val current = ids.indexOf(selectedTheme()).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Choose a theme")
             .setSingleChoiceItems(names, current) { dialog, which ->
@@ -5463,7 +5510,7 @@ class MainActivity : AppCompatActivity() {
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
         libraryHeader.visibility =
-            if (tab == "library") View.VISIBLE else View.GONE
+            if (tab == "library" && libraryHeaderVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
             if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
