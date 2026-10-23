@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Dark media-player tile with an A1 monogram, play symbol and music note. -->
+    <path android:fillColor="#160D24" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#7138B8" android:pathData="M15,8h78a8,8 0,0 1,8 8v76a8,8 0,0 1,-8 8h-78a8,8 0,0 1,-8 -8v-76a8,8 0,0 1,8 -8z" />
+    <path android:fillColor="#FDF9FF" android:pathData="M17,66L36,25h9l19,41h-11l-4,-10h-18l-4,10zM35,47h10l-5,-12z" />
+    <path android:fillColor="#FDF9FF" android:pathData="M64,34l10,-7h7v39h-10v-27l-7,4z" />
+    <path android:fillColor="#35E0FF" android:pathData="M24,77h60a4,4 0,0 1,4 4v5a4,4 0,0 1,-4 4h-60a4,4 0,0 1,-4 -4v-5a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#160D24" android:pathData="M48,78v10l12,-5z" />
+    <path android:fillColor="#160D24" android:pathData="M71,76v12c-2,-1 -6,0 -7,3c-1,4 3,6 6,4c2,-1 3,-3 3,-5v-8l8,-2v-4z" />
+</vector>
