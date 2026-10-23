@@ -4459,6 +4459,7 @@ class MainActivity : AppCompatActivity() {
         // Invalidate any pending artwork callback and stop its worker.
         artworkRequestId++
         artworkExecutor.shutdownNow()
+        legalMusicSearchExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
