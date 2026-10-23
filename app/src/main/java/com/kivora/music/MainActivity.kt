@@ -342,14 +342,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        // The durable playback journal and ad callback are authoritative. Retrying a
+        // local pending request merely because this Activity regained focus can start audio
+        // unexpectedly or dispatch the same selection twice.
         StartIoVideoAds.attach(this)
-        // Do not replay a resume-only request just because the Activity regained focus.
-        // Explicit song/video selections and the ad callback own their own dispatch lifecycle.
-        pendingPlaybackAfterAd?.let { intent ->
-            if (intent.kind != "resume_music" && !StartIoVideoAds.wasPlaybackAcknowledged(intent)) {
-                tryRunPendingPlaybackAfterAd()
-            }
-        }
     }
 
     override fun onPause() {
@@ -563,7 +559,8 @@ class MainActivity : AppCompatActivity() {
                 try {
                     // Keep the full local video library in the ExoPlayer timeline. Media3
                     // advances automatically to the next item when the current video ends.
-                    val playlist = deviceVideos.map { item ->
+                    val playableVideos = deviceVideos.filter { isVideoAvailable(it) }
+                    val playlist = playableVideos.map { item ->
                         MediaItem.Builder()
                             .setUri(item.uri)
                             .setMediaId(item.uri.toString())
@@ -5148,8 +5145,9 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val rawUrl = urlInput.text.toString().trim()
                 val parsed = runCatching { Uri.parse(rawUrl) }.getOrNull()
-                val host = parsed?.host?.lowercase(Locale.ROOT).orEmpty()
-                val pathLower = parsed?.lastPathSegment?.lowercase(Locale.ROOT).orEmpty()
+                val downloadUri = parsed ?: Uri.EMPTY
+                val host = downloadUri.host?.lowercase(Locale.ROOT).orEmpty()
+                val pathLower = downloadUri.lastPathSegment?.lowercase(Locale.ROOT).orEmpty()
                 val suppliedName = nameInput.text.toString().trim()
                 val fileName = (suppliedName.ifBlank { URLUtil.guessFileName(rawUrl, null, null) })
                     .replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
@@ -5157,14 +5155,14 @@ class MainActivity : AppCompatActivity() {
                 val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
                 val blockedHost = host == "youtube.com" || host.endsWith(".youtube.com") ||
                     host == "youtu.be" || host == "spotify.com" || host.endsWith(".spotify.com")
-                if (parsed?.scheme != "https" || host.isBlank() || blockedHost ||
+                if (downloadUri.scheme != "https" || host.isBlank() || blockedHost ||
                     (ext !in allowed && pathLower.substringAfterLast('.', "") !in allowed)
                 ) {
                     urlInput.error = "Enter a direct HTTPS link to an audio/video file you are allowed to download."
                     return@setOnClickListener
                 }
                 runCatching {
-                    val request = DownloadManager.Request(parsed)
+                    val request = DownloadManager.Request(downloadUri)
                         .setTitle(fileName)
                         .setDescription("Downloading media to the Downloads folder")
                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
