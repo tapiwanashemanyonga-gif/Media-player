@@ -5260,7 +5260,9 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().putInt("app_open_count", opens).apply()
         if (opens % 3 == 0) {
             handler.postDelayed({
-                if (!isFinishing && !isDestroyed && hasWindowFocus()) {
+                if (!isFinishing && !isDestroyed && hasWindowFocus() &&
+                    player?.isPlaying != true && videoPlayer?.isPlaying != true
+                ) {
                     StartIoVideoAds.showOptionalAd(this) { }
                 }
             }, 1_500L)
