@@ -2856,6 +2856,22 @@ class MainActivity : AppCompatActivity() {
             homeContent.addView(row)
         }
 
+        val discoverMusic = label("⌕  FIND FREE & LEGAL MUSIC", 12f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = roundedBackground(themeColor(92, 47, 160), 15).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Search music available under open licences"
+            setOnClickListener { openOnlineMusicSearch() }
+        }
+        homeContent.addView(discoverMusic, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(3)
+            bottomMargin = dp(7)
+        })
+
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
         if (recentSongs.isEmpty()) {
