@@ -98,6 +98,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nowArtist: TextView
     private lateinit var artwork: ImageView
     private lateinit var miniArtwork: ImageView
+    private var artworkMotionAnimator: android.animation.AnimatorSet? = null
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
@@ -297,6 +298,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updatePlayButton()
+            updateArtworkMotion(isPlaying)
             tryRunPendingPlaybackAfterAd()
             maybeShowPendingDownloadMilestoneAd()
         }
@@ -798,9 +800,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildScreen() {
+        val compactLayout = resources.configuration.screenWidthDp < 420
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(10))
+            setPadding(dp(if (compactLayout) 12 else 18), dp(if (compactLayout) 10 else 14), dp(if (compactLayout) 12 else 18), dp(8))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(themeColor(13, 8, 23), themeColor(24, 13, 39), themeColor(12, 10, 22))
@@ -1091,7 +1094,7 @@ class MainActivity : AppCompatActivity() {
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
-            LinearLayout.LayoutParams(-1, dp(160))
+            LinearLayout.LayoutParams(-1, dp(if (compactLayout) 112 else if (resources.configuration.screenWidthDp >= 600) 220 else 160))
         )
 
         videoStatus = label(
@@ -1202,7 +1205,11 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
         }
 
-        val artworkSize = (resources.configuration.screenWidthDp - 86).coerceIn(160, 460)
+        val artworkSize = if (compactLayout) {
+            (resources.configuration.screenWidthDp - 104).coerceIn(148, 228)
+        } else {
+            (resources.configuration.screenWidthDp - 120).coerceIn(220, 340)
+        }
         val artworkFrame = android.widget.FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
             background = android.graphics.drawable.GradientDrawable(
@@ -3487,11 +3494,12 @@ class MainActivity : AppCompatActivity() {
         visibleSongs.forEach { song ->
             val uri = song.uri.toString()
 
+            val compactSongRow = resources.configuration.screenWidthDp < 420
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(10), dp(10))
-                background = roundedBackground(themeColor(30, 21, 43), 19).apply {
+                setPadding(dp(if (compactSongRow) 8 else 12), dp(if (compactSongRow) 6 else 10), dp(8), dp(if (compactSongRow) 6 else 10))
+                background = roundedBackground(themeColor(30, 21, 43), if (compactSongRow) 15 else 19).apply {
                     setStroke(dp(1), themeColor(65, 47, 84))
                 }
                 isClickable = true
@@ -3510,16 +3518,16 @@ class MainActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = "Album artwork"
             }
-            row.addView(cover, LinearLayout.LayoutParams(dp(58), dp(58)))
+            row.addView(cover, LinearLayout.LayoutParams(dp(if (compactSongRow) 46 else 58), dp(if (compactSongRow) 46 else 58)))
             loadArtworkInto(cover, song)
 
             val info = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), 0, dp(2), 0)
+                setPadding(dp(if (compactSongRow) 8 else 12), 0, dp(2), 0)
             }
 
             info.addView(
-                label(song.title, 15f, Color.WHITE, true).apply {
+                label(song.title, if (compactSongRow) 13f else 15f, Color.WHITE, true).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }
@@ -3555,9 +3563,9 @@ class MainActivity : AppCompatActivity() {
                     }
                 ).apply {
                     gravity = Gravity.CENTER
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    minWidth = dp(48)
-                    minHeight = dp(48)
+                    setPadding(dp(5), dp(5), dp(5), dp(5))
+                    minWidth = dp(if (compactSongRow) 36 else 44)
+                    minHeight = dp(if (compactSongRow) 38 else 44)
                     isClickable = true
                     isFocusable = true
                     contentDescription = if (isFavorite) "Remove ${song.title} from favourites" else "Add ${song.title} to favourites"
@@ -3570,8 +3578,8 @@ class MainActivity : AppCompatActivity() {
                     label("+", 23f, themeColor(216, 180, 254), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
-                        minWidth = dp(44)
-                        minHeight = dp(44)
+                        minWidth = dp(if (compactSongRow) 32 else 44)
+                        minHeight = dp(if (compactSongRow) 38 else 44)
                         isClickable = true
                         isFocusable = true
                         contentDescription = "Add ${song.title} to a playlist"
@@ -3585,8 +3593,8 @@ class MainActivity : AppCompatActivity() {
                     label("−", 23f, themeColor(248, 113, 113), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
-                        minWidth = dp(44)
-                        minHeight = dp(44)
+                        minWidth = dp(if (compactSongRow) 32 else 44)
+                        minHeight = dp(if (compactSongRow) 38 else 44)
                         contentDescription = "Remove from playlist"
                         setOnClickListener {
                             removeFromPlaylist(song)
@@ -4295,6 +4303,33 @@ class MainActivity : AppCompatActivity() {
         button.contentDescription = "View $upcomingCount upcoming songs"
     }
 
+    private fun updateArtworkMotion(isPlaying: Boolean) {
+        if (!::artwork.isInitialized) return
+        if (isPlaying) {
+            if (artworkMotionAnimator?.isStarted == true) return
+            artworkMotionAnimator?.cancel()
+            val x = android.animation.ObjectAnimator.ofFloat(artwork, View.SCALE_X, 1f, 1.025f).apply {
+                duration = 1_150L
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                repeatMode = android.animation.ValueAnimator.REVERSE
+            }
+            val y = android.animation.ObjectAnimator.ofFloat(artwork, View.SCALE_Y, 1f, 1.025f).apply {
+                duration = 1_150L
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                repeatMode = android.animation.ValueAnimator.REVERSE
+            }
+            artworkMotionAnimator = android.animation.AnimatorSet().apply {
+                playTogether(x, y)
+                start()
+            }
+        } else {
+            artworkMotionAnimator?.cancel()
+            artworkMotionAnimator = null
+            artwork.scaleX = 1f
+            artwork.scaleY = 1f
+        }
+    }
+
     private fun updateNowPlaying() {
         if (!::nowTitle.isInitialized) return
 
@@ -4516,6 +4551,8 @@ class MainActivity : AppCompatActivity() {
 
         // Invalidate any pending artwork callback and stop its worker.
         artworkRequestId++
+        artworkMotionAnimator?.cancel()
+        artworkMotionAnimator = null
         artworkExecutor.shutdownNow()
         legalMusicSearchExecutor.shutdownNow()
 
@@ -4602,10 +4639,13 @@ class MainActivity : AppCompatActivity() {
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
         filteredVideos.forEach { video ->
+            val compactVideoRow = resources.configuration.screenWidthDp < 420
+            val videoThumbWidth = if (compactVideoRow) 68 else if (resources.configuration.screenWidthDp >= 600) 116 else 88
+            val videoThumbHeight = if (compactVideoRow) 48 else if (resources.configuration.screenWidthDp >= 600) 82 else 62
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(10), dp(10), dp(10))
+                setPadding(dp(if (compactVideoRow) 8 else 10), dp(if (compactVideoRow) 6 else 10), dp(8), dp(if (compactVideoRow) 6 else 10))
                 isClickable = true
                 isFocusable = true
                 background = roundedBackground(themeColor(30, 21, 43), 18).apply {
@@ -4633,7 +4673,7 @@ class MainActivity : AppCompatActivity() {
                     thumbnail.setImageBitmap(
                         contentResolver.loadThumbnail(
                             video.uri,
-                            Size(dp(100), dp(70)),
+                            Size(dp(videoThumbWidth), dp(videoThumbHeight)),
                             null
                         )
                     )
@@ -4642,16 +4682,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            row.addView(thumbnail, LinearLayout.LayoutParams(dp(100), dp(70)))
+            row.addView(thumbnail, LinearLayout.LayoutParams(dp(videoThumbWidth), dp(videoThumbHeight)))
 
             val details = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(13), 0, 0, 0)
+                setPadding(dp(if (compactVideoRow) 9 else 13), 0, 0, 0)
             }
 
-            details.addView(label(video.title, 15f, Color.WHITE, true).apply {
-                maxLines = 2
+            details.addView(label(video.title, if (compactVideoRow) 13f else 15f, Color.WHITE, true).apply {
+                maxLines = if (compactVideoRow) 1 else 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
             details.addView(
@@ -5011,35 +5051,74 @@ class MainActivity : AppCompatActivity() {
             videoPlaceholder.addView(
                 videoPlayerView,
                 0,
-                LinearLayout.LayoutParams(-1, dp(160))
+                LinearLayout.LayoutParams(-1, dp(if (resources.configuration.screenWidthDp < 420) 112 else if (resources.configuration.screenWidthDp >= 600) 220 else 160))
             )
         }
     }
 
     private fun openSettings() {
-        val options = arrayOf(
-            "Appearance and themes",
-            "Find legally downloadable music",
-            "Download a direct media link",
-            "Rescan music library",
-            "Rescan video library",
-            "Weekly listening reminders",
-            "About A1 Family"
-        )
-        AlertDialog.Builder(this).setTitle("Settings").setItems(options) { _, which ->
-            when (which) {
-                0 -> openThemePicker()
-                1 -> openOnlineMusicSearch()
-                2 -> openMediaDownloadDialog()
-                3 -> { songsLoaded = false; loadSongs() }
-                4 -> { videosLoaded = false; loadVideos() }
-                5 -> configureListeningReminders()
-                6 -> AlertDialog.Builder(this)
-                    .setTitle("A1 Family")
-                    .setMessage("A1 Family is an offline-first music and video player. Online downloads are shown only when the source provides an open licence and a direct audio file.")
-                    .setPositiveButton("OK", null).show()
+        val options = listOf(
+            Triple("🎨", "Appearance & themes", "Choose the look that suits you") { openThemePicker() },
+            Triple("♫", "Discover music", "Find downloadable music and more catalogues") { openOnlineMusicSearch() },
+            Triple("↓", "Download media", "Save an authorized direct audio or video file") { openMediaDownloadDialog() },
+            Triple("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
+            Triple("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
+            Triple("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
+            Triple("ⓘ", "About A1 Family", "Offline-first music and video player") {
+                AlertDialog.Builder(this).setTitle("A1 Family")
+                    .setMessage("Enjoy your local music and videos, discover openly licensed music, and save media only where the owner or licence permits it. Ads are optional and should never interrupt active playback.")
+                    .setPositiveButton("Got it", null).show()
             }
-        }.setNegativeButton("Close", null).show()
+        )
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = roundedBackground(themeColor(20, 13, 31), 22)
+        }
+        val scroll = ScrollView(this).apply { isFillViewport = true }
+        options.forEach { option ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBackground(themeColor(35, 23, 51), 16).apply {
+                    setStroke(dp(1), themeColor(77, 54, 101))
+                }
+                isClickable = true
+                isFocusable = true
+                contentDescription = option.second
+                setOnClickListener { option.fourth.invoke() }
+            }
+            item.addView(label(option.first, 21f, themeColor(218, 180, 255), true).apply {
+                gravity = Gravity.CENTER
+                background = roundedBackground(themeColor(56, 35, 78), 12)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+            }, LinearLayout.LayoutParams(dp(44), dp(44)))
+            val copy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, 0, 0)
+            }
+            copy.addView(label(option.second, 14f, Color.WHITE, true))
+            copy.addView(label(option.third, 11f, themeColor(187, 168, 207)).apply {
+                setPadding(0, dp(3), 0, 0)
+            })
+            item.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            item.addView(label("›", 24f, themeColor(190, 145, 237), true))
+            panel.addView(item, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(8)
+            })
+        }
+        scroll.addView(panel)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Settings")
+            .setView(scroll)
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.94f).toInt(),
+            minOf(dp(620), (resources.displayMetrics.heightPixels * 0.78f).toInt())
+        )
     }
 
     private fun openThemePicker() {
@@ -5202,12 +5281,29 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
+        val moreCataloguesButton = label("SEARCH MORE MUSIC CATALOGUES  ↗", 11f, themeColor(224, 197, 248), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBackground(themeColor(38, 25, 54), 13).apply {
+                setStroke(dp(1), themeColor(103, 72, 132))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                val query = queryInput.text.toString().trim()
+                if (query.length < 2) queryInput.error = "Enter at least two characters first."
+                else openMoreMusicCatalogues(query)
+            }
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(4))
             addView(queryInput)
             addView(searchButton, LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = dp(8)
+                bottomMargin = dp(6)
+            })
+            addView(moreCataloguesButton, LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
             })
             addView(status)
@@ -5249,13 +5345,13 @@ class MainActivity : AppCompatActivity() {
                                 setStroke(dp(1), themeColor(77, 55, 99))
                             }
                         }
-                        row.addView(label(track.title, 14f, Color.WHITE, true))
-                        row.addView(label(track.creator.ifBlank { "Creator not listed" }, 12f, themeColor(192, 173, 214)).apply {
-                            setPadding(0, dp(3), 0, dp(4))
-                        })
-                        row.addView(label("Source: ${track.source}\nLicence: ${track.licenseUrl}", 10f, themeColor(181, 164, 201)).apply {
+                        row.addView(label(track.title, 14f, Color.WHITE, true).apply {
                             maxLines = 2
-                            setPadding(0, 0, 0, dp(7))
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                            isClickable = true
+                            isFocusable = true
+                            contentDescription = "Show licence and creator details for ${track.title}"
+                            setOnClickListener { showLegalTrackDetails(track) }
                         })
                         val download = label("↓  DOWNLOAD", 11f, Color.WHITE, true).apply {
                             gravity = Gravity.CENTER
@@ -5284,6 +5380,49 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
         dialog.show()
+    }
+
+    private fun openMoreMusicCatalogues(query: String) {
+        val q = Uri.encode(query.trim())
+        val catalogues = listOf(
+            "Jamendo Music" to "https://www.jamendo.com/search?q=$q",
+            "Free Music Archive" to "https://freemusicarchive.org/search/?quicksearch=$q",
+            "Internet Archive" to "https://archive.org/search?query=$q",
+            "SoundCloud" to "https://soundcloud.com/search/sounds?q=$q",
+            "Audiomack" to "https://audiomack.com/search?q=$q",
+            "DatPiff mixtape archive" to "https://datpiff.com/",
+            "SoundClick" to "https://www.soundclick.com/search/default.cfm?searchterm=$q",
+            "Musopen" to "https://musopen.org/music/?q=$q",
+            "Bandcamp" to "https://bandcamp.com/search?q=$q"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("More music catalogues")
+            .setItems(catalogues.map { it.first }.toTypedArray()) { _, which ->
+                runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(catalogues[which].second)))
+                }.onFailure {
+                    Toast.makeText(this, "No browser is available to open that catalogue.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showLegalTrackDetails(track: LegalMusicTrack) {
+        val details = buildString {
+            append("Creator: ").append(track.creator.ifBlank { "Not listed" })
+            append("\n\nCatalogue: ").append(track.source)
+            append("\n\nLicence: ").append(track.licenseUrl)
+            append("\n\nCheck the licence and attribution requirements before reusing or redistributing this recording.")
+        }
+        AlertDialog.Builder(this)
+            .setTitle(track.title)
+            .setMessage(details)
+            .setPositiveButton("Open licence") { _, _ ->
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.licenseUrl))) }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun searchOpenLicensedMusic(query: String): List<LegalMusicTrack> {
@@ -5380,16 +5519,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isRecognizedOpenLicense(value: String): Boolean {
-        val license = value.lowercase(Locale.ROOT).trim()
-        // Exclude NC, ND, and custom terms from the app's direct-download list until reviewed.
-        return Regex("https?://creativecommons\\.org/licenses/by-sa/([1-4]\\.0/?)?")
-            .containsMatchIn(license) ||
-            Regex("https?://creativecommons\\.org/licenses/by/([1-4]\\.0/?)?")
-                .containsMatchIn(license) ||
-            license.contains("creativecommons.org/publicdomain/zero/1.0") ||
-            license.contains("creativecommons.org/publicdomain/mark/1.0") ||
-            license.contains("creativecommons.org/publicdomain/mark/") ||
-            license.contains("rightsstatements.org/vocab/noc/1.0")
+        val license = value.lowercase(Locale.ROOT).trim().trimEnd('/')
+        // Only accept explicit, commercial-use-compatible CC versions and CC0/PDM 1.0.
+        // NC, ND, NOC, custom terms, and unknown versions stay out of direct downloads.
+        val bySa = Regex("^https?://creativecommons\\.org/licenses/by-sa/(1\\.0|2\\.0|2\\.5|3\\.0|4\\.0)$")
+        val by = Regex("^https?://creativecommons\\.org/licenses/by/(1\\.0|2\\.0|2\\.5|3\\.0|4\\.0)$")
+        return bySa.matches(license) || by.matches(license) ||
+            license == "https://creativecommons.org/publicdomain/zero/1.0" ||
+            license == "https://creativecommons.org/publicdomain/mark/1.0"
     }
 
     private fun readJsonFromUrl(url: URL): JSONObject {
