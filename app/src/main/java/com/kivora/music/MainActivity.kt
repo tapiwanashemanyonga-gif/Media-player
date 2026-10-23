@@ -88,6 +88,13 @@ private data class LegalMusicTrack(
     val source: String
 )
 
+private data class SettingsAction(
+    val icon: String,
+    val title: String,
+    val description: String,
+    val action: () -> Unit
+)
+
 class MainActivity : AppCompatActivity() {
 
     private var player: MediaController? = null
@@ -5057,12 +5064,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
-        data class SettingsAction(
-            val icon: String,
-            val title: String,
-            val description: String,
-            val action: () -> Unit
-        )
         val options = listOf(
             SettingsAction("🎨", "Appearance & themes", "Choose the look that suits you") { openThemePicker() },
             SettingsAction("♫", "Discover music", "Find downloadable music and more catalogues") { openOnlineMusicSearch() },
