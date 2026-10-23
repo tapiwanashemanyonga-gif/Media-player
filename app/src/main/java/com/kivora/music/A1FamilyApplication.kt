@@ -279,7 +279,8 @@ internal object StartIoVideoAds {
             loadedAd = null
             loadedOwner.clear()
         }
-        dispatchPendingIfReady()
+        // Do not dispatch a durable request just because the app resumes. New explicit
+        // selections are dispatched by MainActivity; stale retries here caused surprise autoplay.
         preloadForActiveActivity()
     }
 
