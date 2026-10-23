@@ -378,6 +378,50 @@ class MainActivity : AppCompatActivity() {
             suppressNextResumeAd = true
             permissionLauncher.launch(permission)
         }
+        if (savedInstanceState == null) handleIncomingMediaIntent(intent)
+    }
+
+    /**
+     * Routes files opened from Android Files or another app to the matching playback path.
+     */
+    private fun handleIncomingMediaIntent(incoming: Intent?) {
+        if (incoming?.action != Intent.ACTION_VIEW) return
+        val uri = incoming.data ?: return
+        if (uri.scheme != "content" && uri.scheme != "file") return
+
+        val mimeType = incoming.type
+            ?: runCatching { contentResolver.getType(uri) }.getOrNull()
+            ?: ""
+        val name = runCatching {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (column >= 0) cursor.getString(column) else null
+                    } else null
+                }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Selected media"
+
+        val normalizedMime = mimeType.lowercase(Locale.ROOT)
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val isVideo = normalizedMime.startsWith("video/") ||
+            extension in setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "m4v", "ts")
+        val isAudio = normalizedMime.startsWith("audio/") ||
+            extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "mid", "midi")
+
+        when {
+            isVideo -> continueUserPlayback(PendingPlayback("play_video", uri = uri.toString(), title = name))
+            isAudio -> continueUserPlayback(PendingPlayback("play_queue_item", uri = uri.toString(), title = name))
+            else -> Toast.makeText(this, "This file type isn't supported by A1 FAMILY MEDIA.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingMediaIntent(intent)
     }
 
     private fun requestNotificationPermissionOnFirstLaunch() {
