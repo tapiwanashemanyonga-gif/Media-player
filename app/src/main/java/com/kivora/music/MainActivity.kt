@@ -80,7 +80,8 @@ private data class LegalMusicTrack(
     val creator: String,
     val licenseUrl: String,
     val fileName: String,
-    val downloadUrl: String
+    val downloadUrl: String,
+    val source: String
 )
 
 class MainActivity : AppCompatActivity() {
@@ -5145,7 +5146,7 @@ class MainActivity : AppCompatActivity() {
             setSingleLine(true)
             textSize = 16f
         }
-        val status = label("Search open-licensed music from Internet Archive. Only records with a recognised open licence and a direct audio file are shown.", 12f, themeColor(192, 173, 214)).apply {
+        val status = label("Search Internet Archive and Wikimedia Commons. Only supported open licences with direct audio files are shown; check attribution and source terms before reuse.", 12f, themeColor(192, 173, 214)).apply {
             setPadding(0, 0, 0, dp(10))
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -5211,7 +5212,7 @@ class MainActivity : AppCompatActivity() {
                         row.addView(label(track.creator.ifBlank { "Creator not listed" }, 12f, themeColor(192, 173, 214)).apply {
                             setPadding(0, dp(3), 0, dp(4))
                         })
-                        row.addView(label("Licence: ${track.licenseUrl}", 10f, themeColor(181, 164, 201)).apply {
+                        row.addView(label("Source: ${track.source}\nLicence: ${track.licenseUrl}", 10f, themeColor(181, 164, 201)).apply {
                             maxLines = 2
                             setPadding(0, 0, 0, dp(7))
                         })
@@ -5245,64 +5246,105 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun searchOpenLicensedMusic(query: String): List<LegalMusicTrack> {
-        val safeQuery = URLEncoder.encode(query.trim(), "UTF-8")
-        val searchUrl = URL(
-            "https://archive.org/advancedsearch.php?q=mediatype%3Aaudio%20AND%20$safeQuery" +
-                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&rows=18&page=1&output=json"
-        )
-        val searchJson = readJsonFromUrl(searchUrl)
-        val docs = searchJson.optJSONObject("response")?.optJSONArray("docs") ?: JSONArray()
+        val cleanQuery = query.trim().replace(Regex("\\s+"), " ").take(120)
         val tracks = mutableListOf<LegalMusicTrack>()
+        val quotedQuery = cleanQuery.replace("\\", "\\\\").replace("\"", "\\\"")
+        val archiveQuery = "mediatype:audio AND (title:\"$quotedQuery\" OR creator:\"$quotedQuery\" OR subject:\"$quotedQuery\")"
+        val archiveUrl = URL(
+            "https://archive.org/advancedsearch.php?q=" +
+                URLEncoder.encode(archiveQuery, "UTF-8") +
+                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=licenseurl&rows=30&page=1&output=json"
+        )
+        val docs = readJsonFromUrl(archiveUrl).optJSONObject("response")?.optJSONArray("docs") ?: JSONArray()
         for (index in 0 until docs.length()) {
-            if (tracks.size >= 10) break
+            if (tracks.size >= 6) break
             val doc = docs.optJSONObject(index) ?: continue
             val identifier = doc.optString("identifier").takeIf { it.isNotBlank() } ?: continue
             val metadata = runCatching {
                 readJsonFromUrl(URL("https://archive.org/metadata/${Uri.encode(identifier)}"))
             }.getOrNull() ?: continue
-            val metadataObject = metadata.optJSONObject("metadata") ?: continue
-            val license = metadataObject.optString("licenseurl").ifBlank {
-                metadataObject.optString("license_url")
-            }
+            val item = metadata.optJSONObject("metadata") ?: continue
+            val license = item.optString("licenseurl").ifBlank { item.optString("license_url") }
             if (!isRecognizedOpenLicense(license)) continue
-            val files = metadata.optJSONArray("files") ?: continue
-            val candidate = (0 until files.length()).mapNotNull { fileIndex ->
-                files.optJSONObject(fileIndex)
-            }.firstOrNull { file ->
-                val name = file.optString("name")
-                val format = file.optString("format")
-                val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                ext in setOf("mp3", "ogg", "flac", "m4a", "wav", "opus") &&
-                    !name.contains("/") && file.optString("source") != "metadata" &&
-                    (format.contains("mp3", true) || ext in setOf("ogg", "flac", "m4a", "wav", "opus"))
-            } ?: continue
+            val candidate = findArchiveAudioFile(metadata.optJSONArray("files")) ?: continue
             val fileName = candidate.optString("name")
-            val downloadUrl = "https://archive.org/download/${Uri.encode(identifier)}/${Uri.encode(fileName)}"
-            tracks.add(
-                LegalMusicTrack(
-                    identifier = identifier,
-                    title = doc.optString("title").ifBlank { fileName.substringBeforeLast('.') },
-                    creator = doc.optString("creator").removePrefix("[").removeSuffix("]"),
-                    licenseUrl = license,
-                    fileName = fileName,
-                    downloadUrl = downloadUrl
-                )
-            )
+            tracks.add(LegalMusicTrack(
+                identifier = identifier,
+                title = doc.optString("title").ifBlank { fileName.substringBeforeLast('.') },
+                creator = doc.optString("creator").removePrefix("[").removeSuffix("]"),
+                licenseUrl = license,
+                fileName = fileName,
+                downloadUrl = "https://archive.org/download/${Uri.encode(identifier)}/${Uri.encode(fileName)}",
+                source = "Internet Archive"
+            ))
         }
-        return tracks
+
+        // Wikimedia Commons provides per-file licence metadata through its public MediaWiki API.
+        // This deliberately excludes stream-ripping and catalogues whose API terms prohibit offline copies.
+        val commonsQuery = URLEncoder.encode("filetype:audio $cleanQuery", "UTF-8")
+        val commonsUrl = URL(
+            "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=$commonsQuery" +
+                "&gsrnamespace=6&gsrlimit=30&prop=imageinfo&iiprop=url%7Cextmetadata&format=json&formatversion=2"
+        )
+        val pages = runCatching {
+            readJsonFromUrl(commonsUrl).optJSONObject("query")?.optJSONArray("pages")
+        }.getOrNull() ?: JSONArray()
+        for (index in 0 until pages.length()) {
+            if (tracks.size >= 10) break
+            val page = pages.optJSONObject(index) ?: continue
+            val fileName = page.optString("title").substringAfter("File:").substringAfterLast('/')
+            val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            if (ext !in setOf("mp3", "ogg", "oga", "flac", "wav", "opus")) continue
+            val info = page.optJSONArray("imageinfo")?.optJSONObject(0) ?: continue
+            val downloadUrl = info.optString("url")
+            if (!downloadUrl.startsWith("https://")) continue
+            val metadata = info.optJSONObject("extmetadata") ?: continue
+            val license = metadata.optJSONObject("LicenseUrl")?.optString("value").orEmpty()
+            if (!isRecognizedOpenLicense(license)) continue
+            val creator = metadata.optJSONObject("Artist")?.optString("value")
+                ?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
+            val title = metadata.optJSONObject("ObjectName")?.optString("value")
+                ?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
+                .ifBlank { fileName.substringBeforeLast('.') }
+            tracks.add(LegalMusicTrack(
+                identifier = page.optString("title"),
+                title = title,
+                creator = creator,
+                licenseUrl = license,
+                fileName = fileName,
+                downloadUrl = downloadUrl,
+                source = "Wikimedia Commons"
+            ))
+        }
+        return tracks.distinctBy { it.downloadUrl }.take(10)
+    }
+
+    private fun findArchiveAudioFile(files: JSONArray?): JSONObject? {
+        if (files == null) return null
+        for (index in 0 until files.length()) {
+            val file = files.optJSONObject(index) ?: continue
+            val name = file.optString("name")
+            val format = file.optString("format")
+            val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            if (ext in setOf("mp3", "ogg", "flac", "m4a", "wav", "opus") &&
+                !name.contains("/") && file.optString("source") != "metadata" &&
+                (format.contains("mp3", true) || ext in setOf("ogg", "flac", "m4a", "wav", "opus"))
+            ) return file
+        }
+        return null
     }
 
     private fun isRecognizedOpenLicense(value: String): Boolean {
-        val license = value.lowercase(Locale.ROOT)
-        return license.contains("creativecommons.org/licenses/by/") ||
-            license.contains("creativecommons.org/licenses/by-sa/") ||
-            license.contains("creativecommons.org/licenses/by-nc/") ||
-            license.contains("creativecommons.org/licenses/by-nc-sa/") ||
-            license.contains("creativecommons.org/publicdomain/zero/") ||
+        val license = value.lowercase(Locale.ROOT).trim()
+        // Exclude NC, ND, and custom terms from the app's direct-download list until reviewed.
+        return Regex("https?://creativecommons\\.org/licenses/by-sa/([1-4]\\.0/?)?")
+            .containsMatchIn(license) ||
+            Regex("https?://creativecommons\\.org/licenses/by/([1-4]\\.0/?)?")
+                .containsMatchIn(license) ||
+            license.contains("creativecommons.org/publicdomain/zero/1.0") ||
+            license.contains("creativecommons.org/publicdomain/mark/1.0") ||
             license.contains("creativecommons.org/publicdomain/mark/") ||
-            license.contains("creativecommons.org/publicdomain/") ||
-            license.contains("rightsstatements.org/vocab/noc/") ||
-            license.contains("publicdomain")
+            license.contains("rightsstatements.org/vocab/noc/1.0")
     }
 
     private fun readJsonFromUrl(url: URL): JSONObject {
