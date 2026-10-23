@@ -52,6 +52,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 data class Song(
@@ -68,6 +71,15 @@ data class DeviceVideo(
     val title: String,
     val uri: Uri,
     val durationMs: Long
+)
+
+private data class LegalMusicTrack(
+    val identifier: String,
+    val title: String,
+    val creator: String,
+    val licenseUrl: String,
+    val fileName: String,
+    val downloadUrl: String
 )
 
 class MainActivity : AppCompatActivity() {
@@ -191,6 +203,7 @@ class MainActivity : AppCompatActivity() {
 
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
+    private val legalMusicSearchExecutor = Executors.newSingleThreadExecutor()
     private var artworkRequestId = 0
     private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
         (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -221,6 +234,18 @@ class MainActivity : AppCompatActivity() {
                     "Allow music access to show songs from your device.",
                     Toast.LENGTH_LONG
                 ).show()
+            }
+        }
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                getSharedPreferences("a1_family_notifications", MODE_PRIVATE)
+                    .edit().putBoolean("weekly_reminders_enabled", true).apply()
+                ListeningReminderScheduler.schedule(this)
+                Toast.makeText(this, "Weekly listening reminders enabled.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Notifications are off. You can enable them in Android settings.", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -302,6 +327,7 @@ class MainActivity : AppCompatActivity() {
         buildScreen()
         connectToPlaybackService()
         handler.post(progressUpdater)
+        if (savedInstanceState == null) scheduleOpenAdIfDue()
 
         val permission = if (Build.VERSION.SDK_INT >= 33) {
             Manifest.permission.READ_MEDIA_AUDIO
@@ -4978,20 +5004,24 @@ class MainActivity : AppCompatActivity() {
     private fun openSettings() {
         val options = arrayOf(
             "Appearance and themes",
-            "Download a media file",
+            "Find legally downloadable music",
+            "Download a direct media link",
             "Rescan music library",
             "Rescan video library",
+            "Weekly listening reminders",
             "About A1 Family"
         )
         AlertDialog.Builder(this).setTitle("Settings").setItems(options) { _, which ->
             when (which) {
                 0 -> openThemePicker()
-                1 -> openMediaDownloadDialog()
-                2 -> { songsLoaded = false; loadSongs() }
-                3 -> { videosLoaded = false; loadVideos() }
-                4 -> AlertDialog.Builder(this)
+                1 -> openOnlineMusicSearch()
+                2 -> openMediaDownloadDialog()
+                3 -> { songsLoaded = false; loadSongs() }
+                4 -> { videosLoaded = false; loadVideos() }
+                5 -> configureListeningReminders()
+                6 -> AlertDialog.Builder(this)
                     .setTitle("A1 Family")
-                    .setMessage("A1 Family is an offline-first music and video player. It plays media stored on your device and supports direct downloads only when you have permission to save the file.")
+                    .setMessage("A1 Family is an offline-first music and video player. Online downloads are shown only when the source provides an open licence and a direct audio file.")
                     .setPositiveButton("OK", null).show()
             }
         }.setNegativeButton("Close", null).show()
@@ -5123,6 +5153,251 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun scheduleOpenAdIfDue() {
+        val prefs = getSharedPreferences("a1_family_ad_policy", MODE_PRIVATE)
+        val opens = prefs.getInt("app_open_count", 0) + 1
+        prefs.edit().putInt("app_open_count", opens).apply()
+        if (opens % 3 == 0) {
+            handler.postDelayed({
+                if (!isFinishing && !isDestroyed && hasWindowFocus()) {
+                    StartIoVideoAds.showOptionalAd(this) { }
+                }
+            }, 1_500L)
+        }
+    }
+
+    private fun openOnlineMusicSearch() {
+        val queryInput = EditText(this).apply {
+            hint = "Search artist, song or genre"
+            setSingleLine(true)
+            textSize = 16f
+        }
+        val status = label("Search open-licensed music from Internet Archive. Only records with a recognised open licence and a direct audio file are shown.", 12f, themeColor(192, 173, 214)).apply {
+            setPadding(0, 0, 0, dp(10))
+        }
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            addView(results)
+            isFillViewport = true
+        }
+        val searchButton = label("SEARCH MUSIC", 12f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+            background = roundedBackground(themeColor(113, 56, 211), 14)
+            isClickable = true
+            isFocusable = true
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(queryInput)
+            addView(searchButton, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(8)
+                bottomMargin = dp(10)
+            })
+            addView(status)
+            addView(scroll, LinearLayout.LayoutParams(-1, dp(390)))
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Discover free and legal music")
+            .setView(content).setNegativeButton("Close", null).create()
+        fun performSearch() {
+            val query = queryInput.text.toString().trim()
+            if (query.length < 2) {
+                queryInput.error = "Enter at least two characters."
+                return
+            }
+            searchButton.isEnabled = false
+            searchButton.alpha = 0.6f
+            status.text = "Searching open-licensed catalog…"
+            results.removeAllViews()
+            legalMusicSearchExecutor.execute {
+                val response = runCatching { searchOpenLicensedMusic(query) }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || !dialog.isShowing) return@runOnUiThread
+                    searchButton.isEnabled = true
+                    searchButton.alpha = 1f
+                    val tracks = response.getOrNull()
+                    if (tracks == null) {
+                        status.text = "Search failed. Check your internet connection and try again."
+                        return@runOnUiThread
+                    }
+                    if (tracks.isEmpty()) {
+                        status.text = "No verified open-licensed direct audio files found. Try another artist or genre."
+                        return@runOnUiThread
+                    }
+                    status.text = "Found ${tracks.size} downloadable tracks. Check each licence and attribution before reuse."
+                    tracks.forEach { track ->
+                        val row = LinearLayout(this).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(dp(12), dp(10), dp(12), dp(10))
+                            background = roundedBackground(themeColor(31, 22, 44), 14).apply {
+                                setStroke(dp(1), themeColor(77, 55, 99))
+                            }
+                        }
+                        row.addView(label(track.title, 14f, Color.WHITE, true))
+                        row.addView(label(track.creator.ifBlank { "Creator not listed" }, 12f, themeColor(192, 173, 214)).apply {
+                            setPadding(0, dp(3), 0, dp(4))
+                        })
+                        row.addView(label("Licence: ${track.licenseUrl}", 10f, themeColor(181, 164, 201)).apply {
+                            maxLines = 2
+                            setPadding(0, 0, 0, dp(7))
+                        })
+                        val download = label("↓  DOWNLOAD", 11f, Color.WHITE, true).apply {
+                            gravity = Gravity.CENTER
+                            setPadding(dp(14), dp(10), dp(14), dp(10))
+                            background = roundedBackground(themeColor(102, 52, 184), 12)
+                            isClickable = true
+                            isFocusable = true
+                            setOnClickListener {
+                                enqueueAuthorizedMediaDownload(Uri.parse(track.downloadUrl), track.title, track.fileName)
+                            }
+                        }
+                        row.addView(download)
+                        results.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                            bottomMargin = dp(8)
+                        })
+                    }
+                }
+            }
+        }
+        searchButton.setOnClickListener { performSearch() }
+        queryInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH ||
+                actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                performSearch()
+                true
+            } else false
+        }
+        dialog.show()
+    }
+
+    private fun searchOpenLicensedMusic(query: String): List<LegalMusicTrack> {
+        val safeQuery = URLEncoder.encode(query.trim(), "UTF-8")
+        val searchUrl = URL(
+            "https://archive.org/advancedsearch.php?q=mediatype%3Aaudio%20AND%20$safeQuery" +
+                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&rows=18&page=1&output=json"
+        )
+        val searchJson = readJsonFromUrl(searchUrl)
+        val docs = searchJson.optJSONObject("response")?.optJSONArray("docs") ?: JSONArray()
+        val tracks = mutableListOf<LegalMusicTrack>()
+        for (index in 0 until docs.length()) {
+            if (tracks.size >= 10) break
+            val doc = docs.optJSONObject(index) ?: continue
+            val identifier = doc.optString("identifier").takeIf { it.isNotBlank() } ?: continue
+            val metadata = runCatching {
+                readJsonFromUrl(URL("https://archive.org/metadata/${Uri.encode(identifier)}"))
+            }.getOrNull() ?: continue
+            val metadataObject = metadata.optJSONObject("metadata") ?: continue
+            val license = metadataObject.optString("licenseurl").ifBlank {
+                metadataObject.optString("license_url")
+            }
+            if (!isRecognizedOpenLicense(license)) continue
+            val files = metadata.optJSONArray("files") ?: continue
+            val candidate = (0 until files.length()).mapNotNull { fileIndex ->
+                files.optJSONObject(fileIndex)
+            }.firstOrNull { file ->
+                val name = file.optString("name")
+                val format = file.optString("format")
+                val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                ext in setOf("mp3", "ogg", "flac", "m4a", "wav", "opus") &&
+                    !name.contains("/") && file.optString("source") != "metadata" &&
+                    (format.contains("mp3", true) || ext in setOf("ogg", "flac", "m4a", "wav", "opus"))
+            } ?: continue
+            val fileName = candidate.optString("name")
+            val downloadUrl = "https://archive.org/download/${Uri.encode(identifier)}/${Uri.encode(fileName)}"
+            tracks.add(
+                LegalMusicTrack(
+                    identifier = identifier,
+                    title = doc.optString("title").ifBlank { fileName.substringBeforeLast('.') },
+                    creator = doc.optString("creator").removePrefix("[").removeSuffix("]"),
+                    licenseUrl = license,
+                    fileName = fileName,
+                    downloadUrl = downloadUrl
+                )
+            )
+        }
+        return tracks
+    }
+
+    private fun isRecognizedOpenLicense(value: String): Boolean {
+        val license = value.lowercase(Locale.ROOT)
+        return license.contains("creativecommons.org/licenses/by/") ||
+            license.contains("creativecommons.org/licenses/by-sa/") ||
+            license.contains("creativecommons.org/licenses/by-nc/") ||
+            license.contains("creativecommons.org/licenses/by-nc-sa/") ||
+            license.contains("creativecommons.org/publicdomain/zero/") ||
+            license.contains("creativecommons.org/publicdomain/mark/") ||
+            license.contains("creativecommons.org/publicdomain/") ||
+            license.contains("rightsstatements.org/vocab/noc/") ||
+            license.contains("publicdomain")
+    }
+
+    private fun readJsonFromUrl(url: URL): JSONObject {
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8_000
+            readTimeout = 10_000
+            setRequestProperty("User-Agent", "A1FamilyMediaPlayer/1.3 (open-licensed music search)")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) throw IOException("HTTP ${connection.responseCode}")
+            JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun enqueueAuthorizedMediaDownload(uri: Uri, title: String, fileName: String) {
+        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
+        val savedCount = prefs.getInt("successful_download_count", 0)
+        val enqueue = {
+            runCatching {
+                val safeName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
+                    .ifBlank { "A1-Family-media.mp3" }
+                val request = DownloadManager.Request(uri)
+                    .setTitle(title)
+                    .setDescription("Saving an open-licensed media file")
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setAllowedOverMetered(true)
+                    .setAllowedOverRoaming(false)
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
+                (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+                prefs.edit().putInt("successful_download_count", savedCount + 1).apply()
+                Toast.makeText(this, "Download started. Check Downloads.", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                Toast.makeText(this, "Could not start the download. Check your connection and try again.", Toast.LENGTH_LONG).show()
+            }
+        }
+        if (savedCount > 0 && savedCount % 10 == 0) {
+            AlertDialog.Builder(this)
+                .setTitle("Keep downloading")
+                .setMessage("You've saved $savedCount media files. Continue after a short ad?")
+                .setPositiveButton("Continue") { _, _ -> StartIoVideoAds.showOptionalAd(this, enqueue) }
+                .setNegativeButton("Not now", null)
+                .show()
+        } else enqueue()
+    }
+
+    private fun configureListeningReminders() {
+        val prefs = getSharedPreferences("a1_family_notifications", MODE_PRIVATE)
+        val enabled = prefs.getBoolean("weekly_reminders_enabled", false)
+        if (enabled) {
+            prefs.edit().putBoolean("weekly_reminders_enabled", false).apply()
+            ListeningReminderScheduler.cancel(this)
+            Toast.makeText(this, "Weekly listening reminders disabled.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        prefs.edit().putBoolean("weekly_reminders_enabled", true).apply()
+        ListeningReminderScheduler.schedule(this)
+        Toast.makeText(this, "Weekly listening reminders enabled when internet is available.", Toast.LENGTH_LONG).show()
+    }
+
     private fun openMediaDownloadDialog() {
         val urlInput = EditText(this).apply {
             hint = "Direct HTTPS link to an MP3 or MP4 file"
@@ -5162,16 +5437,8 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
                 runCatching {
-                    val request = DownloadManager.Request(downloadUri)
-                        .setTitle(fileName)
-                        .setDescription("Downloading media to the Downloads folder")
-                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                        .setAllowedOverMetered(true)
-                        .setAllowedOverRoaming(false)
-                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                    (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-                    Toast.makeText(this, "Download started. Check your Downloads folder.", Toast.LENGTH_LONG).show()
-                    dialog.dismiss()
+                    enqueueAuthorizedMediaDownload(downloadUri, fileName, fileName)
+                dialog.dismiss()
                 }.onFailure {
                     Toast.makeText(this, "Could not start the download. Check the link and try again.", Toast.LENGTH_LONG).show()
                 }
