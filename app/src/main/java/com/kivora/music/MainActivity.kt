@@ -2,11 +2,9 @@
 package com.kivora.music
 
 import android.Manifest
-import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.ContentUris
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -14,9 +12,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
-import android.app.DownloadManager
-import android.os.Environment
-import android.webkit.URLUtil
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -54,13 +49,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
-import org.json.JSONArray
-import org.json.JSONObject
 import java.util.Locale
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 data class Song(
@@ -77,16 +66,6 @@ data class DeviceVideo(
     val title: String,
     val uri: Uri,
     val durationMs: Long
-)
-
-private data class LegalMusicTrack(
-    val identifier: String,
-    val title: String,
-    val creator: String,
-    val licenseUrl: String,
-    val fileName: String,
-    val downloadUrl: String,
-    val source: String
 )
 
 private data class SettingsAction(
@@ -155,7 +134,6 @@ class MainActivity : AppCompatActivity() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             tryRunPendingPlaybackAfterAd()
-            maybeShowPendingDownloadMilestoneAd()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -222,18 +200,8 @@ class MainActivity : AppCompatActivity() {
     private var controllerReconnectAttempt = 0
 
     private val handler = Handler(Looper.getMainLooper())
-    private var downloadReceiverRegistered = false
-    private val downloadCompletionReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
-            val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-            if (downloadId > 0L) processDownloadCompletion(downloadId)
-        }
-    }
-
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
-    private val legalMusicSearchExecutor = Executors.newSingleThreadExecutor()
     private var artworkRequestId = 0
     private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
         (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -323,7 +291,6 @@ class MainActivity : AppCompatActivity() {
                 }, 500L)
             }
             tryRunPendingPlaybackAfterAd()
-            maybeShowPendingDownloadMilestoneAd()
         }
 
         override fun onShuffleModeEnabledChanged(
@@ -431,15 +398,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!downloadReceiverRegistered) {
-            ContextCompat.registerReceiver(
-                this,
-                downloadCompletionReceiver,
-                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                ContextCompat.RECEIVER_EXPORTED
-            )
-            downloadReceiverRegistered = true
-        }
     }
 
     override fun onResume() {
@@ -452,8 +410,6 @@ class MainActivity : AppCompatActivity() {
             if (suppressNextResumeAd) suppressNextResumeAd = false
             else scheduleOpenAdIfDue()
         }
-        reconcilePendingDownloadCompletions()
-        maybeShowPendingDownloadMilestoneAd()
         // The durable playback journal and ad callback are authoritative. Retrying a
         // local pending request merely because this Activity regained focus can start audio
         // unexpectedly or dispatch the same selection twice.
@@ -467,10 +423,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        if (downloadReceiverRegistered) {
-            runCatching { unregisterReceiver(downloadCompletionReceiver) }
-            downloadReceiverRegistered = false
-        }
         super.onStop()
     }
 
@@ -522,7 +474,6 @@ class MainActivity : AppCompatActivity() {
         }
         if (intent.kind == "play_queue" && !songsLoaded) return
         // Playback is never gated by an interstitial. Optional ads are shown separately
-        // on the third app open or after ten download requests.
         if (!executePlayback(intent)) {
             pendingPlaybackAfterAd = intent
             StartIoVideoAds.savePendingPlayback(intent)
@@ -817,7 +768,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectedTheme(): String =
-        getSharedPreferences("kivora_preferences", MODE_PRIVATE).getString("theme", "purple") ?: "purple"
+        getSharedPreferences("kivora_preferences", MODE_PRIVATE).getString("theme", "neon") ?: "neon"
 
     /** Applies a restrained hue shift to existing surfaces and lavender accents. */
     private fun themeColor(r: Int, g: Int, b: Int): Int {
@@ -829,6 +780,7 @@ class MainActivity : AppCompatActivity() {
                 "ocean" -> Color.rgb((r * 0.42).toInt().coerceAtMost(28), (g * 0.65 + 7).toInt().coerceAtMost(55), (b * 0.72 + 10).toInt().coerceAtMost(78))
                 "forest" -> Color.rgb((r * 0.35).toInt().coerceAtMost(24), (g * 0.68 + 8).toInt().coerceAtMost(62), (b * 0.30 + 5).toInt().coerceAtMost(38))
                 "rose" -> Color.rgb((r * 0.62 + 8).toInt().coerceAtMost(68), (g * 0.30 + 4).toInt().coerceAtMost(28), (b * 0.48 + 8).toInt().coerceAtMost(52))
+                "neon" -> Color.rgb((r * 0.18).toInt().coerceAtMost(14), (g * 0.38 + 4).toInt().coerceAtMost(34), (b * 0.68 + 8).toInt().coerceAtMost(58))
                 else -> Color.rgb(r, g, b)
             }
         }
@@ -839,6 +791,7 @@ class MainActivity : AppCompatActivity() {
             "ocean" -> Color.rgb((brightness * 0.42).toInt().coerceAtMost(180), (brightness * 0.88 + 35).toInt().coerceAtMost(245), (brightness * 0.98 + 30).toInt().coerceAtMost(255))
             "forest" -> Color.rgb((brightness * 0.40).toInt().coerceAtMost(150), (brightness * 0.92 + 35).toInt().coerceAtMost(245), (brightness * 0.48 + 25).toInt().coerceAtMost(210))
             "rose" -> Color.rgb((brightness * 0.98 + 35).toInt().coerceAtMost(255), (brightness * 0.48 + 20).toInt().coerceAtMost(205), (brightness * 0.70 + 30).toInt().coerceAtMost(245))
+            "neon" -> Color.rgb((brightness * 0.18 + 5).toInt().coerceAtMost(58), (brightness * 0.86 + 30).toInt().coerceAtMost(255), (brightness * 0.98 + 35).toInt().coerceAtMost(255))
             else -> Color.rgb(r, g, b)
         }
     }
@@ -891,7 +844,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(11), 0, 0, 0)
         }
         brandCopy.addView(label("A1 Family", 15f, themeColor(250, 247, 255), true))
-        brandCopy.addView(label("MEDIA PLAYER", 9f, themeColor(182, 157, 213), true).apply {
+        brandCopy.addView(label("NEON MUSIC STUDIO", 9f, themeColor(40, 224, 255), true).apply {
             letterSpacing = 0.16f
             setPadding(0, dp(2), 0, 0)
         })
@@ -920,7 +873,7 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(
             label(
-                "Your sound, your space.",
+                "YOUR SOUND. YOUR UNIVERSE.",
                 12f,
                 themeColor(192, 160, 232),
                 true
@@ -2936,10 +2889,10 @@ class MainActivity : AppCompatActivity() {
             letterSpacing = 0.16f
             setPadding(dp(2), dp(2), 0, dp(5))
         })
-        homeContent.addView(label("Your music, ready", 27f, themeColor(252, 248, 255), true).apply {
+        homeContent.addView(label("Feel every frequency.", 27f, themeColor(252, 248, 255), true).apply {
             setPadding(dp(2), 0, 0, dp(4))
         })
-        homeContent.addView(label("Pick up where you left off.", 13f, themeColor(192, 173, 214)).apply {
+        homeContent.addView(label("Your library. Your rhythm. No limits.", 13f, themeColor(40, 224, 255)).apply {
             setPadding(dp(2), 0, 0, dp(18))
         })
 
@@ -2982,21 +2935,29 @@ class MainActivity : AppCompatActivity() {
             homeContent.addView(row)
         }
 
-        val discoverMusic = label("⬇  MUSIC & MEDIA DOWNLOADER", 13f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(13), dp(14), dp(13))
-            background = roundedBackground(themeColor(92, 47, 160), 15).apply {
-                setStroke(dp(1), themeColor(192, 132, 252))
+        val sponsoredCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(themeColor(20, 39, 70), themeColor(27, 19, 50), themeColor(16, 16, 34))
+            ).apply {
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), themeColor(40, 224, 255))
             }
+        }
+        sponsoredCard.addView(label("SPONSORED  •  OPTIONAL", 10f, themeColor(40, 224, 255), true).apply { letterSpacing = 0.12f })
+        sponsoredCard.addView(label("Explore something new", 17f, themeColor(250, 250, 255), true).apply { setPadding(0, dp(6), 0, dp(3)) })
+        sponsoredCard.addView(label("Optional offers from our advertising partner. Your music stays uninterrupted.", 12f, themeColor(185, 198, 224)).apply { setPadding(0, 0, 0, dp(10)) })
+        sponsoredCard.addView(label("Explore sponsored offers  ↗", 12f, themeColor(40, 224, 255), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBackground(themeColor(19, 42, 68), 13).apply { setStroke(dp(1), themeColor(40, 224, 255)) }
             isClickable = true
             isFocusable = true
-            contentDescription = "Search and download available music and authorized media"
-            setOnClickListener { openOnlineMusicSearch() }
-        }
-        homeContent.addView(discoverMusic, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(3)
-            bottomMargin = dp(7)
+            setOnClickListener { openSponsoredOffers() }
         })
+        homeContent.addView(sponsoredCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(14) })
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
@@ -4610,10 +4571,6 @@ class MainActivity : AppCompatActivity() {
         musicDispatchRetry?.let(handler::removeCallbacks)
         musicDispatchRetry = null
         StartIoVideoAds.detach(this)
-        if (downloadReceiverRegistered) {
-            runCatching { unregisterReceiver(downloadCompletionReceiver) }
-            downloadReceiverRegistered = false
-        }
         controllerRetryRunnable?.let(handler::removeCallbacks)
         controllerRetryRunnable = null
         handler.removeCallbacks(progressUpdater)
@@ -4635,7 +4592,6 @@ class MainActivity : AppCompatActivity() {
         artworkMotionAnimator?.cancel()
         artworkMotionAnimator = null
         artworkExecutor.shutdownNow()
-        legalMusicSearchExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
@@ -5143,9 +5099,9 @@ class MainActivity : AppCompatActivity() {
             SettingsAction("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
             SettingsAction("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
             SettingsAction("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
-            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player") {
+            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player with optional sponsored discovery") {
                 AlertDialog.Builder(this).setTitle("A1 Family")
-                    .setMessage("Enjoy your local music and videos, discover openly licensed music, and save media only where the owner or licence permits it. Ads are optional and should never interrupt active playback.")
+                    .setMessage("Enjoy local music and videos, playlists, favourites, and uninterrupted background playback. Optional sponsored content is clearly labelled and never interrupts playback.")
                     .setPositiveButton("Got it", null).show()
             }
         )
@@ -5201,8 +5157,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openThemePicker() {
-        val names = arrayOf("Midnight Purple", "Ocean Blue", "Forest Green", "Rose Pink")
-        val ids = arrayOf("purple", "ocean", "forest", "rose")
+        val names = arrayOf("Neon Music Studio", "Midnight Purple", "Ocean Blue", "Forest Green", "Rose Pink")
+        val ids = arrayOf("neon", "purple", "ocean", "forest", "rose")
         val current = ids.indexOf(selectedTheme()).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Choose a theme")
             .setSingleChoiceItems(names, current) { dialog, which ->
@@ -5343,166 +5299,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openOnlineMusicSearch() {
-        val queryInput = EditText(this).apply {
-            hint = "Search artist, song or genre"
-            setSingleLine(true)
-            textSize = 16f
-        }
-        val status = label("Search music catalogues for direct downloads that are permitted by the owner or licence. Search results show the title and download action; tap a title for details.", 12f, themeColor(192, 173, 214)).apply {
-            setPadding(0, 0, 0, dp(10))
-        }
-        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            addView(results)
-            isFillViewport = true
-        }
-        val searchButton = label("SEARCH MUSIC", 12f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(18), dp(12), dp(18), dp(12))
-            background = roundedBackground(themeColor(113, 56, 211), 14)
-            isClickable = true
-            isFocusable = true
-        }
-        val moreCataloguesButton = label("SEARCH MORE MUSIC CATALOGUES  ↗", 11f, themeColor(224, 197, 248), true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = roundedBackground(themeColor(38, 25, 54), 13).apply {
-                setStroke(dp(1), themeColor(103, 72, 132))
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                val query = queryInput.text.toString().trim()
-                if (query.length < 2) queryInput.error = "Enter at least two characters first."
-                else openMoreMusicCatalogues(query)
-            }
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(4))
-            addView(queryInput)
-            addView(searchButton, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(8)
-                bottomMargin = dp(6)
-            })
-            addView(moreCataloguesButton, LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = dp(10)
-            })
-            addView(status)
-            addView(scroll, LinearLayout.LayoutParams(-1, dp(390)))
-        }
-        val directUrlInput = EditText(this).apply {
-            hint = "Optional: direct HTTPS MP3 / MP4 link"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-        }
-        val directNameInput = EditText(this).apply {
-            hint = "Optional file name"
-            setSingleLine(true)
-        }
-        val directDownloadButton = label("DOWNLOAD DIRECT FILE", 11f, themeColor(224, 197, 248), true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = roundedBackground(themeColor(38, 25, 54), 13).apply {
-                setStroke(dp(1), themeColor(103, 72, 132))
-            }
-            isClickable = true
-            isFocusable = true
-        }
-        content.addView(label("OR DOWNLOAD AN AUTHORIZED DIRECT FILE", 10f, themeColor(196, 174, 217), true).apply {
-            setPadding(0, dp(12), 0, dp(3))
-        })
-        content.addView(directUrlInput)
-        content.addView(directNameInput)
-        content.addView(directDownloadButton, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(6)
-        })
-        val downloaderScroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(content)
-        }
-        val dialog = AlertDialog.Builder(this).setTitle("Music & media downloader")
-            .setView(downloaderScroll).setNegativeButton("Close", null).create()
-        fun performSearch() {
-            val query = queryInput.text.toString().trim()
-            if (query.length < 2) {
-                queryInput.error = "Enter at least two characters."
-                return
-            }
-            searchButton.isEnabled = false
-            searchButton.alpha = 0.6f
-            status.text = "Searching open-licensed catalog…"
-            results.removeAllViews()
-            legalMusicSearchExecutor.execute {
-                val response = runCatching { searchOpenLicensedMusic(query) }
-                runOnUiThread {
-                    if (isFinishing || isDestroyed || !dialog.isShowing) return@runOnUiThread
-                    searchButton.isEnabled = true
-                    searchButton.alpha = 1f
-                    val tracks = response.getOrNull()
-                    if (tracks == null) {
-                        status.text = "Search failed. Check your internet connection and try again."
-                        return@runOnUiThread
-                    }
-                    if (tracks.isEmpty()) {
-                        status.text = "No verified open-licensed direct audio files found. Try another artist or genre."
-                        return@runOnUiThread
-                    }
-                    status.text = "Found ${tracks.size} downloadable tracks. Check each licence and attribution before reuse."
-                    tracks.forEach { track ->
-                        val row = LinearLayout(this).apply {
-                            orientation = LinearLayout.VERTICAL
-                            setPadding(dp(12), dp(10), dp(12), dp(10))
-                            background = roundedBackground(themeColor(31, 22, 44), 14).apply {
-                                setStroke(dp(1), themeColor(77, 55, 99))
-                            }
-                        }
-                        row.addView(label(track.title, 14f, Color.WHITE, true).apply {
-                            maxLines = 2
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                            isClickable = true
-                            isFocusable = true
-                            contentDescription = "Show licence and creator details for ${track.title}"
-                            setOnClickListener { showLegalTrackDetails(track) }
-                        })
-                        val download = label("↓  DOWNLOAD", 11f, Color.WHITE, true).apply {
-                            gravity = Gravity.CENTER
-                            setPadding(dp(14), dp(10), dp(14), dp(10))
-                            background = roundedBackground(themeColor(102, 52, 184), 12)
-                            isClickable = true
-                            isFocusable = true
-                            setOnClickListener {
-                                enqueueAuthorizedMediaDownload(Uri.parse(track.downloadUrl), track.title, track.fileName)
-                            }
-                        }
-                        row.addView(download)
-                        results.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-                            bottomMargin = dp(8)
-                        })
-                    }
-                }
-            }
-        }
-        directDownloadButton.setOnClickListener {
-            val rawUrl = directUrlInput.text.toString().trim()
-            val uri = runCatching { Uri.parse(rawUrl) }.getOrNull()
-            if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
-                directUrlInput.error = "Enter a valid HTTPS direct-file link."
-            } else {
-                enqueueAuthorizedMediaDownload(uri, directNameInput.text.toString().trim().ifBlank { "media-download" }, directNameInput.text.toString().trim())
-            }
-        }
-        searchButton.setOnClickListener { performSearch() }
-        queryInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH ||
-                actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
-                performSearch()
-                true
-            } else false
-        }
-        dialog.show()
-    }
 
     private fun openMoreMusicCatalogues(query: String) {
         val q = Uri.encode(query.trim())
@@ -5530,208 +5326,14 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showLegalTrackDetails(track: LegalMusicTrack) {
-        val details = buildString {
-            append("Creator: ").append(track.creator.ifBlank { "Not listed" })
-            append("\n\nCatalogue: ").append(track.source)
-            append("\n\nLicence: ").append(track.licenseUrl)
-            append("\n\nCheck the licence and attribution requirements before reusing or redistributing this recording.")
-        }
-        AlertDialog.Builder(this)
-            .setTitle(track.title)
-            .setMessage(details)
-            .setPositiveButton("Open licence") { _, _ ->
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.licenseUrl))) }
-            }
-            .setNegativeButton("Close", null)
-            .show()
-    }
 
-    private fun searchOpenLicensedMusic(query: String): List<LegalMusicTrack> {
-        val cleanQuery = query.trim().replace(Regex("\\s+"), " ").take(120)
-        val tracks = mutableListOf<LegalMusicTrack>()
-        val quotedQuery = cleanQuery.replace("\\", "\\\\").replace("\"", "\\\"")
-        val archiveQuery = "mediatype:audio AND (title:\"$quotedQuery\" OR creator:\"$quotedQuery\" OR subject:\"$quotedQuery\")"
-        val archiveUrl = URL(
-            "https://archive.org/advancedsearch.php?q=" +
-                URLEncoder.encode(archiveQuery, "UTF-8") +
-                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=licenseurl&rows=18&page=1&output=json"
-        )
-        val docs = runCatching {
-            readJsonFromUrl(archiveUrl).optJSONObject("response")?.optJSONArray("docs")
-        }.getOrNull() ?: JSONArray()
-        for (index in 0 until minOf(docs.length(), 18)) {
-            if (tracks.size >= 6) break
-            val doc = docs.optJSONObject(index) ?: continue
-            val identifier = doc.optString("identifier").takeIf { it.isNotBlank() } ?: continue
-            val indexedLicense = doc.optString("licenseurl")
-            if (!isRecognizedOpenLicense(indexedLicense)) continue
-            val metadata = runCatching {
-                readJsonFromUrl(URL("https://archive.org/metadata/${Uri.encode(identifier)}"))
-            }.getOrNull() ?: continue
-            val item = metadata.optJSONObject("metadata") ?: continue
-            val license = item.optString("licenseurl").ifBlank { item.optString("license_url") }
-            if (!isRecognizedOpenLicense(license)) continue
-            val candidate = findArchiveAudioFile(metadata.optJSONArray("files")) ?: continue
-            val fileName = candidate.optString("name")
-            tracks.add(LegalMusicTrack(
-                identifier = identifier,
-                title = doc.optString("title").ifBlank { fileName.substringBeforeLast('.') },
-                creator = doc.optString("creator").removePrefix("[").removeSuffix("]"),
-                licenseUrl = license,
-                fileName = fileName,
-                downloadUrl = "https://archive.org/download/${Uri.encode(identifier)}/${Uri.encode(fileName)}",
-                source = "Internet Archive"
-            ))
-        }
 
-        // Wikimedia Commons provides per-file licence metadata through its public MediaWiki API.
-        // This deliberately excludes stream-ripping and catalogues whose API terms prohibit offline copies.
-        val commonsQuery = URLEncoder.encode("filetype:audio $cleanQuery", "UTF-8")
-        val commonsUrl = URL(
-            "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=$commonsQuery" +
-                "&gsrnamespace=6&gsrlimit=30&prop=imageinfo&iiprop=url%7Cextmetadata&format=json&formatversion=2"
-        )
-        val pages = runCatching {
-            readJsonFromUrl(commonsUrl).optJSONObject("query")?.optJSONArray("pages")
-        }.getOrNull() ?: JSONArray()
-        for (index in 0 until pages.length()) {
-            if (tracks.size >= 10) break
-            val page = pages.optJSONObject(index) ?: continue
-            val fileName = page.optString("title").substringAfter("File:").substringAfterLast('/')
-            val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-            if (ext !in setOf("mp3", "ogg", "oga", "flac", "wav", "opus")) continue
-            val info = page.optJSONArray("imageinfo")?.optJSONObject(0) ?: continue
-            val downloadUrl = info.optString("url")
-            if (!downloadUrl.startsWith("https://")) continue
-            val metadata = info.optJSONObject("extmetadata") ?: continue
-            val license = metadata.optJSONObject("LicenseUrl")?.optString("value").orEmpty()
-            if (!isRecognizedOpenLicense(license)) continue
-            val creator = metadata.optJSONObject("Artist")?.optString("value")
-                ?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
-            val title = metadata.optJSONObject("ObjectName")?.optString("value")
-                ?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
-                .ifBlank { fileName.substringBeforeLast('.') }
-            tracks.add(LegalMusicTrack(
-                identifier = page.optString("title"),
-                title = title,
-                creator = creator,
-                licenseUrl = license,
-                fileName = fileName,
-                downloadUrl = downloadUrl,
-                source = "Wikimedia Commons"
-            ))
-        }
-        return tracks.distinctBy { it.downloadUrl }.take(10)
-    }
 
-    private fun findArchiveAudioFile(files: JSONArray?): JSONObject? {
-        if (files == null) return null
-        for (index in 0 until files.length()) {
-            val file = files.optJSONObject(index) ?: continue
-            val name = file.optString("name")
-            val format = file.optString("format")
-            val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-            if (ext in setOf("mp3", "ogg", "flac", "m4a", "wav", "opus") &&
-                !name.contains("/") && file.optString("source") != "metadata" &&
-                (format.contains("mp3", true) || ext in setOf("ogg", "flac", "m4a", "wav", "opus"))
-            ) return file
-        }
-        return null
-    }
 
-    private fun isRecognizedOpenLicense(value: String): Boolean {
-        val license = value.lowercase(Locale.ROOT).trim().trimEnd('/')
-        // Only accept explicit, commercial-use-compatible CC versions and CC0/PDM 1.0.
-        // NC, ND, NOC, custom terms, and unknown versions stay out of direct downloads.
-        val bySa = Regex("^https?://creativecommons\\.org/licenses/by-sa/(1\\.0|2\\.0|2\\.5|3\\.0|4\\.0)$")
-        val by = Regex("^https?://creativecommons\\.org/licenses/by/(1\\.0|2\\.0|2\\.5|3\\.0|4\\.0)$")
-        return bySa.matches(license) || by.matches(license) ||
-            license == "https://creativecommons.org/publicdomain/zero/1.0" ||
-            license == "https://creativecommons.org/publicdomain/mark/1.0"
-    }
 
-    private fun readJsonFromUrl(url: URL): JSONObject {
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 5_000
-            readTimeout = 6_000
-            setRequestProperty("User-Agent", "A1FamilyMediaPlayer/1.3 (open-licensed music search)")
-        }
-        return try {
-            if (connection.responseCode !in 200..299) throw IOException("HTTP ${connection.responseCode}")
-            JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
-        } finally {
-            connection.disconnect()
-        }
-    }
 
-    private fun enqueueAuthorizedMediaDownload(uri: Uri, title: String, fileName: String) {
-        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
-        runCatching {
-            val safeName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
-                .ifBlank { "A1-Family-media.mp3" }
-            val request = DownloadManager.Request(uri)
-                .setTitle(title)
-                .setDescription("Saving media you are authorised to download")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(false)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
-            val id = (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            val pending = prefs.getStringSet("pending_download_ids", emptySet())
-                ?.toMutableSet() ?: mutableSetOf()
-            pending.add(id.toString())
-            prefs.edit().putStringSet("pending_download_ids", pending).apply()
-            Toast.makeText(this, "Download started. Check Downloads.", Toast.LENGTH_LONG).show()
-        }.onFailure {
-            Toast.makeText(this, "Could not start the download. Check your connection and try again.", Toast.LENGTH_LONG).show()
-        }
-    }
 
-    private fun reconcilePendingDownloadCompletions() {
-        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
-        prefs.getStringSet("pending_download_ids", emptySet())?.toList().orEmpty()
-            .forEach { value -> value.toLongOrNull()?.let(::processDownloadCompletion) }
-    }
 
-    private fun processDownloadCompletion(downloadId: Long) {
-        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
-        val pending = prefs.getStringSet("pending_download_ids", emptySet())
-            ?.toMutableSet() ?: mutableSetOf()
-        if (!pending.contains(downloadId.toString())) return
-        val cursor = runCatching {
-            (getSystemService(DOWNLOAD_SERVICE) as DownloadManager)
-                .query(DownloadManager.Query().setFilterById(downloadId))
-        }.getOrNull() ?: return
-        val status = cursor.use {
-            if (it.moveToFirst()) it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-            else -1
-        }
-        if (status == DownloadManager.STATUS_PENDING ||
-            status == DownloadManager.STATUS_RUNNING ||
-            status == DownloadManager.STATUS_PAUSED || status == -1
-        ) return
-        pending.remove(downloadId.toString())
-        val edit = prefs.edit().putStringSet("pending_download_ids", pending)
-        if (status == DownloadManager.STATUS_SUCCESSFUL) {
-            val completed = prefs.getInt("successful_save_count", 0) + 1
-            edit.putInt("successful_save_count", completed)
-            if (completed % 10 == 0) edit.putBoolean("pending_download_milestone_ad", true)
-        }
-        edit.apply()
-        maybeShowPendingDownloadMilestoneAd()
-    }
-
-    private fun maybeShowPendingDownloadMilestoneAd() {
-        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
-        if (!prefs.getBoolean("pending_download_milestone_ad", false)) return
-        if (!activityResumed || !hasWindowFocus() || isFinishing || isDestroyed) return
-        if (player?.isPlaying == true || videoPlayer?.isPlaying == true) return
-        // Never interrupt active playback; show only after a successful tenth download.
-        prefs.edit().putBoolean("pending_download_milestone_ad", false).apply()
-        StartIoVideoAds.showOptionalAd(this) { }
-    }
 
     private fun configureListeningReminders() {
         val prefs = getSharedPreferences("a1_family_notifications", MODE_PRIVATE)
@@ -5753,53 +5355,10 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Weekly listening reminders enabled when internet is available.", Toast.LENGTH_LONG).show()
     }
 
-    private fun openMediaDownloadDialog() {
-        val urlInput = EditText(this).apply {
-            hint = "Direct HTTPS link to an MP3 or MP4 file"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-        }
-        val nameInput = EditText(this).apply { hint = "File name (optional)"; setSingleLine(true) }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(4))
-            addView(label("Use a direct file link only. Download only media you own or are licensed/authorized to save. This does not rip streams or bypass platform restrictions.", 13f, themeColor(192, 173, 214)).apply {
-                setPadding(0, 0, 0, dp(12))
-            })
-            addView(urlInput)
-            addView(nameInput)
-        }
-        val dialog = AlertDialog.Builder(this).setTitle("Download media legally").setView(content)
-            .setPositiveButton("Download", null).setNegativeButton("Cancel", null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val rawUrl = urlInput.text.toString().trim()
-                val parsed = runCatching { Uri.parse(rawUrl) }.getOrNull()
-                val downloadUri = parsed ?: Uri.EMPTY
-                val host = downloadUri.host?.lowercase(Locale.ROOT).orEmpty()
-                val pathLower = downloadUri.lastPathSegment?.lowercase(Locale.ROOT).orEmpty()
-                val suppliedName = nameInput.text.toString().trim()
-                val fileName = (suppliedName.ifBlank { URLUtil.guessFileName(rawUrl, null, null) })
-                    .replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
-                val allowed = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "mp4", "m4v", "mkv", "webm", "mov")
-                val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                val blockedHost = host == "youtube.com" || host.endsWith(".youtube.com") ||
-                    host == "youtu.be" || host == "spotify.com" || host.endsWith(".spotify.com")
-                if (downloadUri.scheme != "https" || host.isBlank() || blockedHost ||
-                    (ext !in allowed && pathLower.substringAfterLast('.', "") !in allowed)
-                ) {
-                    urlInput.error = "Enter a direct HTTPS link to an audio/video file you are allowed to download."
-                    return@setOnClickListener
-                }
-                runCatching {
-                    enqueueAuthorizedMediaDownload(downloadUri, fileName, fileName)
-                dialog.dismiss()
-                }.onFailure {
-                    Toast.makeText(this, "Could not start the download. Check the link and try again.", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-        dialog.show()
+
+    // Deliberately blank until the publisher supplies a verified Adsterra SmartLink.
+    private fun openSponsoredOffers() {
+        Toast.makeText(this, "Sponsored offers will be enabled after the Adsterra link and offer categories are verified.", Toast.LENGTH_LONG).show()
     }
 
     private fun showTab(tab: String) {
