@@ -169,6 +169,7 @@ internal object StartIoVideoAds {
     private var currentAd: StartAppAd? = null
     private var loading = false
     private var showing = false
+    private var optionalAdShowing = false
     private var pendingPlayback: PendingPlayback? = null
     private var journal = PlaybackJournal(null, PlaybackJournal.RequestState.EMPTY, PlaybackJournal.AdState.NONE)
     private var pendingPersistenceFailed = false
@@ -625,6 +626,91 @@ internal object StartIoVideoAds {
             pendingPlayback = PendingPlayback.readFrom(savedState, PENDING_PREFIX)
         }
         if (pendingPersistenceFailed) pendingPlayback?.let(::schedulePendingPersistenceRetry)
+    }
+
+    /**
+     * A standalone, dismissible full-page ad for opt-in frequency points. It never owns a
+     * playback request, so a missing ad or a close callback cannot delay music playback.
+     */
+    fun showOptionalAd(activity: MainActivity, onFinished: () -> Unit) {
+        if (!initialized || !sdkReady || showing || activity.isFinishing || activity.isDestroyed) {
+            onFinished()
+            return
+        }
+        var finished = false
+        var displayed = false
+        val finishOnce = {
+            if (!finished) {
+                finished = true
+                optionalAdShowing = false
+                onFinished()
+            }
+        }
+        if (optionalAdShowing) {
+            onFinished()
+            return
+        }
+        optionalAdShowing = true
+        val request = try {
+            StartAppAd(activity)
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Optional interstitial could not be created", error)
+            finishOnce()
+            return
+        }
+        val timeout = Runnable {
+            if (displayed) {
+                Log.w(TAG, "Optional interstitial did not return a terminal callback")
+                finishOnce()
+            }
+        }
+        mainHandler.postDelayed(timeout, 60_000L)
+        try {
+            request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
+                override fun onReceiveAd(ad: Ad) {
+                    mainHandler.post {
+                        if (finished || activity.isFinishing || activity.isDestroyed) {
+                            mainHandler.removeCallbacks(timeout)
+                            finishOnce()
+                            return@post
+                        }
+                        try {
+                            request.showAd(object : AdDisplayListener {
+                                override fun adDisplayed(ad: Ad) {
+                                    displayed = true
+                                    app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                                        .edit().putLong("last_optional_ad_shown_at", System.currentTimeMillis()).apply()
+                                }
+                                override fun adHidden(ad: Ad) {
+                                    mainHandler.removeCallbacks(timeout)
+                                    finishOnce()
+                                }
+                                override fun adNotDisplayed(ad: Ad) {
+                                    mainHandler.removeCallbacks(timeout)
+                                    finishOnce()
+                                }
+                                override fun adClicked(ad: Ad) = Unit
+                            })
+                        } catch (error: RuntimeException) {
+                            Log.w(TAG, "Optional interstitial could not be displayed", error)
+                            mainHandler.removeCallbacks(timeout)
+                            finishOnce()
+                        }
+                    }
+                }
+                override fun onFailedToReceiveAd(ad: Ad?) {
+                    mainHandler.post {
+                        mainHandler.removeCallbacks(timeout)
+                        Log.i(TAG, "Optional interstitial unavailable; continuing without interruption")
+                        finishOnce()
+                    }
+                }
+            })
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Optional interstitial load failed", error)
+            mainHandler.removeCallbacks(timeout)
+            finishOnce()
+        }
     }
 
     fun showIfReady(activity: MainActivity, intent: PendingPlayback): ShowResult {
