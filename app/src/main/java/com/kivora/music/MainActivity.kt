@@ -58,8 +58,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-// Do not populate until the publisher confirms the link is Active and mainstream-only,
-// with unsuitable offer categories excluded and the destination appropriate for the app's rating.
+// Publisher-provided Adsterra SmartLink. Confirm it is Active and configured for mainstream
+// offers in the Adsterra dashboard; this app opens it only after the user taps the sponsored card.
 private const val ADSTERRA_SMARTLINK_URL = "https://asiafilm.org/4/d52fd43d84340c6fa7784c326206088f"
 
 data class Song(
