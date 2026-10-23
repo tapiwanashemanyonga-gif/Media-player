@@ -8,6 +8,11 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.app.DownloadManager
+import android.os.Environment
+import android.webkit.URLUtil
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -153,6 +158,12 @@ class MainActivity : AppCompatActivity() {
     private var selectedArtistName: String? = null
     private var librarySortMode = "title"
     private var userSeeking = false
+    private var pendingLyricsPdfTitle: String = "A1 Family Lyrics"
+    private var pendingLyricsPdfText: String = ""
+    private val lyricsPdfLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+            if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
+        }
     private var activityResumed = false
     private var pendingPlaybackAfterAd: PendingPlayback? = null
     private var playbackContinuesAfterAd = false
@@ -260,8 +271,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(13, 8, 23)
-        window.navigationBarColor = Color.rgb(13, 8, 23)
+        window.statusBarColor = themeColor(13, 8, 23)
+        window.navigationBarColor = themeColor(13, 8, 23)
 
         val preferences = getSharedPreferences(
             "kivora_preferences",
@@ -320,8 +331,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         activityResumed = true
         StartIoVideoAds.attach(this)
+        // Do not replay a resume-only request just because the Activity regained focus.
+        // Explicit song/video selections and the ad callback own their own dispatch lifecycle.
         pendingPlaybackAfterAd?.let { intent ->
-            tryRunPendingPlaybackAfterAd()
+            if (intent.kind != "resume_music" && !StartIoVideoAds.wasPlaybackAcknowledged(intent)) {
+                tryRunPendingPlaybackAfterAd()
+            }
         }
     }
 
@@ -710,6 +725,33 @@ class MainActivity : AppCompatActivity() {
         if (bold) setTypeface(typeface, Typeface.BOLD)
     }
 
+    private fun selectedTheme(): String =
+        getSharedPreferences("kivora_preferences", MODE_PRIVATE).getString("theme", "purple") ?: "purple"
+
+    /** Applies a restrained hue shift to existing surfaces and lavender accents. */
+    private fun themeColor(r: Int, g: Int, b: Int): Int {
+        val theme = selectedTheme()
+        if (theme == "purple") return Color.rgb(r, g, b)
+        val brightness = (r + g + b) / 3
+        if (brightness < 105) {
+            return when (theme) {
+                "ocean" -> Color.rgb((r * 0.42).toInt().coerceAtMost(28), (g * 0.65 + 7).toInt().coerceAtMost(55), (b * 0.72 + 10).toInt().coerceAtMost(78))
+                "forest" -> Color.rgb((r * 0.35).toInt().coerceAtMost(24), (g * 0.68 + 8).toInt().coerceAtMost(62), (b * 0.30 + 5).toInt().coerceAtMost(38))
+                "rose" -> Color.rgb((r * 0.62 + 8).toInt().coerceAtMost(68), (g * 0.30 + 4).toInt().coerceAtMost(28), (b * 0.48 + 8).toInt().coerceAtMost(52))
+                else -> Color.rgb(r, g, b)
+            }
+        }
+        if (r > 225 && g > 225 && b > 225) return Color.rgb(r, g, b)
+        val isLavender = b >= r && (b - g) >= 10 && brightness > 95
+        if (!isLavender) return Color.rgb(r, g, b)
+        return when (theme) {
+            "ocean" -> Color.rgb((brightness * 0.42).toInt().coerceAtMost(180), (brightness * 0.88 + 35).toInt().coerceAtMost(245), (brightness * 0.98 + 30).toInt().coerceAtMost(255))
+            "forest" -> Color.rgb((brightness * 0.40).toInt().coerceAtMost(150), (brightness * 0.92 + 35).toInt().coerceAtMost(245), (brightness * 0.48 + 25).toInt().coerceAtMost(210))
+            "rose" -> Color.rgb((brightness * 0.98 + 35).toInt().coerceAtMost(255), (brightness * 0.48 + 20).toInt().coerceAtMost(205), (brightness * 0.70 + 30).toInt().coerceAtMost(245))
+            else -> Color.rgb(r, g, b)
+        }
+    }
+
     private fun roundedBackground(
         color: Int,
         radiusDp: Int
@@ -726,7 +768,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(18), dp(14), dp(18), dp(10))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(13, 8, 23), Color.rgb(24, 13, 39), Color.rgb(12, 10, 22))
+                intArrayOf(themeColor(13, 8, 23), themeColor(24, 13, 39), themeColor(12, 10, 22))
             )
         }
 
@@ -744,7 +786,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(174, 98, 255), Color.rgb(104, 48, 190))
+                intArrayOf(themeColor(174, 98, 255), themeColor(104, 48, 190))
             ).apply { cornerRadius = dp(16).toFloat() }
             elevation = dp(5).toFloat()
             contentDescription = "A1 Family"
@@ -756,17 +798,17 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(11), 0, 0, 0)
         }
-        brandCopy.addView(label("A1 Family", 15f, Color.rgb(250, 247, 255), true))
-        brandCopy.addView(label("MEDIA PLAYER", 9f, Color.rgb(182, 157, 213), true).apply {
+        brandCopy.addView(label("A1 Family", 15f, themeColor(250, 247, 255), true))
+        brandCopy.addView(label("MEDIA PLAYER", 9f, themeColor(182, 157, 213), true).apply {
             letterSpacing = 0.16f
             setPadding(0, dp(2), 0, 0)
         })
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("●  LOCAL LIBRARY", 9f, Color.rgb(210, 190, 232), true).apply {
+        header.addView(label("●  LOCAL LIBRARY", 9f, themeColor(210, 190, 232), true).apply {
             letterSpacing = 0.06f
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(Color.rgb(39, 24, 58), 18).apply {
-                setStroke(dp(1), Color.rgb(83, 56, 115))
+            background = roundedBackground(themeColor(39, 24, 58), 18).apply {
+                setStroke(dp(1), themeColor(83, 56, 115))
             }
         })
 
@@ -776,7 +818,7 @@ class MainActivity : AppCompatActivity() {
             label(
                 "Your sound, your space.",
                 12f,
-                Color.rgb(192, 160, 232),
+                themeColor(192, 160, 232),
                 true
             ).apply {
                 setPadding(dp(2), dp(9), 0, dp(12))
@@ -787,11 +829,11 @@ class MainActivity : AppCompatActivity() {
             hint = "⌕   Search songs, artists and albums"
             setSingleLine(true)
             textSize = 15f
-            setTextColor(Color.rgb(250, 247, 255))
-            setHintTextColor(Color.rgb(171, 151, 196))
+            setTextColor(themeColor(250, 247, 255))
+            setHintTextColor(themeColor(171, 151, 196))
             setPadding(dp(18), dp(8), dp(18), dp(8))
-            background = roundedBackground(Color.rgb(31, 21, 47), 19).apply {
-                setStroke(dp(1), Color.rgb(91, 66, 122))
+            background = roundedBackground(themeColor(31, 21, 47), 19).apply {
+                setStroke(dp(1), themeColor(91, 66, 122))
             }
             contentDescription = "Search songs, artists and albums"
         }
@@ -801,7 +843,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         searchRow.addView(searchBox, LinearLayout.LayoutParams(0, dp(54), 1f))
-        clearSearchButton = label("×", 25f, Color.rgb(232, 213, 255), true).apply {
+        clearSearchButton = label("×", 25f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             minWidth = dp(48)
             minHeight = dp(48)
@@ -825,16 +867,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(
-            label("Your library", 24f, Color.rgb(250, 247, 255), true),
+            label("Your library", 24f, themeColor(250, 247, 255), true),
             LinearLayout.LayoutParams(0, -2, 1f)
         )
 
         libraryCount = label(
             "0 tracks in your collection",
             11f,
-            Color.rgb(211, 194, 232),
+            themeColor(211, 194, 232),
             // KIVORA_ROUND17_LIBRARY_COUNT_BADGE
-        ).apply { setPadding(dp(10), dp(6), dp(10), dp(6)); background = roundedBackground(Color.rgb(55, 27, 79), 14).apply { setStroke(dp(1), Color.rgb(192, 132, 252)) } }
+        ).apply { setPadding(dp(10), dp(6), dp(10), dp(6)); background = roundedBackground(themeColor(55, 27, 79), 14).apply { setStroke(dp(1), themeColor(192, 132, 252)) } }
 
         libraryCount.gravity = Gravity.CENTER
         titleRow.addView(libraryCount)
@@ -843,13 +885,13 @@ class MainActivity : AppCompatActivity() {
         playlistButton = label(
             "♫   ALL SONGS  ·  PLAYLISTS",
             13f,
-            Color.rgb(216, 180, 254),
+            themeColor(216, 180, 254),
             true
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
             // KIVORA_ROUND19_PLAYLIST_BUTTON
-            background = roundedBackground(Color.rgb(42, 25, 64), 16).apply { setStroke(dp(1), Color.rgb(119, 78, 159)) }
+            background = roundedBackground(themeColor(42, 25, 64), 16).apply { setStroke(dp(1), themeColor(119, 78, 159)) }
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -860,12 +902,12 @@ class MainActivity : AppCompatActivity() {
         favoriteFilterButton = label(
             "☆  SHOW FAVOURITES ONLY",
             13f,
-            Color.rgb(216, 180, 254),
+            themeColor(216, 180, 254),
             true
         ).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(28, 20, 40), 16).apply { setStroke(dp(1), Color.rgb(74, 54, 96)) }
+            background = roundedBackground(themeColor(28, 20, 40), 16).apply { setStroke(dp(1), themeColor(74, 54, 96)) }
             isClickable = true
             isFocusable = true
 
@@ -903,12 +945,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = roundedBackground(Color.rgb(25, 17, 38), 18).apply {
-                setStroke(dp(1), Color.rgb(76, 53, 99))
+            background = roundedBackground(themeColor(25, 17, 38), 18).apply {
+                setStroke(dp(1), themeColor(76, 53, 99))
             }
         }
         listOf("songs" to "SONGS", "albums" to "ALBUMS", "artists" to "ARTISTS").forEach { (mode, title) ->
-            val button = label(title, 11f, Color.rgb(190, 175, 210), true).apply {
+            val button = label(title, 11f, themeColor(190, 175, 210), true).apply {
                 gravity = Gravity.CENTER
                 minHeight = dp(44)
                 setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -933,11 +975,11 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(12)
         })
 
-        sortButton = label("↕  SORT · TITLE A–Z", 10f, Color.rgb(224, 205, 245), true).apply {
+        sortButton = label("↕  SORT · TITLE A–Z", 10f, themeColor(224, 205, 245), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(13), dp(10), dp(13), dp(10))
-            background = roundedBackground(Color.rgb(39, 26, 54), 14).apply {
-                setStroke(dp(1), Color.rgb(89, 63, 115))
+            background = roundedBackground(themeColor(39, 26, 54), 14).apply {
+                setStroke(dp(1), themeColor(89, 63, 115))
             }
             isClickable = true
             isFocusable = true
@@ -977,8 +1019,8 @@ class MainActivity : AppCompatActivity() {
         videoPlayerView = PlayerView(this).apply {
             player = videoPlayer
             useController = true
-            setBackgroundColor(Color.rgb(8, 6, 13))
-            setShutterBackgroundColor(Color.rgb(8, 6, 13))
+            setBackgroundColor(themeColor(8, 6, 13))
+            setShutterBackgroundColor(themeColor(8, 6, 13))
             contentDescription = "Video player"
         }
         val videoPlayerActions = LinearLayout(this).apply {
@@ -986,12 +1028,12 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("⛶  FULLSCREEN", 12f, Color.rgb(232, 213, 255), true).apply {
+        val fullscreenButton = label("⛶  FULLSCREEN", 12f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(10), dp(14), dp(10))
             minHeight = dp(48)
-            background = roundedBackground(Color.rgb(48, 30, 67), 15).apply {
-                setStroke(dp(1), Color.rgb(131, 87, 168))
+            background = roundedBackground(themeColor(48, 30, 67), 15).apply {
+                setStroke(dp(1), themeColor(131, 87, 168))
             }
             isClickable = true
             isFocusable = true
@@ -1008,7 +1050,7 @@ class MainActivity : AppCompatActivity() {
         videoStatus = label(
             "Open Videos to scan your device.",
             13f,
-            Color.rgb(190, 175, 210)
+            themeColor(190, 175, 210)
         )
         videoStatus.setPadding(dp(4), dp(10), dp(4), dp(8))
         videoPlaceholder.addView(
@@ -1028,12 +1070,12 @@ class MainActivity : AppCompatActivity() {
             videoScroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
-        val minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, Color.rgb(232, 213, 255), true).apply {
+        val minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             minHeight = dp(48)
-            background = roundedBackground(Color.rgb(48, 30, 67), 15).apply {
-                setStroke(dp(1), Color.rgb(131, 87, 168))
+            background = roundedBackground(themeColor(48, 30, 67), 15).apply {
+                setStroke(dp(1), themeColor(131, 87, 168))
             }
             isClickable = true
             isFocusable = true
@@ -1048,12 +1090,12 @@ class MainActivity : AppCompatActivity() {
         }
         videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
-        val videoListButton = label("▤  VIDEO LIST", 11f, Color.rgb(232, 213, 255), true).apply {
+        val videoListButton = label("▤  VIDEO LIST", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             minHeight = dp(48)
-            background = roundedBackground(Color.rgb(48, 30, 67), 15).apply {
-                setStroke(dp(1), Color.rgb(131, 87, 168))
+            background = roundedBackground(themeColor(48, 30, 67), 15).apply {
+                setStroke(dp(1), themeColor(131, 87, 168))
             }
             isClickable = true
             isFocusable = true
@@ -1079,19 +1121,19 @@ class MainActivity : AppCompatActivity() {
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(
-                    Color.rgb(54, 30, 78),
-                    Color.rgb(34, 23, 48),
-                    Color.rgb(24, 18, 35)
+                    themeColor(54, 30, 78),
+                    themeColor(34, 23, 48),
+                    themeColor(24, 18, 35)
                 )
             ).apply {
                 cornerRadius = dp(30).toFloat()
-                setStroke(dp(1), Color.rgb(111, 76, 145))
+                setStroke(dp(1), themeColor(111, 76, 145))
             }
             elevation = dp(7).toFloat()
         }
 
         playerCard.addView(
-            label("NOW PLAYING", 11f, Color.rgb(211, 176, 255), true).apply {
+            label("NOW PLAYING", 11f, themeColor(211, 176, 255), true).apply {
                 gravity = Gravity.CENTER
                 letterSpacing = 0.16f
             },
@@ -1105,8 +1147,8 @@ class MainActivity : AppCompatActivity() {
 
         artwork = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(52, 32, 75), 28).apply {
-                setStroke(dp(2), Color.rgb(159, 105, 211))
+            background = roundedBackground(themeColor(52, 32, 75), 28).apply {
+                setStroke(dp(2), themeColor(159, 105, 211))
             }
             setImageResource(R.drawable.ic_audio_placeholder)
             contentDescription = "Album artwork"
@@ -1119,13 +1161,13 @@ class MainActivity : AppCompatActivity() {
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(
-                    Color.rgb(196, 132, 255),
-                    Color.rgb(99, 53, 151),
-                    Color.rgb(157, 93, 226)
+                    themeColor(196, 132, 255),
+                    themeColor(99, 53, 151),
+                    themeColor(157, 93, 226)
                 )
             ).apply {
                 cornerRadius = dp(36).toFloat()
-                setStroke(dp(1), Color.rgb(219, 185, 255))
+                setStroke(dp(1), themeColor(219, 185, 255))
             }
             elevation = dp(12).toFloat()
             clipChildren = false
@@ -1143,7 +1185,7 @@ class MainActivity : AppCompatActivity() {
         nowTitle = label(
             "Choose a song",
             if (resources.configuration.screenWidthDp >= 600) 32f else 28f,
-            Color.rgb(255, 252, 255),
+            themeColor(255, 252, 255),
             true
         ).apply {
             gravity = Gravity.CENTER
@@ -1164,7 +1206,7 @@ class MainActivity : AppCompatActivity() {
         nowArtist = label(
             "Your library is ready",
             if (resources.configuration.screenWidthDp >= 600) 17f else 16f,
-            Color.rgb(211, 190, 235)
+            themeColor(211, 190, 235)
         ).apply {
             gravity = Gravity.CENTER
             maxLines = 1
@@ -1187,18 +1229,18 @@ class MainActivity : AppCompatActivity() {
 
             progressTintList =
                 android.content.res.ColorStateList.valueOf(
-                    Color.rgb(196, 132, 255)
+                    themeColor(196, 132, 255)
                 )
 
             thumbTintList =
                 android.content.res.ColorStateList.valueOf(
-                    Color.rgb(228, 202, 255)
+                    themeColor(228, 202, 255)
                 )
 
             // KIVORA_ROUND14_PROGRESS_TRACK
             progressBackgroundTintList =
                 android.content.res.ColorStateList.valueOf(
-                    Color.rgb(82, 58, 111)
+                    themeColor(82, 58, 111)
                 )
 
             setOnSeekBarChangeListener(
@@ -1251,13 +1293,13 @@ class MainActivity : AppCompatActivity() {
         elapsedText = label(
             "0:00",
             12f,
-            Color.rgb(221, 207, 238)
+            themeColor(221, 207, 238)
         )
 
         durationText = label(
             "−0:00",
             12f,
-            Color.rgb(221, 207, 238)
+            themeColor(221, 207, 238)
         ).apply { contentDescription = "Time remaining" }
 
         times.addView(
@@ -1270,27 +1312,27 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(1)
             bottomMargin = dp(4)
         })
-        val sleepTimerButton = label("☾ TIMER", 10f, Color.rgb(226, 202, 255), true).apply {
+        val sleepTimerButton = label("☾ TIMER", 10f, themeColor(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Open sleep timer options"
             isClickable = true
             isFocusable = true
             minHeight = dp(44)
             setPadding(dp(10), dp(6), dp(10), dp(6))
-            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
-                setStroke(dp(1), Color.rgb(192, 132, 252))
+            background = roundedBackground(themeColor(48, 31, 68), 14).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
             }
             setOnClickListener { openSleepTimer() }
         }
-        upNextButton = label("UP NEXT · 0", 10f, Color.rgb(226, 202, 255), true).apply {
+        upNextButton = label("UP NEXT · 0", 10f, themeColor(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "View upcoming songs"
             isClickable = true
             isFocusable = true
             minHeight = dp(44)
             setPadding(dp(10), dp(6), dp(10), dp(6))
-            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
-                setStroke(dp(1), Color.rgb(192, 132, 252))
+            background = roundedBackground(themeColor(48, 31, 68), 14).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
             }
             setOnClickListener { openUpNextQueue() }
         }
@@ -1315,8 +1357,8 @@ class MainActivity : AppCompatActivity() {
         val minimizePlayerButton = label("↓  MINIMIZE PLAYER", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
-            background = roundedBackground(Color.rgb(48, 31, 68), 15).apply {
-                setStroke(dp(1), Color.rgb(123, 83, 158))
+            background = roundedBackground(themeColor(48, 31, 68), 15).apply {
+                setStroke(dp(1), themeColor(123, 83, 158))
             }
             isClickable = true
             isFocusable = true
@@ -1326,8 +1368,8 @@ class MainActivity : AppCompatActivity() {
         val songListButton = label("♫  SONG LIST", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
-            background = roundedBackground(Color.rgb(48, 31, 68), 15).apply {
-                setStroke(dp(1), Color.rgb(123, 83, 158))
+            background = roundedBackground(themeColor(48, 31, 68), 15).apply {
+                setStroke(dp(1), themeColor(123, 83, 158))
             }
             isClickable = true
             isFocusable = true
@@ -1337,8 +1379,8 @@ class MainActivity : AppCompatActivity() {
         val equalizerButton = label("♫  EQUALIZER", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
-            background = roundedBackground(Color.rgb(48, 31, 68), 15).apply {
-                setStroke(dp(1), Color.rgb(192, 132, 252))
+            background = roundedBackground(themeColor(48, 31, 68), 15).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
             }
             isClickable = true
             isFocusable = true
@@ -1349,8 +1391,8 @@ class MainActivity : AppCompatActivity() {
         val bassBoostButton = label("♫  BASS BOOST", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
-            background = roundedBackground(Color.rgb(48, 31, 68), 15).apply {
-                setStroke(dp(1), Color.rgb(192, 132, 252))
+            background = roundedBackground(themeColor(48, 31, 68), 15).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
             }
             isClickable = true
             isFocusable = true
@@ -1486,10 +1528,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(14), dp(9), dp(14), dp(9))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.rgb(48, 29, 69), Color.rgb(30, 23, 43))
+                intArrayOf(themeColor(48, 29, 69), themeColor(30, 23, 43))
             ).apply {
                 cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.rgb(111, 77, 143))
+                setStroke(dp(1), themeColor(111, 77, 143))
             }
             elevation = dp(5).toFloat()
             setOnClickListener { showTab("nowPlaying") }
@@ -1498,7 +1540,7 @@ class MainActivity : AppCompatActivity() {
         miniArtwork = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             setImageResource(R.drawable.ic_audio_placeholder)
-            background = roundedBackground(Color.rgb(57, 37, 78), 12)
+            background = roundedBackground(themeColor(57, 37, 78), 12)
             clipToOutline = true
             contentDescription = "Current song album artwork"
             setOnClickListener { showTab("nowPlaying") }
@@ -1516,7 +1558,7 @@ class MainActivity : AppCompatActivity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setOnClickListener { showTab("nowPlaying") }
         }
-        miniArtist = label("Your library is ready", 11f, Color.rgb(190, 175, 210)).apply {
+        miniArtist = label("Your library is ready", 11f, themeColor(190, 175, 210)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setOnClickListener { showTab("nowPlaying") }
@@ -1533,7 +1575,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(14), dp(8), dp(14), dp(8))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(171, 99, 255), Color.rgb(111, 56, 211))
+                intArrayOf(themeColor(171, 99, 255), themeColor(111, 56, 211))
             ).apply { cornerRadius = dp(24).toFloat() }
             minWidth = dp(48)
             minHeight = dp(48)
@@ -1569,7 +1611,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = roundedBackground(Color.rgb(25, 18, 37), 21).apply { setStroke(dp(1), Color.rgb(70, 50, 92)) }
+            background = roundedBackground(themeColor(25, 18, 37), 21).apply { setStroke(dp(1), themeColor(70, 50, 92)) }
         }
         listOf(
             Triple("home", "⌂", "HOME"),
@@ -1577,7 +1619,7 @@ class MainActivity : AppCompatActivity() {
             Triple("library", "♫", "LIBRARY"),
             Triple("videos", "▣", "VIDEOS")
         ).forEach { (tab, symbol, title) ->
-            val item = label("$symbol\n$title", 10f, Color.rgb(190, 175, 210), true).apply {
+            val item = label("$symbol\n$title", 10f, themeColor(190, 175, 210), true).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(4), dp(4), dp(4), dp(4))
                 isClickable = true
@@ -1657,15 +1699,15 @@ class MainActivity : AppCompatActivity() {
             background = if (isPrimary) {
                 android.graphics.drawable.GradientDrawable(
                     android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                    intArrayOf(Color.rgb(190, 111, 255), Color.rgb(112, 55, 205))
+                    intArrayOf(themeColor(190, 111, 255), themeColor(112, 55, 205))
                 ).apply { cornerRadius = dp(36).toFloat() }
             } else {
-                roundedBackground(Color.rgb(43, 30, 59), 26)
+                roundedBackground(themeColor(43, 30, 59), 26)
             }
             // KIVORA_ROUND13_CONTROL_BORDER
             (background as android.graphics.drawable.GradientDrawable).setStroke(
                 dp(if (isPrimary) 2 else 1),
-                if (isPrimary) Color.rgb(235, 216, 255) else Color.rgb(126, 88, 157)
+                if (isPrimary) themeColor(235, 216, 255) else themeColor(126, 88, 157)
             )
             elevation = dp(if (isPrimary) 10 else 2).toFloat()
             isFocusable = true
@@ -1709,7 +1751,7 @@ class MainActivity : AppCompatActivity() {
 
             val presetNames = state.getStringArray(KivoraPlaybackService.KEY_PRESETS).orEmpty()
             if (presetNames.isNotEmpty()) {
-                content.addView(label("PRESET", 10f, Color.rgb(194, 163, 224), true).apply {
+                content.addView(label("PRESET", 10f, themeColor(194, 163, 224), true).apply {
                     setPadding(0, dp(12), 0, dp(4))
                 })
                 presetSpinner = android.widget.Spinner(this).apply {
@@ -1758,7 +1800,7 @@ class MainActivity : AppCompatActivity() {
                 val frequencyLabel = if (frequency >= 1000) {
                     String.format(Locale.getDefault(), "%.1f kHz", frequency / 1000f)
                 } else "$frequency Hz"
-                val valueLabel = label("", 12f, Color.rgb(220, 198, 241))
+                val valueLabel = label("", 12f, themeColor(220, 198, 241))
                 levelLabels.add(valueLabel)
                 content.addView(label(frequencyLabel, 13f, Color.WHITE, true).apply {
                     setPadding(0, dp(10), 0, 0)
@@ -1766,8 +1808,8 @@ class MainActivity : AppCompatActivity() {
                 content.addView(valueLabel)
                 val slider = SeekBar(this).apply {
                     max = (maxLevel - minLevel).coerceAtLeast(1)
-                    progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(196, 132, 255))
-                    thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(228, 202, 255))
+                    progressTintList = android.content.res.ColorStateList.valueOf(themeColor(196, 132, 255))
+                    thumbTintList = android.content.res.ColorStateList.valueOf(themeColor(228, 202, 255))
                     setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                         override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
                         override fun onProgressChanged(seekBar: SeekBar, value: Int, fromUser: Boolean) {
@@ -1857,15 +1899,15 @@ class MainActivity : AppCompatActivity() {
             var strengthSlider: SeekBar? = null
             var strengthValue: TextView? = null
             if (state.getBoolean(KivoraPlaybackService.KEY_STRENGTH_SUPPORTED)) {
-                content.addView(label("STRENGTH", 10f, Color.rgb(194, 163, 224), true).apply {
+                content.addView(label("STRENGTH", 10f, themeColor(194, 163, 224), true).apply {
                     setPadding(0, dp(12), 0, dp(4))
                 })
-                strengthValue = label("", 12f, Color.rgb(220, 198, 241))
+                strengthValue = label("", 12f, themeColor(220, 198, 241))
                 content.addView(strengthValue)
                 strengthSlider = SeekBar(this).apply {
                     max = (maxStrength - minStrength).coerceAtLeast(1)
-                    progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(196, 132, 255))
-                    thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(228, 202, 255))
+                    progressTintList = android.content.res.ColorStateList.valueOf(themeColor(196, 132, 255))
+                    thumbTintList = android.content.res.ColorStateList.valueOf(themeColor(228, 202, 255))
                     setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                         override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
                         override fun onProgressChanged(seekBar: SeekBar, value: Int, fromUser: Boolean) {
@@ -1888,7 +1930,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 content.addView(strengthSlider)
             } else {
-                content.addView(label("Strength adjustment is unsupported on this device.", 12f, Color.rgb(174, 159, 194)))
+                content.addView(label("Strength adjustment is unsupported on this device.", 12f, themeColor(174, 159, 194)))
             }
 
             enabledSwitch.setOnCheckedChangeListener { _, checked ->
@@ -1946,7 +1988,7 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(20), dp(8), dp(20), dp(8))
             }
-            sleepTimerStatus = label("", 14f, Color.rgb(226, 202, 255), true).apply {
+            sleepTimerStatus = label("", 14f, themeColor(226, 202, 255), true).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(8), 0, dp(14))
             }
@@ -1964,8 +2006,8 @@ class MainActivity : AppCompatActivity() {
                         contentDescription = "Set sleep timer for $minutes minutes"
                         isAllCaps = false
                         setTextColor(Color.WHITE)
-                        background = roundedBackground(Color.rgb(91, 52, 132), 14).apply {
-                            setStroke(dp(1), Color.rgb(192, 132, 252))
+                        background = roundedBackground(themeColor(91, 52, 132), 14).apply {
+                            setStroke(dp(1), themeColor(192, 132, 252))
                         }
                         setOnClickListener { setSleepTimer(minutes) }
                     }
@@ -1981,9 +2023,9 @@ class MainActivity : AppCompatActivity() {
                 text = "Cancel Timer"
                 contentDescription = "Cancel the active sleep timer"
                 isAllCaps = false
-                setTextColor(Color.rgb(255, 220, 235))
-                background = roundedBackground(Color.rgb(72, 38, 63), 14).apply {
-                    setStroke(dp(1), Color.rgb(210, 105, 160))
+                setTextColor(themeColor(255, 220, 235))
+                background = roundedBackground(themeColor(72, 38, 63), 14).apply {
+                    setStroke(dp(1), themeColor(210, 105, 160))
                 }
                 setOnClickListener { cancelSleepTimer() }
             }
@@ -2199,18 +2241,18 @@ class MainActivity : AppCompatActivity() {
 
         favoriteFilterButton.setTextColor(
             if (showFavoritesOnly) {
-                Color.rgb(250, 204, 21)
+                themeColor(250, 204, 21)
             } else {
-                Color.rgb(216, 180, 254)
+                themeColor(216, 180, 254)
             }
         )
 
         // KIVORA_ROUND18_FAVOURITES_BORDER
         favoriteFilterButton.background = roundedBackground(
-            if (showFavoritesOnly) Color.rgb(55, 40, 65) else Color.rgb(56, 34, 78),
+            if (showFavoritesOnly) themeColor(55, 40, 65) else themeColor(56, 34, 78),
             18
         ).apply {
-            setStroke(dp(2), if (showFavoritesOnly) Color.rgb(250, 204, 21) else Color.rgb(192, 132, 252))
+            setStroke(dp(2), if (showFavoritesOnly) themeColor(250, 204, 21) else themeColor(192, 132, 252))
         }
     }
 
@@ -2306,9 +2348,9 @@ class MainActivity : AppCompatActivity() {
 
         playlistButton.setTextColor(
             if (selectedPlaylist != null) {
-                Color.rgb(250, 204, 21)
+                themeColor(250, 204, 21)
             } else {
-                Color.rgb(216, 180, 254)
+                themeColor(216, 180, 254)
             }
         )
     }
@@ -2317,13 +2359,13 @@ class MainActivity : AppCompatActivity() {
         libraryBrowseButtons.forEach { (mode, button) ->
             val selected = mode == libraryBrowseMode
             button.setTextColor(
-                if (selected) Color.rgb(250, 239, 255) else Color.rgb(190, 175, 210)
+                if (selected) themeColor(250, 239, 255) else themeColor(190, 175, 210)
             )
             button.background = roundedBackground(
-                if (selected) Color.rgb(91, 48, 132) else Color.TRANSPARENT,
+                if (selected) themeColor(91, 48, 132) else Color.TRANSPARENT,
                 14
             ).apply {
-                if (selected) setStroke(dp(1), Color.rgb(172, 112, 224))
+                if (selected) setStroke(dp(1), themeColor(172, 112, 224))
             }
         }
     }
@@ -2740,18 +2782,18 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        homeContent.addView(label("HOME", 11f, Color.rgb(203, 162, 242), true).apply {
+        homeContent.addView(label("HOME", 11f, themeColor(203, 162, 242), true).apply {
             letterSpacing = 0.16f
             setPadding(dp(2), dp(2), 0, dp(5))
         })
-        homeContent.addView(label("Your music, ready", 27f, Color.rgb(252, 248, 255), true).apply {
+        homeContent.addView(label("Your music, ready", 27f, themeColor(252, 248, 255), true).apply {
             setPadding(dp(2), 0, 0, dp(4))
         })
-        homeContent.addView(label("Pick up where you left off.", 13f, Color.rgb(192, 173, 214)).apply {
+        homeContent.addView(label("Pick up where you left off.", 13f, themeColor(192, 173, 214)).apply {
             setPadding(dp(2), 0, 0, dp(18))
         })
 
-        homeContent.addView(label("QUICK ACCESS", 12f, Color.rgb(215, 194, 236), true).apply {
+        homeContent.addView(label("QUICK ACCESS", 12f, themeColor(215, 194, 236), true).apply {
             letterSpacing = 0.08f
             setPadding(dp(2), dp(2), 0, dp(10))
         })
@@ -2768,16 +2810,16 @@ class MainActivity : AppCompatActivity() {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(13), dp(12), dp(10), dp(12))
-                    background = roundedBackground(Color.rgb(38, 25, 55), 17).apply {
-                        setStroke(dp(1), Color.rgb(91, 63, 119))
+                    background = roundedBackground(themeColor(38, 25, 55), 17).apply {
+                        setStroke(dp(1), themeColor(91, 63, 119))
                     }
                     isClickable = true
                     isFocusable = true
                     contentDescription = "Browse $title"
                     setOnClickListener { openHomeShortcut(destination) }
                 }
-                shortcut.addView(label(symbol, 21f, Color.rgb(213, 165, 255), true))
-                shortcut.addView(label(title, 13f, Color.rgb(248, 242, 255), true).apply {
+                shortcut.addView(label(symbol, 21f, themeColor(213, 165, 255), true))
+                shortcut.addView(label(title, 13f, themeColor(248, 242, 255), true).apply {
                     setPadding(dp(9), 0, 0, 0)
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -2854,7 +2896,7 @@ class MainActivity : AppCompatActivity() {
             }
             homeContent.addView(horizontalHomeScroller(playlistRow))
         }
-        homeContent.addView(label("Tap the mini-player to open Now Playing", 11f, Color.rgb(164, 145, 186)).apply {
+        homeContent.addView(label("Tap the mini-player to open Now Playing", 11f, themeColor(164, 145, 186)).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(15), 0, dp(3))
         })
@@ -2879,9 +2921,9 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(17), dp(2), dp(9))
         }
-        heading.addView(label(title, 19f, Color.rgb(250, 246, 255), true),
+        heading.addView(label(title, 19f, themeColor(250, 246, 255), true),
             LinearLayout.LayoutParams(0, -2, 1f))
-        heading.addView(label(caption, 9f, Color.rgb(179, 150, 208), true).apply {
+        heading.addView(label(caption, 9f, themeColor(179, 150, 208), true).apply {
             letterSpacing = 0.07f
             gravity = Gravity.CENTER_VERTICAL
         })
@@ -2907,8 +2949,8 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(11))
-            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
-                setStroke(dp(1), Color.rgb(82, 58, 108))
+            background = roundedBackground(themeColor(37, 25, 53), 18).apply {
+                setStroke(dp(1), themeColor(82, 58, 108))
             }
             isClickable = true
             isFocusable = true
@@ -2918,20 +2960,20 @@ class MainActivity : AppCompatActivity() {
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
-                setStroke(dp(1), Color.rgb(131, 88, 164))
+            background = roundedBackground(themeColor(55, 34, 75), 14).apply {
+                setStroke(dp(1), themeColor(131, 88, 164))
             }
             clipToOutline = true
             contentDescription = "Artwork for ${song.title}"
         }
         card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
         loadArtworkInto(cover, song)
-        card.addView(label(title, 14f, Color.rgb(250, 246, 255), true).apply {
+        card.addView(label(title, 14f, themeColor(250, 246, 255), true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(1), dp(9), dp(1), 0)
         })
-        card.addView(label(subtitle, 11f, Color.rgb(187, 166, 210)).apply {
+        card.addView(label(subtitle, 11f, themeColor(187, 166, 210)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(1), dp(3), dp(1), 0)
@@ -2943,8 +2985,8 @@ class MainActivity : AppCompatActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(11))
-            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
-                setStroke(dp(1), Color.rgb(82, 58, 108))
+            background = roundedBackground(themeColor(37, 25, 53), 18).apply {
+                setStroke(dp(1), themeColor(82, 58, 108))
             }
             isClickable = true
             isFocusable = true
@@ -2954,29 +2996,29 @@ class MainActivity : AppCompatActivity() {
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
-                setStroke(dp(1), Color.rgb(131, 88, 164))
+            background = roundedBackground(themeColor(55, 34, 75), 14).apply {
+                setStroke(dp(1), themeColor(131, 88, 164))
             }
             clipToOutline = true
             contentDescription = "Playlist artwork for $name"
         }
         card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
         representative?.let { loadArtworkInto(cover, it) }
-        card.addView(label(name, 14f, Color.rgb(250, 246, 255), true).apply {
+        card.addView(label(name, 14f, themeColor(250, 246, 255), true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(1), dp(9), dp(1), 0)
         })
-        card.addView(label("$count ${if (count == 1) "song" else "songs"}", 11f, Color.rgb(187, 166, 210)).apply {
+        card.addView(label("$count ${if (count == 1) "song" else "songs"}", 11f, themeColor(187, 166, 210)).apply {
             setPadding(dp(1), dp(3), dp(1), 0)
         })
         return card
     }
 
-    private fun homeEmptyCard(message: String): View = label(message, 13f, Color.rgb(183, 163, 204)).apply {
+    private fun homeEmptyCard(message: String): View = label(message, 13f, themeColor(183, 163, 204)).apply {
         setPadding(dp(15), dp(16), dp(15), dp(16))
-        background = roundedBackground(Color.rgb(31, 22, 44), 16).apply {
-            setStroke(dp(1), Color.rgb(71, 51, 93))
+        background = roundedBackground(themeColor(31, 22, 44), 16).apply {
+            setStroke(dp(1), themeColor(71, 51, 93))
         }
     }
 
@@ -3307,11 +3349,11 @@ class MainActivity : AppCompatActivity() {
                 label(
                     message,
                     14f,
-                    Color.rgb(174, 159, 194)
+                    themeColor(174, 159, 194)
                 ).apply {
                     setPadding(dp(4), dp(18), dp(4), dp(18))
                     // KIVORA_ROUND23_EMPTY_LIBRARY_CARD
-                    background = roundedBackground(Color.rgb(34, 16, 56), 18).apply { setStroke(dp(1), Color.rgb(145, 95, 190)) }
+                    background = roundedBackground(themeColor(34, 16, 56), 18).apply { setStroke(dp(1), themeColor(145, 95, 190)) }
                     setPadding(dp(16), dp(18), dp(16), dp(18))
                 }
             )
@@ -3330,11 +3372,11 @@ class MainActivity : AppCompatActivity() {
             val detailTitle = selectedAlbumKey?.let { albumKey ->
                 songs.firstOrNull { albumGroupKey(it) == albumKey }?.album ?: "Album"
             } ?: selectedArtistName.orEmpty()
-            val backButton = label("‹  ALL $modeTitle", 12f, Color.rgb(224, 197, 248), true).apply {
+            val backButton = label("‹  ALL $modeTitle", 12f, themeColor(224, 197, 248), true).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(14), dp(12), dp(14), dp(12))
-                background = roundedBackground(Color.rgb(44, 29, 62), 15).apply {
-                    setStroke(dp(1), Color.rgb(104, 73, 134))
+                background = roundedBackground(themeColor(44, 29, 62), 15).apply {
+                    setStroke(dp(1), themeColor(104, 73, 134))
                 }
                 isClickable = true
                 isFocusable = true
@@ -3355,10 +3397,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (visibleSongs.isEmpty()) {
-            songList.addView(label("No songs match this selection.", 14f, Color.rgb(190, 175, 210)).apply {
+            songList.addView(label("No songs match this selection.", 14f, themeColor(190, 175, 210)).apply {
                 setPadding(dp(16), dp(18), dp(16), dp(18))
-                background = roundedBackground(Color.rgb(34, 16, 56), 18).apply {
-                    setStroke(dp(1), Color.rgb(115, 76, 151))
+                background = roundedBackground(themeColor(34, 16, 56), 18).apply {
+                    setStroke(dp(1), themeColor(115, 76, 151))
                 }
             })
             return
@@ -3371,8 +3413,8 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(10), dp(10), dp(10))
-                background = roundedBackground(Color.rgb(30, 21, 43), 19).apply {
-                    setStroke(dp(1), Color.rgb(65, 47, 84))
+                background = roundedBackground(themeColor(30, 21, 43), 19).apply {
+                    setStroke(dp(1), themeColor(65, 47, 84))
                 }
                 isClickable = true
                 isFocusable = true
@@ -3383,8 +3425,8 @@ class MainActivity : AppCompatActivity() {
 
             val cover = ImageView(this).apply {
                 setImageResource(R.drawable.ic_audio_placeholder)
-                background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
-                    setStroke(dp(1), Color.rgb(111, 75, 146))
+                background = roundedBackground(themeColor(57, 37, 78), 14).apply {
+                    setStroke(dp(1), themeColor(111, 75, 146))
                 }
                 clipToOutline = true
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3409,7 +3451,7 @@ class MainActivity : AppCompatActivity() {
                 label(
                     "${song.artist} · ${song.album}",
                     12f,
-                    Color.rgb(190, 175, 210)
+                    themeColor(190, 175, 210)
                 ).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -3429,9 +3471,9 @@ class MainActivity : AppCompatActivity() {
                     if (isFavorite) "★" else "☆",
                     21f,
                     if (isFavorite) {
-                        Color.rgb(250, 204, 21)
+                        themeColor(250, 204, 21)
                     } else {
-                        Color.rgb(174, 159, 194)
+                        themeColor(174, 159, 194)
                     }
                 ).apply {
                     gravity = Gravity.CENTER
@@ -3447,7 +3489,7 @@ class MainActivity : AppCompatActivity() {
 
             if (selectedPlaylist == null) {
                 row.addView(
-                    label("+", 23f, Color.rgb(216, 180, 254), true).apply {
+                    label("+", 23f, themeColor(216, 180, 254), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
                         minWidth = dp(44)
@@ -3462,7 +3504,7 @@ class MainActivity : AppCompatActivity() {
                 )
             } else {
                 row.addView(
-                    label("−", 23f, Color.rgb(248, 113, 113), true).apply {
+                    label("−", 23f, themeColor(248, 113, 113), true).apply {
                         gravity = Gravity.CENTER
                         setPadding(dp(8), dp(6), dp(8), dp(6))
                         minWidth = dp(44)
@@ -3475,7 +3517,7 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            row.addView(label("⋮", 22f, Color.rgb(216, 180, 254), true).apply {
+            row.addView(label("⋮", 22f, themeColor(216, 180, 254), true).apply {
                 gravity = Gravity.CENTER
                 minWidth = dp(36)
                 minHeight = dp(44)
@@ -3553,8 +3595,8 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(11), dp(14), dp(11))
-            background = roundedBackground(Color.rgb(34, 23, 49), 19).apply {
-                setStroke(dp(1), Color.rgb(90, 62, 117))
+            background = roundedBackground(themeColor(34, 23, 49), 19).apply {
+                setStroke(dp(1), themeColor(90, 62, 117))
             }
             isClickable = true
             isFocusable = true
@@ -3563,8 +3605,8 @@ class MainActivity : AppCompatActivity() {
         }
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
-            background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
-                setStroke(dp(1), Color.rgb(145, 96, 190))
+            background = roundedBackground(themeColor(57, 37, 78), 14).apply {
+                setStroke(dp(1), themeColor(145, 96, 190))
             }
             clipToOutline = true
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3578,17 +3620,17 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), 0, dp(8), 0)
         }
-        details.addView(label(title, 16f, Color.rgb(251, 247, 255), true).apply {
+        details.addView(label(title, 16f, themeColor(251, 247, 255), true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        details.addView(label(subtitle, 12f, Color.rgb(194, 174, 216)).apply {
+        details.addView(label(subtitle, 12f, themeColor(194, 174, 216)).apply {
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(0, dp(4), 0, 0)
         })
         row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(label("›", 28f, Color.rgb(190, 145, 224), true).apply {
+        row.addView(label("›", 28f, themeColor(190, 145, 224), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Open $title"
         })
@@ -3659,8 +3701,8 @@ class MainActivity : AppCompatActivity() {
                 contentDescription = description
                 isAllCaps = false
                 setTextColor(Color.WHITE)
-                background = roundedBackground(Color.rgb(72, 42, 101), 14).apply {
-                    setStroke(dp(1), Color.rgb(167, 112, 220))
+                background = roundedBackground(themeColor(72, 42, 101), 14).apply {
+                    setStroke(dp(1), themeColor(167, 112, 220))
                 }
                 setOnClickListener {
                     action()
@@ -3738,12 +3780,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(4), dp(18), dp(8))
         }
-        val summary = label("", 13f, Color.rgb(205, 177, 231), true).apply {
+        val summary = label("", 13f, themeColor(205, 177, 231), true).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(4), dp(8), dp(12))
         }
         upNextSummary = summary
-        val clearButton = label("Clear upcoming", 12f, Color.rgb(255, 166, 197), true).apply {
+        val clearButton = label("Clear upcoming", 12f, themeColor(255, 166, 197), true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44)
             setPadding(dp(8), 0, 0, dp(8))
@@ -3822,14 +3864,14 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = roundedBackground(Color.rgb(62, 38, 83), 17).apply {
-                    setStroke(dp(2), Color.rgb(177, 117, 231))
+                background = roundedBackground(themeColor(62, 38, 83), 17).apply {
+                    setStroke(dp(2), themeColor(177, 117, 231))
                 }
                 contentDescription = "Currently playing: $title"
             }
             val cover = ImageView(this).apply {
                 setImageResource(R.drawable.ic_audio_placeholder)
-                background = roundedBackground(Color.rgb(57, 37, 78), 11)
+                background = roundedBackground(themeColor(57, 37, 78), 11)
                 clipToOutline = true
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = "$title album artwork"
@@ -3840,19 +3882,19 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), 0, 0, 0)
             }
-            copy.addView(label("NOW PLAYING", 10f, Color.rgb(213, 171, 255), true))
+            copy.addView(label("NOW PLAYING", 10f, themeColor(213, 171, 255), true))
             copy.addView(label(title, 14f, Color.WHITE, true).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(0, dp(3), 0, 0)
             })
-            copy.addView(label(artist, 11f, Color.rgb(205, 187, 219)).apply {
+            copy.addView(label(artist, 11f, themeColor(205, 187, 219)).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(0, dp(2), 0, 0)
             })
             currentRow.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
-            currentRow.addView(label("♫", 20f, Color.rgb(213, 171, 255), true).apply {
+            currentRow.addView(label("♫", 20f, themeColor(213, 171, 255), true).apply {
                 gravity = Gravity.CENTER
                 minWidth = dp(34)
                 contentDescription = "Current track"
@@ -3866,12 +3908,12 @@ class MainActivity : AppCompatActivity() {
             list.addView(label(
                 if (p.mediaItemCount == 0) "Your queue is empty. Add songs from the library to start listening." else "No upcoming songs. Add a track from your library to keep the music going.",
                 14f,
-                Color.rgb(190, 169, 211)
+                themeColor(190, 169, 211)
             ).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(14), dp(22), dp(14), dp(22))
-                background = roundedBackground(Color.rgb(35, 23, 49), 18).apply {
-                    setStroke(dp(1), Color.rgb(108, 73, 139))
+                background = roundedBackground(themeColor(35, 23, 49), 18).apply {
+                    setStroke(dp(1), themeColor(108, 73, 139))
                 }
             })
             return
@@ -3889,8 +3931,8 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(8), dp(8), dp(8))
-                background = roundedBackground(Color.rgb(35, 24, 48), 16).apply {
-                    setStroke(dp(1), Color.rgb(77, 54, 99))
+                background = roundedBackground(themeColor(35, 24, 48), 16).apply {
+                    setStroke(dp(1), themeColor(77, 54, 99))
                 }
                 isClickable = song != null
                 isFocusable = song != null
@@ -3899,14 +3941,14 @@ class MainActivity : AppCompatActivity() {
                     if (song == null) showUnavailableSong() else playQueuedItem(mediaIndex)
                 }
             }
-            row.addView(label("${queuePosition + 1}", 12f, Color.rgb(196, 153, 236), true).apply {
+            row.addView(label("${queuePosition + 1}", 12f, themeColor(196, 153, 236), true).apply {
                 gravity = Gravity.CENTER
                 minWidth = dp(28)
             })
             val cover = ImageView(this).apply {
                 setImageResource(R.drawable.ic_audio_placeholder)
-                background = roundedBackground(Color.rgb(57, 37, 78), 11).apply {
-                    setStroke(dp(1), Color.rgb(111, 75, 146))
+                background = roundedBackground(themeColor(57, 37, 78), 11).apply {
+                    setStroke(dp(1), themeColor(111, 75, 146))
                 }
                 clipToOutline = true
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3922,7 +3964,7 @@ class MainActivity : AppCompatActivity() {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
-            copy.addView(label(artist, 11f, Color.rgb(187, 168, 207)).apply {
+            copy.addView(label(artist, 11f, themeColor(187, 168, 207)).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(0, dp(3), 0, 0)
@@ -3944,7 +3986,7 @@ class MainActivity : AppCompatActivity() {
                 moveQueuedItem(mediaIndex, 1)
             })
             row.addView(controls)
-            row.addView(label("×", 24f, Color.rgb(255, 166, 197), true).apply {
+            row.addView(label("×", 24f, themeColor(255, 166, 197), true).apply {
                 gravity = Gravity.CENTER
                 minWidth = dp(44)
                 minHeight = dp(44)
@@ -4044,7 +4086,7 @@ class MainActivity : AppCompatActivity() {
         description: String,
         enabled: Boolean,
         onClick: () -> Unit
-    ): TextView = label(text, 18f, Color.rgb(213, 171, 255), true).apply {
+    ): TextView = label(text, 18f, themeColor(213, 171, 255), true).apply {
         gravity = Gravity.CENTER
         minWidth = dp(38)
         minHeight = dp(30)
@@ -4290,9 +4332,9 @@ class MainActivity : AppCompatActivity() {
 
         shuffleButton.setTextColor(
             if (player?.shuffleModeEnabled == true) {
-                Color.rgb(196, 145, 255)
+                themeColor(196, 145, 255)
             } else {
-                Color.rgb(174, 159, 194)
+                themeColor(174, 159, 194)
             }
         )
     }
@@ -4312,9 +4354,9 @@ class MainActivity : AppCompatActivity() {
 
         repeatButton.setTextColor(
             if (enabled) {
-                Color.rgb(196, 145, 255)
+                themeColor(196, 145, 255)
             } else {
-                Color.rgb(174, 159, 194)
+                themeColor(174, 159, 194)
             }
         )
     }
@@ -4474,8 +4516,8 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(10), dp(10), dp(10), dp(10))
                 isClickable = true
                 isFocusable = true
-                background = roundedBackground(Color.rgb(30, 21, 43), 18).apply {
-                    setStroke(dp(1), if (video.uri.toString() == selectedVideoUri) Color.rgb(173, 115, 236) else Color.rgb(69, 48, 89))
+                background = roundedBackground(themeColor(30, 21, 43), 18).apply {
+                    setStroke(dp(1), if (video.uri.toString() == selectedVideoUri) themeColor(173, 115, 236) else themeColor(69, 48, 89))
                 }
                 isFocusable = true
                 contentDescription = "Play video ${video.title}"
@@ -4487,8 +4529,8 @@ class MainActivity : AppCompatActivity() {
             val thumbnail = ImageView(this).apply {
                 setImageResource(android.R.drawable.ic_media_play)
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                background = roundedBackground(Color.rgb(53, 35, 73), 12).apply {
-                    setStroke(dp(1), Color.rgb(104, 70, 137))
+                background = roundedBackground(themeColor(53, 35, 73), 12).apply {
+                    setStroke(dp(1), themeColor(104, 70, 137))
                 }
                 clipToOutline = true
                 contentDescription = "Thumbnail for ${video.title}"
@@ -4521,7 +4563,7 @@ class MainActivity : AppCompatActivity() {
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
             details.addView(
-                label(formatTime(video.durationMs), 12f, Color.rgb(190, 175, 210))
+                label(formatTime(video.durationMs), 12f, themeColor(190, 175, 210))
             )
             row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -4574,7 +4616,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(16), dp(12), dp(16), dp(12))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.rgb(25, 15, 37), Color.TRANSPARENT)
+                intArrayOf(themeColor(25, 15, 37), Color.TRANSPARENT)
             )
         }
         val topControls = LinearLayout(this).apply {
@@ -4583,24 +4625,24 @@ class MainActivity : AppCompatActivity() {
         }
         var showControls: (() -> Unit)? = null
         fun control(text: String, description: String, onClick: () -> Unit) =
-            label(text, 18f, Color.rgb(245, 235, 255), true).apply {
+            label(text, 18f, themeColor(245, 235, 255), true).apply {
                 gravity = Gravity.CENTER
                 minWidth = dp(48)
                 minHeight = dp(48)
                 contentDescription = description
-                background = roundedBackground(Color.rgb(54, 35, 73), 14)
+                background = roundedBackground(themeColor(54, 35, 73), 14)
                 setOnClickListener {
                     showControls?.invoke()
                     onClick()
                 }
             }
         val exitButton = control("‹", "Exit fullscreen") { dialog.dismiss() }
-        val menuButton = label("☰", 18f, Color.rgb(245, 235, 255), true).apply {
+        val menuButton = label("☰", 18f, themeColor(245, 235, 255), true).apply {
             gravity = Gravity.CENTER
             minWidth = dp(48)
             minHeight = dp(48)
             contentDescription = "Open video list"
-            background = roundedBackground(Color.rgb(54, 35, 73), 14)
+            background = roundedBackground(themeColor(54, 35, 73), 14)
         }
         val currentTitle = label("", 14f, Color.WHITE, true).apply {
             maxLines = 1
@@ -4615,8 +4657,8 @@ class MainActivity : AppCompatActivity() {
         val menuPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(Color.rgb(31, 21, 43), 16).apply {
-                setStroke(dp(1), Color.rgb(112, 72, 148))
+            background = roundedBackground(themeColor(31, 21, 43), 16).apply {
+                setStroke(dp(1), themeColor(112, 72, 148))
             }
             visibility = View.GONE
         }
@@ -4630,7 +4672,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(16), dp(12), dp(16), dp(16))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
-                intArrayOf(Color.rgb(25, 15, 37), Color.TRANSPARENT)
+                intArrayOf(themeColor(25, 15, 37), Color.TRANSPARENT)
             )
         }
         val transport = LinearLayout(this).apply {
@@ -4657,12 +4699,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val elapsed = label("0:00", 12f, Color.rgb(223, 207, 241))
-        val duration = label("0:00", 12f, Color.rgb(223, 207, 241))
+        val elapsed = label("0:00", 12f, themeColor(223, 207, 241))
+        val duration = label("0:00", 12f, themeColor(223, 207, 241))
         val seek = SeekBar(this).apply {
             max = 1000
-            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(184, 126, 243))
-            thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(225, 196, 255))
+            progressTintList = android.content.res.ColorStateList.valueOf(themeColor(184, 126, 243))
+            thumbTintList = android.content.res.ColorStateList.valueOf(themeColor(225, 196, 255))
         }
         var seeking = false
         var scheduleHide: (() -> Unit)? = null
@@ -4691,17 +4733,17 @@ class MainActivity : AppCompatActivity() {
         fun refreshMenu() {
             menuPanel.removeAllViews()
             if (deviceVideos.isEmpty()) {
-                menuPanel.addView(label("No videos available", 14f, Color.rgb(190, 175, 210)))
+                menuPanel.addView(label("No videos available", 14f, themeColor(190, 175, 210)))
                 return
             }
             deviceVideos.forEach { video ->
                 val selected = video.uri.toString() == selectedVideoUri
                 val row = label("${if (selected) "✓  " else ""}${video.title}", 14f,
-                    if (selected) Color.rgb(218, 177, 255) else Color.WHITE, selected).apply {
+                    if (selected) themeColor(218, 177, 255) else Color.WHITE, selected).apply {
                     setPadding(dp(12), dp(12), dp(12), dp(12))
                     isClickable = true
                     isFocusable = true
-                    background = roundedBackground(if (selected) Color.rgb(67, 42, 89) else Color.TRANSPARENT, 12)
+                    background = roundedBackground(if (selected) themeColor(67, 42, 89) else Color.TRANSPARENT, 12)
                     contentDescription = "Play ${video.title}${if (selected) ", current video" else ""}"
                     setOnClickListener {
                         val started = playDeviceVideo(video)
@@ -4923,11 +4965,11 @@ class MainActivity : AppCompatActivity() {
         navigationButtons.forEach { (name, button) ->
             val selected = name == tab || (name == "home" && tab == "nowPlaying")
             button.setTextColor(
-                if (selected) Color.rgb(232, 213, 255)
-                else Color.rgb(174, 159, 194)
+                if (selected) themeColor(232, 213, 255)
+                else themeColor(174, 159, 194)
             )
             button.background = roundedBackground(
-                if (selected) Color.rgb(83, 39, 126)
+                if (selected) themeColor(83, 39, 126)
                 else Color.TRANSPARENT,
                 14
             )
