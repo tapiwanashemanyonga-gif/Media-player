@@ -111,12 +111,24 @@ class MainActivity : AppCompatActivity() {
             reportVideoPlaybackFailure()
         }
 
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
+            selectedVideoUri = uri
+            navigationVideoUri = uri
+            if (::videoList.isInitialized && ::searchBox.isInitialized) {
+                renderVideos(searchBox.text?.toString().orEmpty())
+            }
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             tryRunPendingPlaybackAfterAd()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             tryRunPendingPlaybackAfterAd()
+            if (playbackState == Player.STATE_ENDED && ::videoStatus.isInitialized) {
+                videoStatus.text = "Finished the video queue. Choose a video to play again."
+            }
         }
     }
     private var fullscreenVideoDialog: android.app.Dialog? = null
@@ -549,7 +561,22 @@ class MainActivity : AppCompatActivity() {
                 videoStatus.text = "Playing: ${intent.title.orEmpty()}"
                 player?.pause()
                 try {
-                    video.setMediaItem(MediaItem.Builder().setUri(uri).setMediaId(intent.requestId).build())
+                    // Keep the full local video library in the ExoPlayer timeline. Media3
+                    // advances automatically to the next item when the current video ends.
+                    val playlist = deviceVideos.map { item ->
+                        MediaItem.Builder()
+                            .setUri(item.uri)
+                            .setMediaId(item.uri.toString())
+                            .setMediaMetadata(MediaMetadata.Builder().setTitle(item.title).build())
+                            .build()
+                    }
+                    val selectedIndex = playlist.indexOfFirst { it.localConfiguration?.uri == uri }
+                    if (playlist.isNotEmpty() && selectedIndex >= 0) {
+                        video.setMediaItems(playlist, selectedIndex, 0L)
+                    } else {
+                        video.setMediaItem(MediaItem.Builder().setUri(uri).setMediaId(uri.toString()).build())
+                    }
+                    video.repeatMode = Player.REPEAT_MODE_OFF
                     video.prepare()
                     video.playWhenReady = true
                 } catch (_: RuntimeException) {
@@ -804,6 +831,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(2), 0, 0)
         })
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
+        val settingsButton = label("⚙", 22f, themeColor(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(44)
+            minHeight = dp(44)
+            contentDescription = "Settings"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openSettings() }
+        }
+        header.addView(settingsButton, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            rightMargin = dp(5)
+        })
         header.addView(label("●  LOCAL LIBRARY", 9f, themeColor(210, 190, 232), true).apply {
             letterSpacing = 0.06f
             setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -1345,6 +1384,21 @@ class MainActivity : AppCompatActivity() {
             rightMargin = dp(5)
         })
         sessionActions.addView(upNextButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            leftMargin = dp(5)
+        })
+        val lyricsButton = label("♫ LYRICS", 10f, themeColor(226, 202, 255), true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Write or view lyrics for the current song"
+            minHeight = dp(44)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = roundedBackground(themeColor(48, 31, 68), 14).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openLyricsEditor() }
+        }
+        sessionActions.addView(lyricsButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
             leftMargin = dp(5)
         })
 
@@ -4922,6 +4976,210 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(-1, dp(160))
             )
         }
+    }
+
+    private fun openSettings() {
+        val options = arrayOf(
+            "Appearance and themes",
+            "Download a media file",
+            "Rescan music library",
+            "Rescan video library",
+            "About A1 Family"
+        )
+        AlertDialog.Builder(this).setTitle("Settings").setItems(options) { _, which ->
+            when (which) {
+                0 -> openThemePicker()
+                1 -> openMediaDownloadDialog()
+                2 -> { songsLoaded = false; loadSongs() }
+                3 -> { videosLoaded = false; loadVideos() }
+                4 -> AlertDialog.Builder(this)
+                    .setTitle("A1 Family")
+                    .setMessage("A1 Family is an offline-first music and video player. It plays media stored on your device and supports direct downloads only when you have permission to save the file.")
+                    .setPositiveButton("OK", null).show()
+            }
+        }.setNegativeButton("Close", null).show()
+    }
+
+    private fun openThemePicker() {
+        val names = arrayOf("Midnight Purple", "Ocean Blue", "Forest Green", "Rose Pink")
+        val ids = arrayOf("purple", "ocean", "forest", "rose")
+        val current = ids.indexOf(selectedTheme()).coerceAtLeast(0)
+        AlertDialog.Builder(this).setTitle("Choose a theme")
+            .setSingleChoiceItems(names, current) { dialog, which ->
+                getSharedPreferences("kivora_preferences", MODE_PRIVATE)
+                    .edit().putString("theme", ids[which]).apply()
+                dialog.dismiss()
+                recreate()
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun openLyricsEditor() {
+        val currentUri = player?.currentMediaItem?.localConfiguration?.uri?.toString()
+        val song = songs.firstOrNull { it.uri.toString() == currentUri }
+        if (song == null) {
+            Toast.makeText(this, "Play a song from your library before adding lyrics.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val prefs = getSharedPreferences("a1_family_lyrics", MODE_PRIVATE)
+        val lyrics = EditText(this).apply {
+            hint = "Write or paste lyrics you have permission to use…"
+            setText(prefs.getString(song.uri.toString(), ""))
+            setSingleLine(false)
+            minLines = 8
+            maxLines = 18
+            gravity = Gravity.TOP or Gravity.START
+            textSize = 15f
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(label(song.title, 16f, themeColor(213, 165, 255), true))
+            addView(label(song.artist, 12f, themeColor(192, 173, 214)).apply {
+                setPadding(0, dp(3), 0, dp(10))
+            })
+            addView(lyrics, LinearLayout.LayoutParams(-1, dp(300)))
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Lyrics").setView(content)
+            .setPositiveButton("Save lyrics", null)
+            .setNeutralButton("Export PDF", null)
+            .setNegativeButton("Close", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                prefs.edit().putString(song.uri.toString(), lyrics.text.toString()).apply()
+                Toast.makeText(this, "Lyrics saved for ${song.title}.", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val text = lyrics.text.toString().trim()
+                if (text.isEmpty()) {
+                    Toast.makeText(this, "Write or paste lyrics before exporting.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                prefs.edit().putString(song.uri.toString(), text).apply()
+                pendingLyricsPdfTitle = song.title
+                pendingLyricsPdfText = text
+                val safeTitle = song.title.replace(Regex("[^A-Za-z0-9 _-]"), "").trim().take(60).ifBlank { "Lyrics" }
+                lyricsPdfLauncher.launch("$safeTitle-lyrics.pdf")
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun writeLyricsPdf(uri: Uri, title: String, text: String) {
+        val document = PdfDocument()
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.BLACK
+            textSize = 20f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+        }
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.BLACK
+            textSize = 12f
+        }
+        var pageNumber = 0
+        var page: PdfDocument.Page? = null
+        var canvas: android.graphics.Canvas? = null
+        var y = 0f
+        fun startPage() {
+            page?.let { document.finishPage(it) }
+            pageNumber++
+            page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+            canvas = page?.canvas
+            canvas?.drawText(title.take(52), 48f, 48f, titlePaint)
+            canvas?.drawText("A1 Family · Lyrics", 48f, 68f, bodyPaint)
+            y = 100f
+        }
+        try {
+            startPage()
+            val maxWidth = 499f
+            text.split("\n").forEach { rawLine ->
+                val words = rawLine.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                if (words.isEmpty()) {
+                    y += 18f
+                    if (y > 790f) startPage()
+                } else {
+                    var line = ""
+                    words.forEach { word ->
+                        val candidate = if (line.isEmpty()) word else "$line $word"
+                        if (bodyPaint.measureText(candidate) > maxWidth && line.isNotEmpty()) {
+                            if (y > 790f) startPage()
+                            canvas?.drawText(line, 48f, y, bodyPaint)
+                            y += 18f
+                            line = word
+                        } else line = candidate
+                    }
+                    if (y > 790f) startPage()
+                    canvas?.drawText(line, 48f, y, bodyPaint)
+                    y += 18f
+                }
+            }
+            page?.let { document.finishPage(it) }
+            contentResolver.openOutputStream(uri)?.use { document.writeTo(it) }
+                ?: throw IllegalStateException("Could not open the selected PDF destination.")
+            Toast.makeText(this, "Lyrics PDF saved.", Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Could not create the lyrics PDF.", Toast.LENGTH_LONG).show()
+        } finally {
+            document.close()
+        }
+    }
+
+    private fun openMediaDownloadDialog() {
+        val urlInput = EditText(this).apply {
+            hint = "Direct HTTPS link to an MP3 or MP4 file"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val nameInput = EditText(this).apply { hint = "File name (optional)"; setSingleLine(true) }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+            addView(label("Use a direct file link only. Download only media you own or are licensed/authorized to save. This does not rip streams or bypass platform restrictions.", 13f, themeColor(192, 173, 214)).apply {
+                setPadding(0, 0, 0, dp(12))
+            })
+            addView(urlInput)
+            addView(nameInput)
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Download media legally").setView(content)
+            .setPositiveButton("Download", null).setNegativeButton("Cancel", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val rawUrl = urlInput.text.toString().trim()
+                val parsed = runCatching { Uri.parse(rawUrl) }.getOrNull()
+                val host = parsed?.host?.lowercase(Locale.ROOT).orEmpty()
+                val pathLower = parsed?.lastPathSegment?.lowercase(Locale.ROOT).orEmpty()
+                val suppliedName = nameInput.text.toString().trim()
+                val fileName = (suppliedName.ifBlank { URLUtil.guessFileName(rawUrl, null, null) })
+                    .replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
+                val allowed = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "mp4", "m4v", "mkv", "webm", "mov")
+                val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                val blockedHost = host == "youtube.com" || host.endsWith(".youtube.com") ||
+                    host == "youtu.be" || host == "spotify.com" || host.endsWith(".spotify.com")
+                if (parsed?.scheme != "https" || host.isBlank() || blockedHost ||
+                    (ext !in allowed && pathLower.substringAfterLast('.', "") !in allowed)
+                ) {
+                    urlInput.error = "Enter a direct HTTPS link to an audio/video file you are allowed to download."
+                    return@setOnClickListener
+                }
+                runCatching {
+                    val request = DownloadManager.Request(parsed)
+                        .setTitle(fileName)
+                        .setDescription("Downloading media to the Downloads folder")
+                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        .setAllowedOverMetered(true)
+                        .setAllowedOverRoaming(false)
+                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                    (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+                    Toast.makeText(this, "Download started. Check your Downloads folder.", Toast.LENGTH_LONG).show()
+                    dialog.dismiss()
+                }.onFailure {
+                    Toast.makeText(this, "Could not start the download. Check the link and try again.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showTab(tab: String) {
