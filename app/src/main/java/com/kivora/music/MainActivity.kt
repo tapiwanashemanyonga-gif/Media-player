@@ -2,7 +2,11 @@
 package com.kivora.music
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.ContentUris
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -136,6 +140,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             tryRunPendingPlaybackAfterAd()
+            maybeShowPendingDownloadMilestoneAd()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -202,6 +207,14 @@ class MainActivity : AppCompatActivity() {
     private var controllerReconnectAttempt = 0
 
     private val handler = Handler(Looper.getMainLooper())
+    private var downloadReceiverRegistered = false
+    private val downloadCompletionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (downloadId > 0L) processDownloadCompletion(downloadId)
+        }
+    }
 
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
@@ -285,6 +298,7 @@ class MainActivity : AppCompatActivity() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updatePlayButton()
             tryRunPendingPlaybackAfterAd()
+            maybeShowPendingDownloadMilestoneAd()
         }
 
         override fun onShuffleModeEnabledChanged(
@@ -367,9 +381,24 @@ class MainActivity : AppCompatActivity() {
         super.onRestoreInstanceState(savedInstanceState)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!downloadReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                downloadCompletionReceiver,
+                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            downloadReceiverRegistered = true
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        reconcilePendingDownloadCompletions()
+        maybeShowPendingDownloadMilestoneAd()
         // The durable playback journal and ad callback are authoritative. Retrying a
         // local pending request merely because this Activity regained focus can start audio
         // unexpectedly or dispatch the same selection twice.
@@ -379,6 +408,14 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         activityResumed = false
         super.onPause()
+    }
+
+    override fun onStop() {
+        if (downloadReceiverRegistered) {
+            runCatching { unregisterReceiver(downloadCompletionReceiver) }
+            downloadReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     internal fun isAdHostResumedAndFocused(): Boolean =
@@ -4457,6 +4494,10 @@ class MainActivity : AppCompatActivity() {
         musicDispatchRetry?.let(handler::removeCallbacks)
         musicDispatchRetry = null
         StartIoVideoAds.detach(this)
+        if (downloadReceiverRegistered) {
+            runCatching { unregisterReceiver(downloadCompletionReceiver) }
+            downloadReceiverRegistered = false
+        }
         controllerRetryRunnable?.let(handler::removeCallbacks)
         controllerRetryRunnable = null
         handler.removeCallbacks(progressUpdater)
@@ -5368,33 +5409,69 @@ class MainActivity : AppCompatActivity() {
 
     private fun enqueueAuthorizedMediaDownload(uri: Uri, title: String, fileName: String) {
         val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
-        val savedCount = prefs.getInt("save_count", 0)
-        val enqueue: () -> Unit = {
-            runCatching {
-                val safeName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
-                    .ifBlank { "A1-Family-media.mp3" }
-                val request = DownloadManager.Request(uri)
-                    .setTitle(title)
-                    .setDescription("Saving an open-licensed media file")
-                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setAllowedOverMetered(true)
-                    .setAllowedOverRoaming(false)
-                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
-                (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-                prefs.edit().putInt("save_count", savedCount + 1).apply()
-                Toast.makeText(this, "Download started. Check Downloads.", Toast.LENGTH_LONG).show()
-            }.onFailure {
-                Toast.makeText(this, "Could not start the download. Check your connection and try again.", Toast.LENGTH_LONG).show()
-            }
+        runCatching {
+            val safeName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
+                .ifBlank { "A1-Family-media.mp3" }
+            val request = DownloadManager.Request(uri)
+                .setTitle(title)
+                .setDescription("Saving media you are authorised to download")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
+            val id = (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            val pending = prefs.getStringSet("pending_download_ids", emptySet())
+                ?.toMutableSet() ?: mutableSetOf()
+            pending.add(id.toString())
+            prefs.edit().putStringSet("pending_download_ids", pending).apply()
+            Toast.makeText(this, "Download started. Check Downloads.", Toast.LENGTH_LONG).show()
+        }.onFailure {
+            Toast.makeText(this, "Could not start the download. Check your connection and try again.", Toast.LENGTH_LONG).show()
         }
-        if (savedCount > 0 && savedCount % 10 == 0) {
-            AlertDialog.Builder(this)
-                .setTitle("Keep downloading")
-                .setMessage("You've saved $savedCount media files. Continue after a short ad?")
-                .setPositiveButton("Continue") { _, _ -> StartIoVideoAds.showOptionalAd(this, enqueue) }
-                .setNegativeButton("Not now", null)
-                .show()
-        } else enqueue()
+    }
+
+    private fun reconcilePendingDownloadCompletions() {
+        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
+        prefs.getStringSet("pending_download_ids", emptySet())?.toList().orEmpty()
+            .forEach { value -> value.toLongOrNull()?.let(::processDownloadCompletion) }
+    }
+
+    private fun processDownloadCompletion(downloadId: Long) {
+        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
+        val pending = prefs.getStringSet("pending_download_ids", emptySet())
+            ?.toMutableSet() ?: mutableSetOf()
+        if (!pending.contains(downloadId.toString())) return
+        val cursor = runCatching {
+            (getSystemService(DOWNLOAD_SERVICE) as DownloadManager)
+                .query(DownloadManager.Query().setFilterById(downloadId))
+        }.getOrNull() ?: return
+        val status = cursor.use {
+            if (it.moveToFirst()) it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            else -1
+        }
+        if (status == DownloadManager.STATUS_PENDING ||
+            status == DownloadManager.STATUS_RUNNING ||
+            status == DownloadManager.STATUS_PAUSED || status == -1
+        ) return
+        pending.remove(downloadId.toString())
+        val edit = prefs.edit().putStringSet("pending_download_ids", pending)
+        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+            val completed = prefs.getInt("successful_save_count", 0) + 1
+            edit.putInt("successful_save_count", completed)
+            if (completed % 10 == 0) edit.putBoolean("pending_download_milestone_ad", true)
+        }
+        edit.apply()
+        maybeShowPendingDownloadMilestoneAd()
+    }
+
+    private fun maybeShowPendingDownloadMilestoneAd() {
+        val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
+        if (!prefs.getBoolean("pending_download_milestone_ad", false)) return
+        if (!activityResumed || !hasWindowFocus() || isFinishing || isDestroyed) return
+        if (player?.isPlaying == true || videoPlayer?.isPlaying == true) return
+        // Never interrupt active playback; show only after a successful tenth download.
+        prefs.edit().putBoolean("pending_download_milestone_ad", false).apply()
+        StartIoVideoAds.showOptionalAd(this) { }
     }
 
     private fun configureListeningReminders() {
