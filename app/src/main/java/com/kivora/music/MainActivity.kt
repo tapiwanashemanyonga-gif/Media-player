@@ -107,6 +107,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var libraryVisibilityToggle: TextView
     private var searchRowVisible = true
     private var libraryHeaderVisible = true
+    private var libraryContentVisible = true
     private lateinit var clearSearchButton: TextView
     private lateinit var progress: SeekBar
     private lateinit var elapsedText: TextView
@@ -951,7 +952,7 @@ class MainActivity : AppCompatActivity() {
                 text = if (searchRowVisible) "Hide search" else "Show search"
             }
         }
-        libraryVisibilityToggle = label("Hide library header", 11f, themeColor(232, 213, 255), true).apply {
+        libraryVisibilityToggle = label("Hide library", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = roundedBackground(themeColor(42, 25, 64), 14).apply {
@@ -960,9 +961,11 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
             setOnClickListener {
-                libraryHeaderVisible = !libraryHeaderVisible
-                libraryHeader.visibility = if (currentTab == "library" && libraryHeaderVisible) View.VISIBLE else View.GONE
-                text = if (libraryHeaderVisible) "Hide library header" else "Show library header"
+                libraryContentVisible = !libraryContentVisible
+                libraryHeaderVisible = libraryContentVisible
+                libraryHeader.visibility = if (currentTab == "library" && libraryContentVisible) View.VISIBLE else View.GONE
+                songScroll.visibility = if ((currentTab == "search" || currentTab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
+                text = if (libraryContentVisible) "Hide library" else "Show library"
             }
         }
         displayOptionsRow.addView(searchVisibilityToggle, LinearLayout.LayoutParams(0, -2, 1f).apply {
@@ -5510,9 +5513,9 @@ class MainActivity : AppCompatActivity() {
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
         libraryHeader.visibility =
-            if (tab == "library" && libraryHeaderVisible) View.VISIBLE else View.GONE
+            if (tab == "library" && libraryContentVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
-            if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
+            if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
             if (tab == "videos") View.VISIBLE else View.GONE
         if (tab == "videos" && !videosLoaded) {
