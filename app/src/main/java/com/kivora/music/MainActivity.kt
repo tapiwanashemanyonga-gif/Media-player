@@ -5057,14 +5057,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
+        data class SettingsAction(
+            val icon: String,
+            val title: String,
+            val description: String,
+            val action: () -> Unit
+        )
         val options = listOf(
-            Triple("🎨", "Appearance & themes", "Choose the look that suits you") { openThemePicker() },
-            Triple("♫", "Discover music", "Find downloadable music and more catalogues") { openOnlineMusicSearch() },
-            Triple("↓", "Download media", "Save an authorized direct audio or video file") { openMediaDownloadDialog() },
-            Triple("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
-            Triple("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
-            Triple("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
-            Triple("ⓘ", "About A1 Family", "Offline-first music and video player") {
+            SettingsAction("🎨", "Appearance & themes", "Choose the look that suits you") { openThemePicker() },
+            SettingsAction("♫", "Discover music", "Find downloadable music and more catalogues") { openOnlineMusicSearch() },
+            SettingsAction("↓", "Download media", "Save an authorized direct audio or video file") { openMediaDownloadDialog() },
+            SettingsAction("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
+            SettingsAction("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
+            SettingsAction("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
+            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player") {
                 AlertDialog.Builder(this).setTitle("A1 Family")
                     .setMessage("Enjoy your local music and videos, discover openly licensed music, and save media only where the owner or licence permits it. Ads are optional and should never interrupt active playback.")
                     .setPositiveButton("Got it", null).show()
@@ -5086,10 +5092,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 isClickable = true
                 isFocusable = true
-                contentDescription = option.second
-                setOnClickListener { option.fourth.invoke() }
+                contentDescription = option.title
+                setOnClickListener { option.action.invoke() }
             }
-            item.addView(label(option.first, 21f, themeColor(218, 180, 255), true).apply {
+            item.addView(label(option.icon, 21f, themeColor(218, 180, 255), true).apply {
                 gravity = Gravity.CENTER
                 background = roundedBackground(themeColor(56, 35, 78), 12)
                 setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -5098,8 +5104,8 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, 0, 0)
             }
-            copy.addView(label(option.second, 14f, Color.WHITE, true))
-            copy.addView(label(option.third, 11f, themeColor(187, 168, 207)).apply {
+            copy.addView(label(option.title, 14f, Color.WHITE, true))
+            copy.addView(label(option.description, 11f, themeColor(187, 168, 207)).apply {
                 setPadding(0, dp(3), 0, 0)
             })
             item.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
