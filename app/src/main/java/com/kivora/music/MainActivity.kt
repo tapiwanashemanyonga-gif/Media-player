@@ -926,6 +926,31 @@ class MainActivity : AppCompatActivity() {
         searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
         root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
 
+        // Keep a live-capable Start.io banner visible on the main library screen,
+        // rather than limiting banner inventory to the Now Playing card.
+        val libraryAdContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(6), 0, dp(6))
+            contentDescription = "Advertisement area"
+        }
+        libraryAdContainer.addView(
+            label("ADVERTISEMENT", 9f, themeColor(171, 151, 196), true).apply {
+                gravity = Gravity.CENTER
+                letterSpacing = 0.12f
+                setPadding(0, 0, 0, dp(4))
+            },
+            LinearLayout.LayoutParams(-1, -2)
+        )
+        val libraryStartIoBanner = Banner(this).apply {
+            contentDescription = "Start.io banner advertisement"
+        }
+        libraryAdContainer.addView(
+            libraryStartIoBanner,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+        root.addView(libraryAdContainer, LinearLayout.LayoutParams(-1, -2))
+
         libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(1), dp(18), dp(1), dp(8))
