@@ -135,8 +135,8 @@ internal data class PlaybackJournal(
 }
 
 /**
- * Video-only, test-mode interstitials. Ads are considered only at a user-requested playback
- * transition when playback state is known and stopped. There are no automatic or return ads.
+ * Central Start.io coordinator. Playback is independent of ads; optional interstitials are
+ * shown only at a controlled app-open or download-count checkpoint.
  */
 internal object StartIoVideoAds {
     enum class ShowResult { SHOWN, UNAVAILABLE, BLOCKED_UNRESOLVED, EXPIRED }
@@ -659,10 +659,8 @@ internal object StartIoVideoAds {
             return
         }
         val timeout = Runnable {
-            if (displayed) {
-                Log.w(TAG, "Optional interstitial did not return a terminal callback")
-                finishOnce()
-            }
+            Log.w(TAG, if (displayed) "Optional interstitial did not return a terminal callback" else "Optional interstitial timed out before display")
+            finishOnce()
         }
         mainHandler.postDelayed(timeout, 60_000L)
         try {
@@ -900,7 +898,7 @@ internal object StartIoVideoAds {
         mainHandler.postDelayed(timeout, LOAD_TIMEOUT_MS)
 
         try {
-            request.loadAd(AdMode.VIDEO, object : AdEventListener {
+            request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
                 override fun onReceiveAd(ad: Ad) {
                     mainHandler.post {
                         mainHandler.removeCallbacks(timeout)
