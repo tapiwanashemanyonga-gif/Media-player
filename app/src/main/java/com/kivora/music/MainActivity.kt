@@ -5323,7 +5323,7 @@ class MainActivity : AppCompatActivity() {
     private fun enqueueAuthorizedMediaDownload(uri: Uri, title: String, fileName: String) {
         val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
         val savedCount = prefs.getInt("save_count", 0)
-        val enqueue = {
+        val enqueue: () -> Unit = {
             runCatching {
                 val safeName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
                     .ifBlank { "A1-Family-media.mp3" }
