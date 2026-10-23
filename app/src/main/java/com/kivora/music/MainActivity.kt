@@ -29,6 +29,7 @@ import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
+import com.startapp.sdk.ads.banner.Banner
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -106,6 +107,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var artwork: ImageView
     private lateinit var miniArtwork: ImageView
     private var artworkMotionAnimator: android.animation.AnimatorSet? = null
+    private var playerBannerContainer: LinearLayout? = null
+    private var hasSeenFirstResume = false
+    private var returnedFromBackground = false
+    private var suppressNextResumeAd = false
+    private var notificationPromptQueued = false
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
@@ -258,6 +264,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             }
+            requestNotificationPermissionOnFirstLaunch()
         }
 
     private val notificationPermissionLauncher =
@@ -365,8 +372,31 @@ class MainActivity : AppCompatActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             loadSongs()
+            requestNotificationPermissionOnFirstLaunch()
         } else {
+            suppressNextResumeAd = true
             permissionLauncher.launch(permission)
+        }
+    }
+
+    private fun requestNotificationPermissionOnFirstLaunch() {
+        if (notificationPromptQueued) return
+        val prefs = getSharedPreferences("a1_family_notifications", MODE_PRIVATE)
+        if (prefs.getBoolean("notification_permission_prompted", false)) return
+        prefs.edit().putBoolean("notification_permission_prompted", true).apply()
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPromptQueued = true
+            AlertDialog.Builder(this)
+                .setTitle("Stay in the loop")
+                .setMessage("Allow notifications for your weekly listening reminder and useful music updates. You can change this later in Android settings.")
+                .setPositiveButton("Allow notifications") { _, _ ->
+                    suppressNextResumeAd = true
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                .setNegativeButton("Not now", null)
+                .show()
         }
     }
 
@@ -406,6 +436,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        if (!hasSeenFirstResume) {
+            hasSeenFirstResume = true
+        } else if (returnedFromBackground) {
+            returnedFromBackground = false
+            if (suppressNextResumeAd) suppressNextResumeAd = false
+            else scheduleOpenAdIfDue()
+        }
         reconcilePendingDownloadCompletions()
         maybeShowPendingDownloadMilestoneAd()
         // The durable playback journal and ad callback are authoritative. Retrying a
@@ -416,6 +453,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         activityResumed = false
+        returnedFromBackground = true
         super.onPause()
     }
 
@@ -1188,6 +1226,33 @@ class MainActivity : AppCompatActivity() {
             }
             elevation = dp(7).toFloat()
         }
+
+        val playerAdRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(4), dp(4), dp(4))
+            background = roundedBackground(themeColor(25, 17, 38), 14).apply {
+                setStroke(dp(1), themeColor(79, 54, 103))
+            }
+        }
+        val startIoBanner = Banner(this).apply {
+            contentDescription = "Advertisement"
+        }
+        playerAdRow.addView(startIoBanner, LinearLayout.LayoutParams(0, -2, 1f))
+        val closeBanner = label("×", 23f, themeColor(217, 195, 239), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(36)
+            minHeight = dp(40)
+            contentDescription = "Close banner advertisement"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { playerAdRow.visibility = View.GONE }
+        }
+        playerAdRow.addView(closeBanner, LinearLayout.LayoutParams(dp(36), dp(40)))
+        playerBannerContainer = playerAdRow
+        playerCard.addView(playerAdRow, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(12)
+        })
 
         playerCard.addView(
             label("NOW PLAYING", 11f, themeColor(211, 176, 255), true).apply {
@@ -2908,7 +2973,7 @@ class MainActivity : AppCompatActivity() {
             homeContent.addView(row)
         }
 
-        val discoverMusic = label("⌕  FIND FREE & LEGAL MUSIC", 12f, Color.WHITE, true).apply {
+        val discoverMusic = label("⬇  MUSIC & MEDIA DOWNLOADER", 13f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(13), dp(14), dp(13))
             background = roundedBackground(themeColor(92, 47, 160), 15).apply {
@@ -2916,7 +2981,7 @@ class MainActivity : AppCompatActivity() {
             }
             isClickable = true
             isFocusable = true
-            contentDescription = "Search music available under open licences"
+            contentDescription = "Search and download available music and authorized media"
             setOnClickListener { openOnlineMusicSearch() }
         }
         homeContent.addView(discoverMusic, LinearLayout.LayoutParams(-1, -2).apply {
@@ -5066,8 +5131,6 @@ class MainActivity : AppCompatActivity() {
     private fun openSettings() {
         val options = listOf(
             SettingsAction("🎨", "Appearance & themes", "Choose the look that suits you") { openThemePicker() },
-            SettingsAction("♫", "Discover music", "Find downloadable music and more catalogues") { openOnlineMusicSearch() },
-            SettingsAction("↓", "Download media", "Save an authorized direct audio or video file") { openMediaDownloadDialog() },
             SettingsAction("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
             SettingsAction("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
             SettingsAction("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
@@ -5258,15 +5321,13 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("a1_family_ad_policy", MODE_PRIVATE)
         val opens = prefs.getInt("app_open_count", 0) + 1
         prefs.edit().putInt("app_open_count", opens).apply()
-        if (opens % 3 == 0) {
-            handler.postDelayed({
-                if (!isFinishing && !isDestroyed && hasWindowFocus() &&
-                    player?.isPlaying != true && videoPlayer?.isPlaying != true
-                ) {
-                    StartIoVideoAds.showOptionalAd(this) { }
-                }
-            }, 1_500L)
-        }
+        handler.postDelayed({
+            if (!isFinishing && !isDestroyed && hasWindowFocus() &&
+                player?.isPlaying != true && videoPlayer?.isPlaying != true
+            ) {
+                StartIoVideoAds.showOptionalAd(this) { }
+            }
+        }, 1_800L)
     }
 
     private fun openOnlineMusicSearch() {
@@ -5275,7 +5336,7 @@ class MainActivity : AppCompatActivity() {
             setSingleLine(true)
             textSize = 16f
         }
-        val status = label("Search Internet Archive and Wikimedia Commons. Only supported open licences with direct audio files are shown; check attribution and source terms before reuse.", 12f, themeColor(192, 173, 214)).apply {
+        val status = label("Search music catalogues for direct downloads that are permitted by the owner or licence. Search results show the title and download action; tap a title for details.", 12f, themeColor(192, 173, 214)).apply {
             setPadding(0, 0, 0, dp(10))
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -5318,7 +5379,33 @@ class MainActivity : AppCompatActivity() {
             addView(status)
             addView(scroll, LinearLayout.LayoutParams(-1, dp(390)))
         }
-        val dialog = AlertDialog.Builder(this).setTitle("Discover free and legal music")
+        val directUrlInput = EditText(this).apply {
+            hint = "Optional: direct HTTPS MP3 / MP4 link"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val directNameInput = EditText(this).apply {
+            hint = "Optional file name"
+            setSingleLine(true)
+        }
+        val directDownloadButton = label("DOWNLOAD DIRECT FILE", 11f, themeColor(224, 197, 248), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBackground(themeColor(38, 25, 54), 13).apply {
+                setStroke(dp(1), themeColor(103, 72, 132))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        content.addView(label("OR DOWNLOAD AN AUTHORIZED DIRECT FILE", 10f, themeColor(196, 174, 217), true).apply {
+            setPadding(0, dp(12), 0, dp(3))
+        })
+        content.addView(directUrlInput)
+        content.addView(directNameInput)
+        content.addView(directDownloadButton, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(6)
+        })
+        val dialog = AlertDialog.Builder(this).setTitle("Music & media downloader")
             .setView(content).setNegativeButton("Close", null).create()
         fun performSearch() {
             val query = queryInput.text.toString().trim()
@@ -5378,6 +5465,15 @@ class MainActivity : AppCompatActivity() {
                         })
                     }
                 }
+            }
+        }
+        directDownloadButton.setOnClickListener {
+            val rawUrl = directUrlInput.text.toString().trim()
+            val uri = runCatching { Uri.parse(rawUrl) }.getOrNull()
+            if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
+                directUrlInput.error = "Enter a valid HTTPS direct-file link."
+            } else {
+                enqueueAuthorizedMediaDownload(uri, directNameInput.text.toString().trim().ifBlank { "media-download" }, directNameInput.text.toString().trim())
             }
         }
         searchButton.setOnClickListener { performSearch() }
@@ -5691,6 +5787,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTab(tab: String) {
         currentTab = tab
+        val previousTab = currentTab
         if (tab == "home") renderHomeDashboard()
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
@@ -5717,6 +5814,13 @@ class MainActivity : AppCompatActivity() {
         miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
 
         if (tab == "search") {
+            if (previousTab != "search" && player?.isPlaying != true && videoPlayer?.isPlaying != true) {
+                handler.postDelayed({
+                    if (!isFinishing && !isDestroyed && currentTab == "search" &&
+                        player?.isPlaying != true && videoPlayer?.isPlaying != true
+                    ) StartIoVideoAds.showOptionalAd(this) { }
+                }, 650L)
+            }
             showFavoritesOnly = false
             selectedPlaylist = null
             updateFavoriteFilterButton()
