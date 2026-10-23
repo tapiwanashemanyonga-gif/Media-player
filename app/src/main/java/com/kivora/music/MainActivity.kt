@@ -2976,14 +2976,25 @@ class MainActivity : AppCompatActivity() {
         sponsoredCard.addView(label("SPONSORED  •  OPTIONAL", 10f, themeColor(40, 224, 255), true).apply { letterSpacing = 0.12f })
         sponsoredCard.addView(label("Explore something new", 17f, themeColor(250, 250, 255), true).apply { setPadding(0, dp(6), 0, dp(3)) })
         sponsoredCard.addView(label("Optional offers from our advertising partner. Your music stays uninterrupted.", 12f, themeColor(185, 198, 224)).apply { setPadding(0, 0, 0, dp(10)) })
-        sponsoredCard.addView(label("Explore sponsored offers  ↗", 12f, themeColor(40, 224, 255), true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = roundedBackground(themeColor(19, 42, 68), 13).apply { setStroke(dp(1), themeColor(40, 224, 255)) }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { openSponsoredOffers() }
-        })
+        if (ADSTERRA_SMARTLINK_URL.isBlank()) {
+            sponsoredCard.addView(label(
+                "Sponsored offers are coming soon.",
+                12f,
+                themeColor(185, 198, 224)
+            ).apply {
+                setPadding(0, dp(4), 0, 0)
+                contentDescription = "Sponsored offers are not enabled yet"
+            })
+        } else {
+            sponsoredCard.addView(label("Explore sponsored offers  ↗", 12f, themeColor(40, 224, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBackground(themeColor(19, 42, 68), 13).apply { setStroke(dp(1), themeColor(40, 224, 255)) }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { openSponsoredOffers() }
+            })
+        }
         homeContent.addView(sponsoredCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(14) })
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
