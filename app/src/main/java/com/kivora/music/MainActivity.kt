@@ -5253,13 +5253,17 @@ class MainActivity : AppCompatActivity() {
         val archiveUrl = URL(
             "https://archive.org/advancedsearch.php?q=" +
                 URLEncoder.encode(archiveQuery, "UTF-8") +
-                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=licenseurl&rows=30&page=1&output=json"
+                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=licenseurl&rows=18&page=1&output=json"
         )
-        val docs = readJsonFromUrl(archiveUrl).optJSONObject("response")?.optJSONArray("docs") ?: JSONArray()
-        for (index in 0 until docs.length()) {
+        val docs = runCatching {
+            readJsonFromUrl(archiveUrl).optJSONObject("response")?.optJSONArray("docs")
+        }.getOrNull() ?: JSONArray()
+        for (index in 0 until minOf(docs.length(), 18)) {
             if (tracks.size >= 6) break
             val doc = docs.optJSONObject(index) ?: continue
             val identifier = doc.optString("identifier").takeIf { it.isNotBlank() } ?: continue
+            val indexedLicense = doc.optString("licenseurl")
+            if (!isRecognizedOpenLicense(indexedLicense)) continue
             val metadata = runCatching {
                 readJsonFromUrl(URL("https://archive.org/metadata/${Uri.encode(identifier)}"))
             }.getOrNull() ?: continue
@@ -5350,8 +5354,8 @@ class MainActivity : AppCompatActivity() {
     private fun readJsonFromUrl(url: URL): JSONObject {
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 8_000
-            readTimeout = 10_000
+            connectTimeout = 5_000
+            readTimeout = 6_000
             setRequestProperty("User-Agent", "A1FamilyMediaPlayer/1.3 (open-licensed music search)")
         }
         return try {
