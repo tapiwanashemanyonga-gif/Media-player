@@ -421,35 +421,14 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (!activityResumed) return
-        if (StartIoVideoAds.hasUnresolvedDisplay()) {
-            retainPlaybackForUnresolvedAd(intent)
-            return
-        }
         val state = playbackState()
         if (state == PlaybackState.UNKNOWN) {
             StartIoVideoAds.savePendingPlayback(intent)
             return
         }
         if (intent.kind == "play_queue" && !songsLoaded) return
-        val alreadyShown = playbackContinuesAfterAd
-        if (!alreadyShown && state == PlaybackState.STOPPED) {
-            when (StartIoVideoAds.showIfReady(this, intent)) {
-                StartIoVideoAds.ShowResult.SHOWN -> {
-                    pendingPlaybackAfterAd = null
-                    playbackContinuesAfterAd = false
-                    return
-                }
-                StartIoVideoAds.ShowResult.BLOCKED_UNRESOLVED -> {
-                    retainPlaybackForUnresolvedAd(intent)
-                    return
-                }
-                StartIoVideoAds.ShowResult.EXPIRED -> {
-                    discardExpiredPlaybackRequest(intent)
-                    return
-                }
-                StartIoVideoAds.ShowResult.UNAVAILABLE -> Unit
-            }
-        }
+        // Playback is never gated by an interstitial. Optional ads are shown separately
+        // on the third app open or after ten download requests.
         if (!executePlayback(intent)) {
             pendingPlaybackAfterAd = intent
             StartIoVideoAds.savePendingPlayback(intent)
@@ -481,49 +460,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun continueUserPlayback(intent: PendingPlayback) {
         if (discardExpiredPlaybackRequest(intent)) return
-        if (StartIoVideoAds.hasUnresolvedDisplay()) {
-            retainPlaybackForUnresolvedAd(intent)
-            return
+        // Every explicit play or song-selection request is dispatched without waiting for ads.
+        // Persist the request first so service reconnection can safely retry the same selection.
+        pendingPlaybackAfterAd = intent
+        playbackContinuesAfterAd = false
+        if (!StartIoVideoAds.savePendingPlayback(intent)) {
+            if (playbackState() == PlaybackState.UNKNOWN) return
         }
-        when (playbackState()) {
-            PlaybackState.UNKNOWN -> {
-                pendingPlaybackAfterAd = intent
-                playbackContinuesAfterAd = false
-                StartIoVideoAds.savePendingPlayback(intent)
-                return
-            }
-            PlaybackState.ACTIVE -> {
-                // Register the new user request before dispatching it. Otherwise the ad
-                // coordinator rejects it as a different request from the previously
-                // acknowledged song, leaving it pending until the Activity is resumed.
-                pendingPlaybackAfterAd = intent
-                playbackContinuesAfterAd = false
-                if (!StartIoVideoAds.savePendingPlayback(intent)) return
-                if (executePlayback(intent)) {
-                    pendingPlaybackAfterAd = null
-                    StartIoVideoAds.acknowledgePendingPlayback(intent)
-                }
-                // Music dispatch completes asynchronously and clears/acknowledges this request.
-                return
-            }
-            PlaybackState.STOPPED -> Unit
-        }
-        when (StartIoVideoAds.showIfReady(this, intent)) {
-            StartIoVideoAds.ShowResult.SHOWN -> Unit
-            StartIoVideoAds.ShowResult.BLOCKED_UNRESOLVED -> {
-                retainPlaybackForUnresolvedAd(intent)
-            }
-            StartIoVideoAds.ShowResult.EXPIRED -> {
-                discardExpiredPlaybackRequest(intent)
-            }
-            StartIoVideoAds.ShowResult.UNAVAILABLE -> {
-                if (!executePlayback(intent)) {
-                    pendingPlaybackAfterAd = intent
-                    StartIoVideoAds.savePendingPlayback(intent)
-                } else {
-                    StartIoVideoAds.acknowledgePendingPlayback(intent)
-                }
-            }
+        if (executePlayback(intent)) {
+            pendingPlaybackAfterAd = null
+            StartIoVideoAds.acknowledgePendingPlayback(intent)
         }
     }
 
@@ -4408,13 +4354,16 @@ class MainActivity : AppCompatActivity() {
     private fun updateShuffleButton() {
         if (!::shuffleButton.isInitialized) return
 
-        shuffleButton.setTextColor(
-            if (player?.shuffleModeEnabled == true) {
-                themeColor(196, 145, 255)
-            } else {
-                themeColor(174, 159, 194)
-            }
-        )
+        val enabled = player?.shuffleModeEnabled == true
+        shuffleButton.isSelected = enabled
+        shuffleButton.contentDescription = if (enabled) "Shuffle on" else "Shuffle off"
+        shuffleButton.setTextColor(if (enabled) Color.WHITE else themeColor(174, 159, 194))
+        shuffleButton.background = roundedBackground(
+            if (enabled) themeColor(106, 52, 175) else themeColor(43, 30, 59), 26
+        ).apply {
+            setStroke(dp(if (enabled) 2 else 1), if (enabled) themeColor(220, 184, 255) else themeColor(126, 88, 157))
+        }
+        shuffleButton.elevation = dp(if (enabled) 7 else 2).toFloat()
     }
 
     private fun updateRepeatButton() {
@@ -4430,13 +4379,19 @@ class MainActivity : AppCompatActivity() {
             (player?.repeatMode ?: Player.REPEAT_MODE_OFF) !=
                 Player.REPEAT_MODE_OFF
 
-        repeatButton.setTextColor(
-            if (enabled) {
-                themeColor(196, 145, 255)
-            } else {
-                themeColor(174, 159, 194)
-            }
-        )
+        repeatButton.isSelected = enabled
+        repeatButton.contentDescription = when (player?.repeatMode ?: Player.REPEAT_MODE_OFF) {
+            Player.REPEAT_MODE_ONE -> "Repeat current song"
+            Player.REPEAT_MODE_ALL -> "Repeat all songs"
+            else -> "Repeat off"
+        }
+        repeatButton.setTextColor(if (enabled) Color.WHITE else themeColor(174, 159, 194))
+        repeatButton.background = roundedBackground(
+            if (enabled) themeColor(106, 52, 175) else themeColor(43, 30, 59), 26
+        ).apply {
+            setStroke(dp(if (enabled) 2 else 1), if (enabled) themeColor(220, 184, 255) else themeColor(126, 88, 157))
+        }
+        repeatButton.elevation = dp(if (enabled) 7 else 2).toFloat()
     }
 
     private fun updateProgress() {
@@ -5350,7 +5305,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun enqueueAuthorizedMediaDownload(uri: Uri, title: String, fileName: String) {
         val prefs = getSharedPreferences("a1_family_downloads", MODE_PRIVATE)
-        val savedCount = prefs.getInt("successful_download_count", 0)
+        val savedCount = prefs.getInt("save_count", 0)
         val enqueue = {
             runCatching {
                 val safeName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(120)
@@ -5363,7 +5318,7 @@ class MainActivity : AppCompatActivity() {
                     .setAllowedOverRoaming(false)
                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
                 (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-                prefs.edit().putInt("successful_download_count", savedCount + 1).apply()
+                prefs.edit().putInt("save_count", savedCount + 1).apply()
                 Toast.makeText(this, "Download started. Check Downloads.", Toast.LENGTH_LONG).show()
             }.onFailure {
                 Toast.makeText(this, "Could not start the download. Check your connection and try again.", Toast.LENGTH_LONG).show()
