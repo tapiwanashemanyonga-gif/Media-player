@@ -256,7 +256,9 @@ internal object StartIoVideoAds {
         expireStalePendingRequest()
         try {
             // Keep test ads enabled until production configuration is explicitly approved.
-            StartAppSDK.setTestAdsEnabled(true)
+            // Debug APKs use test inventory; signed release builds request live ads.
+            // Never click ads while testing the debug build.
+            StartAppSDK.setTestAdsEnabled(BuildConfig.DEBUG)
             StartAppSDK.initParams(application, STARTIO_APP_ID)
                 .setReturnAdsEnabled(false)
                 .setCallback {
