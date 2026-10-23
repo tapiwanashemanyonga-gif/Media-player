@@ -54,6 +54,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
+// Do not populate until the publisher confirms the link is Active and mainstream-only,
+// with unsuitable offer categories excluded and the destination appropriate for the app's rating.
+private const val ADSTERRA_SMARTLINK_URL = ""
+
 data class Song(
     val title: String,
     val artist: String,
@@ -326,6 +330,12 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
+        // This upgrade adopts the user's chosen Neon Music Studio design by default.
+        if (preferences.getString("theme", null) == null ||
+            preferences.getString("theme", null) == "purple"
+        ) {
+            preferences.edit().putString("theme", "neon").apply()
+        }
 
         favoriteSongUris.addAll(
             preferences.getStringSet(
@@ -2886,17 +2896,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderHomeDashboard() {
         if (!::homeContent.isInitialized) return
+        val previousScrollY = if (::homeScroll.isInitialized) homeScroll.scrollY else 0
         homeContent.removeAllViews()
 
-        homeContent.addView(label("HOME", 11f, themeColor(203, 162, 242), true).apply {
-            letterSpacing = 0.16f
-            setPadding(dp(2), dp(2), 0, dp(5))
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(12, 15, 31), Color.rgb(42, 12, 66), Color.rgb(0, 69, 88))
+            ).apply {
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), Color.rgb(0, 224, 245))
+            }
+            elevation = dp(3).toFloat()
+        }
+        hero.addView(label("NEON MUSIC STUDIO  •  YOUR LOCAL LIBRARY", 10f, Color.rgb(66, 244, 255), true).apply {
+            letterSpacing = 0.08f
+            setPadding(0, 0, 0, dp(8))
         })
-        homeContent.addView(label("Feel every frequency.", 27f, themeColor(252, 248, 255), true).apply {
-            setPadding(dp(2), 0, 0, dp(4))
+        hero.addView(label("Feel every frequency.", 27f, Color.WHITE, true).apply {
+            setPadding(0, 0, 0, dp(5))
         })
-        homeContent.addView(label("Your library. Your rhythm. No limits.", 13f, themeColor(40, 224, 255)).apply {
-            setPadding(dp(2), 0, 0, dp(18))
+        hero.addView(label("Your library. Your rhythm. No limits.", 12f, Color.rgb(205, 224, 242)))
+        homeContent.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(16)
         })
 
         homeContent.addView(label("QUICK ACCESS", 12f, themeColor(215, 194, 236), true).apply {
@@ -3030,6 +3054,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(15), 0, dp(3))
         })
+        homeScroll.post { homeScroll.scrollTo(0, previousScrollY) }
     }
 
     private fun openHomeShortcut(destination: String) {
@@ -5379,9 +5404,20 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    // Deliberately blank until the publisher supplies a verified Adsterra SmartLink.
     private fun openSponsoredOffers() {
-        Toast.makeText(this, "Sponsored offers will be enabled after the Adsterra link and offer categories are verified.", Toast.LENGTH_LONG).show()
+        val rawUrl = ADSTERRA_SMARTLINK_URL.trim()
+        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull()
+        if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
+            Toast.makeText(
+                this,
+                "Sponsored offers are not enabled yet. An approved Adsterra SmartLink must be configured first.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }.onFailure {
+            Toast.makeText(this, "No browser is available to open sponsored offers.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showTab(tab: String) {
