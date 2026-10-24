@@ -501,6 +501,10 @@ class MainActivity : AppCompatActivity() {
     internal fun isAdHostResumedAndFocused(): Boolean =
         activityResumed && hasWindowFocus() && !isFinishing && !isDestroyed
 
+    /** Prevents full-screen ads from covering active audio or video playback. */
+    internal fun isMediaPlaybackActive(): Boolean =
+        player?.isPlaying == true || videoPlayer?.isPlaying == true
+
     /** Called by the ad coordinator without retaining this Activity in SDK callbacks. */
     internal fun runPlaybackAfterAd(intent: PendingPlayback?) {
         if (intent == null || isFinishing || isDestroyed) return
@@ -5510,8 +5514,8 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || isDestroyed || player?.isPlaying == true || videoPlayer?.isPlaying == true) return
         if (hasWindowFocus()) {
             StartIoVideoAds.showOptionalAd(this) { }
-        } else if (attempt < 10) {
-            // Wait through Android permission prompts and the first-launch notification explainer.
+        } else if (attempt < 15) {
+            // Wait through permission prompts and startup window-focus transitions.
             handler.postDelayed({ tryShowOpenAdWhenReady(attempt + 1) }, 900L)
         }
     }
