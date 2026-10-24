@@ -152,6 +152,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) enforceExclusivePlayback(stopVideo = false)
             tryRunPendingPlaybackAfterAd()
         }
 
@@ -300,6 +301,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying && videoPlayer?.isPlaying == true) enforceExclusivePlayback(stopVideo = true)
             updatePlayButton()
             updateArtworkMotion(isPlaying)
             if (!isPlaying && currentTab == "search" && !musicTabAdAttempted && videoPlayer?.isPlaying != true) {
@@ -594,12 +596,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Enforces a strict single-media rule across the service-owned music player and the
+     * Activity-owned video player. Pause commands are issued before the new player starts,
+     * and player callbacks re-check the invariant if a delayed start races with the switch.
+     */
+    private fun enforceExclusivePlayback(stopVideo: Boolean) {
+        if (stopVideo) {
+            videoPlayer?.let { video ->
+                video.playWhenReady = false
+                video.pause()
+            }
+            player?.pause()
+        } else {
+            player?.pause()
+            videoPlayer?.let { video ->
+                if (video.playWhenReady.not() && video.playbackState != Player.STATE_IDLE &&
+                    video.playbackState != Player.STATE_ENDED
+                ) {
+                    video.playWhenReady = true
+                }
+            }
+        }
+    }
+
     private fun executePlayback(intent: PendingPlayback): Boolean {
         if (discardExpiredPlaybackRequest(intent)) return true
         when (intent.kind) {
             "resume_music" -> {
                 if (player == null) return false
-                videoPlayer?.pause()
+                enforceExclusivePlayback(stopVideo = true)
                 dispatchMusicPlayback(intent)
                 return false
             }
@@ -612,7 +638,7 @@ class MainActivity : AppCompatActivity() {
                 val selectedIndex = queue.indexOfFirst { it.uri.toString() == selectedUri }
                 if (queue.isNotEmpty() && selectedIndex >= 0) {
                     activeQueue = queue
-                    videoPlayer?.pause()
+                    enforceExclusivePlayback(stopVideo = true)
                     // Service-owned request dispatch preserves the request ID across retries.
                     dispatchMusicPlayback(intent, queue, selectedIndex)
                     updateNowPlaying()
@@ -640,8 +666,8 @@ class MainActivity : AppCompatActivity() {
                 if (video.currentMediaItem?.localConfiguration?.uri == uri &&
                     video.playbackState != Player.STATE_IDLE &&
                     video.playbackState != Player.STATE_ENDED) {
-                    videoPlayer?.play()
-                    player?.pause()
+                    enforceExclusivePlayback(stopVideo = false)
+                    video.play()
                     return true
                 }
                 selectedVideoUri = uri.toString()
@@ -649,7 +675,8 @@ class MainActivity : AppCompatActivity() {
                 lastFailedVideoUri = null
                 renderVideos(searchBox.text?.toString().orEmpty())
                 videoStatus.text = "Playing: ${intent.title.orEmpty()}"
-                player?.pause()
+                // Stop music first; never start video while the background service is still playing.
+                enforceExclusivePlayback(stopVideo = true)
                 try {
                     // Keep the full local video library in the ExoPlayer timeline. Media3
                     // advances automatically to the next item when the current video ends.
@@ -669,6 +696,8 @@ class MainActivity : AppCompatActivity() {
                     }
                     video.repeatMode = Player.REPEAT_MODE_OFF
                     video.prepare()
+                    // Re-assert the exclusive rule immediately before starting video.
+                    player?.pause()
                     video.playWhenReady = true
                 } catch (_: RuntimeException) {
                     reportVideoPlaybackFailure(uri.toString())
@@ -683,7 +712,7 @@ class MainActivity : AppCompatActivity() {
                     video.setMediaItem(MediaItem.Builder().setUri(uri).setMediaId(intent.requestId).build())
                     video.prepare()
                 }
-                player?.pause()
+                enforceExclusivePlayback(stopVideo = false)
                 video.play()
                 return true
             }
