@@ -682,7 +682,10 @@ internal object StartIoVideoAds {
         }
 
         val preferences = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val lastShown = preferences.getLong(LAST_OPTIONAL_SHOWN_AT, 0L)
+        val lastShown = maxOf(
+            preferences.getLong(LAST_OPTIONAL_SHOWN_AT, 0L),
+            preferences.getLong(LAST_SHOWN_AT, 0L)
+        )
         val elapsed = System.currentTimeMillis() - lastShown
         if (lastShown > 0L && elapsed >= 0L && elapsed < OPTIONAL_FREQUENCY_CAP_MS) {
             optionalAdPending = false
@@ -729,8 +732,10 @@ internal object StartIoVideoAds {
                             request.showAd(object : AdDisplayListener {
                                 override fun adDisplayed(ad: Ad) {
                                     displayed = true
+                                    val shownAt = System.currentTimeMillis()
                                     preferences.edit()
-                                        .putLong(LAST_OPTIONAL_SHOWN_AT, System.currentTimeMillis())
+                                        .putLong(LAST_OPTIONAL_SHOWN_AT, shownAt)
+                                        .putLong(LAST_SHOWN_AT, shownAt)
                                         .apply()
                                     Log.i(TAG, "App-open interstitial displayed")
                                 }
