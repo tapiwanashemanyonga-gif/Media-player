@@ -3059,8 +3059,32 @@ class MainActivity : AppCompatActivity() {
         })
         hero.addView(label("Your library. Your rhythm. No limits.", 12f, Color.rgb(205, 224, 242)))
         homeContent.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(16)
+            bottomMargin = dp(10)
         })
+
+        // Home is the first screen for most sessions, so place one clearly labelled banner
+        // here as well as the existing Library and Now Playing banners.
+        val homeAdContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(10))
+            contentDescription = "Start.io home banner advertisement area"
+        }
+        homeAdContainer.addView(
+            label("ADVERTISEMENT", 9f, themeColor(171, 151, 196), true).apply {
+                gravity = Gravity.CENTER
+                letterSpacing = 0.12f
+                setPadding(0, 0, 0, dp(4))
+            },
+            LinearLayout.LayoutParams(-1, -2)
+        )
+        homeAdContainer.addView(
+            Banner(this).apply {
+                contentDescription = "Start.io home banner advertisement"
+            },
+            LinearLayout.LayoutParams(-1, -2)
+        )
+        homeContent.addView(homeAdContainer, LinearLayout.LayoutParams(-1, -2))
 
         homeContent.addView(label("QUICK ACCESS", 12f, themeColor(215, 194, 236), true).apply {
             letterSpacing = 0.08f
