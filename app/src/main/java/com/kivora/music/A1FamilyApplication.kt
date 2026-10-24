@@ -144,6 +144,8 @@ internal object StartIoVideoAds {
     private const val TAG = "A1FamilyAds"
     private const val STARTIO_APP_ID = "209140404"
     private const val FREQUENCY_CAP_MS = 30 * 60 * 1000L
+    private const val OPTIONAL_FREQUENCY_CAP_MS = 30 * 60 * 1000L
+    private const val LAST_OPTIONAL_SHOWN_AT = "last_optional_ad_shown_at"
     private const val PREFS = "a1_family_ad_policy"
     private const val LAST_SHOWN_AT = "last_video_interstitial_shown_at"
     private const val DISPLAY_UNRESOLVED = "startio_display_unresolved"
@@ -170,6 +172,7 @@ internal object StartIoVideoAds {
     private var loading = false
     private var showing = false
     private var optionalAdShowing = false
+    private var optionalAdPending = false
     private var pendingPlayback: PendingPlayback? = null
     private var journal = PlaybackJournal(null, PlaybackJournal.RequestState.EMPTY, PlaybackJournal.AdState.NONE)
     private var pendingPersistenceFailed = false
@@ -635,11 +638,61 @@ internal object StartIoVideoAds {
      * A standalone, dismissible full-page ad for opt-in frequency points. It never owns a
      * playback request, so a missing ad or a close callback cannot delay music playback.
      */
+    /**
+     * Shows a standalone app-open interstitial only after SDK readiness, when the Activity
+     * is resumed/focused and playback is idle. A separate cooldown prevents repeated opens
+     * from producing excessive full-screen ads.
+     */
     fun showOptionalAd(activity: MainActivity, onFinished: () -> Unit) {
-        if (!initialized || !sdkReady || showing || activity.isFinishing || activity.isDestroyed) {
+        if (optionalAdShowing || optionalAdPending) {
             onFinished()
             return
         }
+        optionalAdPending = true
+        tryStartOptionalAd(activity, onFinished, attempt = 0)
+    }
+
+    private fun tryStartOptionalAd(
+        activity: MainActivity,
+        onFinished: () -> Unit,
+        attempt: Int
+    ) {
+        if (activity.isFinishing || activity.isDestroyed) {
+            optionalAdPending = false
+            onFinished()
+            return
+        }
+        if (activity.isMediaPlaybackActive()) {
+            optionalAdPending = false
+            Log.i(TAG, "Skipping app-open interstitial because media is playing")
+            onFinished()
+            return
+        }
+        if (!initialized || !sdkReady || !activity.isAdHostResumedAndFocused()) {
+            if (attempt >= 15) {
+                optionalAdPending = false
+                Log.i(TAG, "App-open interstitial skipped: SDK or Activity not ready")
+                onFinished()
+                return
+            }
+            mainHandler.postDelayed({
+                tryStartOptionalAd(activity, onFinished, attempt + 1)
+            }, 1_000L)
+            return
+        }
+
+        val preferences = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val lastShown = preferences.getLong(LAST_OPTIONAL_SHOWN_AT, 0L)
+        val elapsed = System.currentTimeMillis() - lastShown
+        if (lastShown > 0L && elapsed >= 0L && elapsed < OPTIONAL_FREQUENCY_CAP_MS) {
+            optionalAdPending = false
+            Log.i(TAG, "App-open interstitial skipped by frequency cap")
+            onFinished()
+            return
+        }
+
+        optionalAdPending = false
+        optionalAdShowing = true
         var finished = false
         var displayed = false
         val finishOnce = {
@@ -649,11 +702,6 @@ internal object StartIoVideoAds {
                 onFinished()
             }
         }
-        if (optionalAdShowing) {
-            onFinished()
-            return
-        }
-        optionalAdShowing = true
         val request = try {
             StartAppAd(activity)
         } catch (error: RuntimeException) {
@@ -670,7 +718,9 @@ internal object StartIoVideoAds {
             request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
                 override fun onReceiveAd(ad: Ad) {
                     mainHandler.post {
-                        if (finished || activity.isFinishing || activity.isDestroyed) {
+                        if (finished || activity.isFinishing || activity.isDestroyed ||
+                            !activity.isAdHostResumedAndFocused() || activity.isMediaPlaybackActive()
+                        ) {
                             mainHandler.removeCallbacks(timeout)
                             finishOnce()
                             return@post
@@ -679,8 +729,10 @@ internal object StartIoVideoAds {
                             request.showAd(object : AdDisplayListener {
                                 override fun adDisplayed(ad: Ad) {
                                     displayed = true
-                                    app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                                        .edit().putLong("last_optional_ad_shown_at", System.currentTimeMillis()).apply()
+                                    preferences.edit()
+                                        .putLong(LAST_OPTIONAL_SHOWN_AT, System.currentTimeMillis())
+                                        .apply()
+                                    Log.i(TAG, "App-open interstitial displayed")
                                 }
                                 override fun adHidden(ad: Ad) {
                                     mainHandler.removeCallbacks(timeout)
@@ -688,6 +740,7 @@ internal object StartIoVideoAds {
                                 }
                                 override fun adNotDisplayed(ad: Ad) {
                                     mainHandler.removeCallbacks(timeout)
+                                    Log.i(TAG, "App-open interstitial was not displayed")
                                     finishOnce()
                                 }
                                 override fun adClicked(ad: Ad) = Unit
