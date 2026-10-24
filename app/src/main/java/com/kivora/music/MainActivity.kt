@@ -1013,7 +1013,7 @@ class MainActivity : AppCompatActivity() {
                 if (!searchTabVisible && currentTab == "search") showTab("home")
             }
         }
-        libraryVisibilityToggle = label("Hide Songs/Albums", 11f, themeColor(232, 213, 255), true).apply {
+        libraryVisibilityToggle = label("Hide library controls", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             background = roundedBackground(themeColor(42, 25, 64), 14).apply {
@@ -1021,14 +1021,15 @@ class MainActivity : AppCompatActivity() {
             }
             isClickable = true
             isFocusable = true
-            contentDescription = "Show or hide Songs and Albums shortcuts in the library"
+            contentDescription = "Show or hide the library heading, count, playlist and favourites controls, Songs/Albums/Artists tabs, and sorting controls. The music list stays visible."
             setOnClickListener {
                 libraryShortcutsVisible = !libraryShortcutsVisible
                 getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
                     .putBoolean("hide_songs_albums_shortcuts", !libraryShortcutsVisible).apply()
-                libraryBrowseButtons["songs"]?.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
-                libraryBrowseButtons["albums"]?.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
-                text = if (libraryShortcutsVisible) "Hide Songs/Albums" else "Show Songs/Albums"
+                // Hide the entire library control/header section, but never hide the track list.
+                // This lets songs move upward and use the space freed by the controls.
+                libraryHeader.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
+                text = if (libraryShortcutsVisible) "Hide library controls" else "Show library controls"
             }
         }
         displayOptionsRow.addView(searchVisibilityToggle, LinearLayout.LayoutParams(0, -2, 1f).apply {
@@ -5713,7 +5714,7 @@ class MainActivity : AppCompatActivity() {
         searchRow.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
         libraryHeader.visibility =
-            if (tab == "library" && libraryContentVisible) View.VISIBLE else View.GONE
+            if (tab == "library" && libraryContentVisible && libraryShortcutsVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
             if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
