@@ -343,6 +343,8 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
+        searchTabVisible = !preferences.getBoolean("hide_search_tab", false)
+        libraryShortcutsVisible = !preferences.getBoolean("hide_songs_albums_shortcuts", false)
         // Keep the established A1 Family purple look; do not force the Neon theme.
         if (preferences.getString("theme", null) == null ||
             preferences.getString("theme", null) == "neon"
@@ -1000,6 +1002,8 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Show or hide the Search tab in bottom navigation"
             setOnClickListener {
                 searchTabVisible = !searchTabVisible
+                getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
+                    .putBoolean("hide_search_tab", !searchTabVisible).apply()
                 navigationButtons["search"]?.visibility = if (searchTabVisible) View.VISIBLE else View.GONE
                 text = if (searchTabVisible) "Hide search tab" else "Show search tab"
                 if (!searchTabVisible && currentTab == "search") showTab("home")
@@ -1016,6 +1020,8 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Show or hide Songs and Albums shortcuts in the library"
             setOnClickListener {
                 libraryShortcutsVisible = !libraryShortcutsVisible
+                getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
+                    .putBoolean("hide_songs_albums_shortcuts", !libraryShortcutsVisible).apply()
                 libraryBrowseButtons["songs"]?.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
                 libraryBrowseButtons["albums"]?.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
                 text = if (libraryShortcutsVisible) "Hide Songs/Albums" else "Show Songs/Albums"
