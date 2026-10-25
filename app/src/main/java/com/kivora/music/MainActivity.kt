@@ -345,7 +345,9 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
-        searchTabVisible = !preferences.getBoolean("hide_search_tab", false)
+        // The Search tab is a permanent navigation destination and must always remain visible.
+        searchTabVisible = true
+        preferences.edit().putBoolean("hide_search_tab", false).apply()
         libraryShortcutsVisible = !preferences.getBoolean("hide_songs_albums_shortcuts", false)
         // Keep the established A1 Family purple look; do not force the Neon theme.
         if (preferences.getString("theme", null) == null ||
@@ -1033,13 +1035,14 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
             contentDescription = "Show or hide the Search tab in bottom navigation"
+            // Search is intentionally permanent; do not allow this control to hide navigation.
             setOnClickListener {
-                searchTabVisible = !searchTabVisible
+                searchTabVisible = true
                 getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
-                    .putBoolean("hide_search_tab", !searchTabVisible).apply()
-                navigationButtons["search"]?.visibility = if (searchTabVisible) View.VISIBLE else View.GONE
-                text = if (searchTabVisible) "Hide search tab" else "Show search tab"
-                if (!searchTabVisible && currentTab == "search") showTab("home")
+                    .putBoolean("hide_search_tab", false).apply()
+                navigationButtons["search"]?.visibility = View.VISIBLE
+                text = "Search tab always visible"
+                Toast.makeText(this@MainActivity, "The Search tab is always available.", Toast.LENGTH_SHORT).show()
             }
         }
         libraryVisibilityToggle = label("Hide library controls", 11f, themeColor(232, 213, 255), true).apply {
@@ -1061,12 +1064,8 @@ class MainActivity : AppCompatActivity() {
                 text = if (libraryShortcutsVisible) "Hide library controls" else "Show library controls"
             }
         }
-        displayOptionsRow.addView(searchVisibilityToggle, LinearLayout.LayoutParams(0, -2, 1f).apply {
-            rightMargin = dp(5)
-        })
-        displayOptionsRow.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(0, -2, 1f).apply {
-            leftMargin = dp(5)
-        })
+        // Keep Search available; only the library-control section is user-hideable.
+        displayOptionsRow.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(-1, -2))
         root.addView(displayOptionsRow, LinearLayout.LayoutParams(-1, -2))
 
         // Keep a live-capable Start.io banner visible on the main library screen,
