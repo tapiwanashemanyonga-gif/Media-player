@@ -152,7 +152,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) enforceExclusivePlayback(stopVideo = false)
+            // If video starts despite a delayed/racing music request, stop only the music player.
+            // Never call a helper here that can also pause this video player.
+            if (isPlaying) player?.pause()
             tryRunPendingPlaybackAfterAd()
         }
 
@@ -301,7 +303,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying && videoPlayer?.isPlaying == true) enforceExclusivePlayback(stopVideo = true)
+            // If music starts despite a delayed/racing video request, stop only video.
+            // Do not pause the music that just started.
+            if (isPlaying) {
+                videoPlayer?.let { video ->
+                    video.playWhenReady = false
+                    video.pause()
+                }
+            }
             updatePlayButton()
             updateArtworkMotion(isPlaying)
             if (!isPlaying && currentTab == "search" && !musicTabAdAttempted && videoPlayer?.isPlaying != true) {
@@ -599,26 +608,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Enforces a strict single-media rule across the service-owned music player and the
-     * Activity-owned video player. Pause commands are issued before the new player starts,
-     * and player callbacks re-check the invariant if a delayed start races with the switch.
+     * Stop only the competing video player before dispatching music. Keeping this separate
+     * from playback callbacks avoids accidentally pausing the newly started music.
      */
-    private fun enforceExclusivePlayback(stopVideo: Boolean) {
-        if (stopVideo) {
-            videoPlayer?.let { video ->
-                video.playWhenReady = false
-                video.pause()
-            }
-            player?.pause()
-        } else {
-            player?.pause()
-            videoPlayer?.let { video ->
-                if (video.playWhenReady.not() && video.playbackState != Player.STATE_IDLE &&
-                    video.playbackState != Player.STATE_ENDED
-                ) {
-                    video.playWhenReady = true
-                }
-            }
+    private fun stopVideoForMusic() {
+        videoPlayer?.let { video ->
+            video.playWhenReady = false
+            video.pause()
         }
     }
 
@@ -627,7 +623,7 @@ class MainActivity : AppCompatActivity() {
         when (intent.kind) {
             "resume_music" -> {
                 if (player == null) return false
-                enforceExclusivePlayback(stopVideo = true)
+                stopVideoForMusic()
                 dispatchMusicPlayback(intent)
                 return false
             }
@@ -658,6 +654,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     intent.index.takeIf { it in 0 until p.mediaItemCount }
                 } ?: return false
+                stopVideoForMusic()
                 dispatchMusicPlayback(intent, index = index)
                 upNextDialog?.dismiss()
                 return false
@@ -668,7 +665,7 @@ class MainActivity : AppCompatActivity() {
                 if (video.currentMediaItem?.localConfiguration?.uri == uri &&
                     video.playbackState != Player.STATE_IDLE &&
                     video.playbackState != Player.STATE_ENDED) {
-                    enforceExclusivePlayback(stopVideo = false)
+                    player?.pause()
                     video.play()
                     return true
                 }
@@ -714,7 +711,7 @@ class MainActivity : AppCompatActivity() {
                     video.setMediaItem(MediaItem.Builder().setUri(uri).setMediaId(intent.requestId).build())
                     video.prepare()
                 }
-                enforceExclusivePlayback(stopVideo = false)
+                player?.pause()
                 video.play()
                 return true
             }
