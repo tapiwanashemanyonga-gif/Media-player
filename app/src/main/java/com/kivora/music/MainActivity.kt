@@ -636,7 +636,7 @@ class MainActivity : AppCompatActivity() {
                 val selectedIndex = queue.indexOfFirst { it.uri.toString() == selectedUri }
                 if (queue.isNotEmpty() && selectedIndex >= 0) {
                     activeQueue = queue
-                    enforceExclusivePlayback(stopVideo = true)
+                    stopVideoForMusic()
                     // Service-owned request dispatch preserves the request ID across retries.
                     dispatchMusicPlayback(intent, queue, selectedIndex)
                     updateNowPlaying()
