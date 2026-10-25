@@ -675,7 +675,7 @@ class MainActivity : AppCompatActivity() {
                 renderVideos(searchBox.text?.toString().orEmpty())
                 videoStatus.text = "Playing: ${intent.title.orEmpty()}"
                 // Stop music first; never start video while the background service is still playing.
-                enforceExclusivePlayback(stopVideo = true)
+                player?.pause()
                 try {
                     // Keep the full local video library in the ExoPlayer timeline. Media3
                     // advances automatically to the next item when the current video ends.
