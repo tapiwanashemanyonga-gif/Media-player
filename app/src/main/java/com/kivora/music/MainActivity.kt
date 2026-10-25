@@ -25,6 +25,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.EditText
 import com.startapp.sdk.ads.banner.Banner
+import com.startapp.sdk.ads.banner.BannerListener
 import com.startapp.sdk.ads.nativead.StartAppNativeAd
 import com.startapp.sdk.ads.nativead.NativeAdDetails
 import com.startapp.sdk.ads.nativead.NativeAdPreferences
@@ -1073,17 +1074,25 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(6), 0, dp(6))
             contentDescription = "Advertisement area"
         }
-        libraryAdContainer.addView(
-            label("ADVERTISEMENT", 9f, themeColor(171, 151, 196), true).apply {
-                gravity = Gravity.CENTER
-                letterSpacing = 0.12f
-                setPadding(0, 0, 0, dp(4))
-            },
-            LinearLayout.LayoutParams(-1, -2)
-        )
-        val libraryStartIoBanner = Banner(this).apply {
+        val libraryStartIoBanner = Banner(this, object : BannerListener {
+            override fun onReceiveAd(view: View) {
+                Log.i("A1FamilyAds", "Library banner loaded")
+                libraryAdContainer.visibility = View.VISIBLE
+            }
+            override fun onFailedToReceiveAd(view: View) {
+                Log.w("A1FamilyAds", "Library banner failed to load; hiding empty ad slot")
+                libraryAdContainer.visibility = View.GONE
+            }
+            override fun onImpression(view: View) {
+                Log.i("A1FamilyAds", "Library banner impression")
+            }
+            override fun onClick(view: View) {
+                Log.i("A1FamilyAds", "Library banner clicked")
+            }
+        }).apply {
             contentDescription = "Start.io banner advertisement"
         }
+        libraryAdContainer.visibility = View.GONE
         libraryAdContainer.addView(
             libraryStartIoBanner,
             LinearLayout.LayoutParams(-1, -2)
@@ -1374,9 +1383,25 @@ class MainActivity : AppCompatActivity() {
                 setStroke(dp(1), themeColor(79, 54, 103))
             }
         }
-        val startIoBanner = Banner(this).apply {
-            contentDescription = "Advertisement"
+        val startIoBanner = Banner(this, object : BannerListener {
+            override fun onReceiveAd(view: View) {
+                Log.i("A1FamilyAds", "Now Playing banner loaded")
+                playerAdRow.visibility = View.VISIBLE
+            }
+            override fun onFailedToReceiveAd(view: View) {
+                Log.w("A1FamilyAds", "Now Playing banner failed to load; hiding empty ad slot")
+                playerAdRow.visibility = View.GONE
+            }
+            override fun onImpression(view: View) {
+                Log.i("A1FamilyAds", "Now Playing banner impression")
+            }
+            override fun onClick(view: View) {
+                Log.i("A1FamilyAds", "Now Playing banner clicked")
+            }
+        }).apply {
+            contentDescription = "Start.io banner advertisement"
         }
+        playerAdRow.visibility = View.GONE
         playerAdRow.addView(startIoBanner, LinearLayout.LayoutParams(0, -2, 1f))
         val closeBanner = label("×", 23f, themeColor(217, 195, 239), true).apply {
             gravity = Gravity.CENTER
@@ -3096,16 +3121,24 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(4), 0, dp(10))
             contentDescription = "Start.io home banner advertisement area"
         }
+        homeAdContainer.visibility = View.GONE
         homeAdContainer.addView(
-            label("ADVERTISEMENT", 9f, themeColor(171, 151, 196), true).apply {
-                gravity = Gravity.CENTER
-                letterSpacing = 0.12f
-                setPadding(0, 0, 0, dp(4))
-            },
-            LinearLayout.LayoutParams(-1, -2)
-        )
-        homeAdContainer.addView(
-            Banner(this).apply {
+            Banner(this, object : BannerListener {
+                override fun onReceiveAd(view: View) {
+                    Log.i("A1FamilyAds", "Home banner loaded")
+                    homeAdContainer.visibility = View.VISIBLE
+                }
+                override fun onFailedToReceiveAd(view: View) {
+                    Log.w("A1FamilyAds", "Home banner failed to load; hiding empty ad slot")
+                    homeAdContainer.visibility = View.GONE
+                }
+                override fun onImpression(view: View) {
+                    Log.i("A1FamilyAds", "Home banner impression")
+                }
+                override fun onClick(view: View) {
+                    Log.i("A1FamilyAds", "Home banner clicked")
+                }
+            }).apply {
                 contentDescription = "Start.io home banner advertisement"
             },
             LinearLayout.LayoutParams(-1, -2)
