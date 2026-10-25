@@ -66,7 +66,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/a1-family-release.jks"
           echo "Release keystore restored to temporary runner storage."
 
-      - name: Build debug APK, signed release APK, and release AAB
+      - name: Build signed release APK and release AAB
         shell: bash
         env:
           A1_KEYSTORE_FILE: ${{ runner.temp }}/a1-family-release.jks
@@ -75,7 +75,7 @@ jobs:
           A1_KEY_ALIAS: a1family
         run: |
           set -euo pipefail
-          gradle assembleDebug assembleRelease bundleRelease
+          gradle assembleRelease bundleRelease
 
       - name: Verify release APK signature
         shell: bash
@@ -94,12 +94,18 @@ jobs:
           jarsigner -verify "$AAB"
           echo "Release AAB signature verification passed."
 
-      - name: Upload build artifacts
+      - name: Upload release APK only
         uses: actions/upload-artifact@v4
         with:
-          name: A1-Family-Android-Builds
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
-            app/build/outputs/bundle/release/app-release.aab
+          name: A1-Family-Release-APK
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release AAB separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: A1-Family-Release-AAB
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
