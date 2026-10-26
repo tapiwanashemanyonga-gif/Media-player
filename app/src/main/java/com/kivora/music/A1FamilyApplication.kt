@@ -982,7 +982,7 @@ internal object StartIoVideoAds {
                 override fun onFailedToReceiveAd(ad: Ad?) {
                     // Start.io documents that it retries after this callback. Keep the request
                     // active and let the watchdog recover only if no later callback arrives.
-                    Log.e(TAG, "Interstitial preload onFailedToReceiveAd callback received; ad=${ad?.javaClass?.name ?: \"null\"}")
+                    Log.e(TAG, "Interstitial preload onFailedToReceiveAd callback received; adPresent=${ad != null}")
                 }
             })
         } catch (error: RuntimeException) {
