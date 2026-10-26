@@ -142,7 +142,7 @@ internal object StartIoVideoAds {
     enum class ShowResult { SHOWN, UNAVAILABLE, BLOCKED_UNRESOLVED, EXPIRED }
 
     private const val TAG = "A1FamilyAds"
-    private const val STARTIO_APP_ID = "209140404"
+    private const val STARTIO_APP_ID = "209565109"
     private const val FREQUENCY_CAP_MS = 30 * 60 * 1000L
     private const val OPTIONAL_FREQUENCY_CAP_MS = 30 * 60 * 1000L
     private const val LAST_OPTIONAL_SHOWN_AT = "last_optional_ad_shown_at"
