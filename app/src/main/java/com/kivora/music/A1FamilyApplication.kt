@@ -257,6 +257,7 @@ internal object StartIoVideoAds {
             schedulePriorProcessDisplayRecovery()
         }
         expireStalePendingRequest()
+        Log.i(TAG, "SDK init requested; appId=$STARTIO_APP_ID; testAds=${BuildConfig.DEBUG}")
         try {
             // Keep test ads enabled until production configuration is explicitly approved.
             // Debug APKs use test inventory; signed release builds request live ads.
@@ -266,15 +267,18 @@ internal object StartIoVideoAds {
                 .setReturnAdsEnabled(false)
                 .setCallback {
                     sdkReady = true
+                    Log.i(TAG, "SDK initialization callback received; SDK marked ready")
                     preloadForActiveActivity()
                 }
                 .init()
+            Log.i(TAG, "Start.io init() returned without a synchronous exception")
         } catch (error: RuntimeException) {
-            Log.w(TAG, "Start.io initialization failed; playback remains available", error)
+            Log.e(TAG, "Start.io initialization failed; playback remains available", error)
         }
     }
 
     fun attach(activity: MainActivity) {
+        Log.i(TAG, "Ad host attached; initialized=$initialized sdkReady=$sdkReady finishing=${activity.isFinishing} destroyed=${activity.isDestroyed}")
         val isNewActivity = activeActivity.get() !== activity
         activeActivity = WeakReference(activity)
         if (isNewActivity) recoverDispatchedPlayback()
@@ -941,8 +945,12 @@ internal object StartIoVideoAds {
         val activity = activeActivity.get() ?: return
         if (!initialized || !sdkReady || loading || showing || pendingPersistenceFailed || loadedAd != null ||
             activity.isFinishing || activity.isDestroyed
-        ) return
+        ) {
+            Log.i(TAG, "Preload skipped; initialized=$initialized sdkReady=$sdkReady loading=$loading showing=$showing persistenceFailed=$pendingPersistenceFailed loaded=${loadedAd != null} finishing=${activity.isFinishing} destroyed=${activity.isDestroyed}")
+            return
+        }
 
+        Log.i(TAG, "Starting interstitial preload")
         loading = true
         val generation = ++loadGeneration
         val owner = WeakReference(activity)
@@ -954,13 +962,17 @@ internal object StartIoVideoAds {
             return
         }
         currentAd = request
-        val timeout = Runnable { completeLoad(generation, owner, request, received = false) }
+        val timeout = Runnable {
+            Log.e(TAG, "Interstitial preload watchdog timed out after ${LOAD_TIMEOUT_MS}ms")
+            completeLoad(generation, owner, request, received = false)
+        }
         loadTimeout = timeout
         mainHandler.postDelayed(timeout, LOAD_TIMEOUT_MS)
 
         try {
             request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
                 override fun onReceiveAd(ad: Ad) {
+                    Log.i(TAG, "Interstitial preload onReceiveAd callback received")
                     mainHandler.post {
                         mainHandler.removeCallbacks(timeout)
                         completeLoad(generation, owner, request, received = true)
@@ -970,7 +982,7 @@ internal object StartIoVideoAds {
                 override fun onFailedToReceiveAd(ad: Ad?) {
                     // Start.io documents that it retries after this callback. Keep the request
                     // active and let the watchdog recover only if no later callback arrives.
-                    Log.w(TAG, "Start.io video preload was unavailable; leaving playback unaffected")
+                    Log.e(TAG, "Interstitial preload onFailedToReceiveAd callback received; ad=${ad?.javaClass?.name ?: \"null\"}")
                 }
             })
         } catch (error: RuntimeException) {
@@ -990,6 +1002,7 @@ internal object StartIoVideoAds {
         loadTimeout = null
         loading = false
         val activity = owner.get()
+        Log.i(TAG, "Preload completed; received=$received hostPresent=${activity != null} activeHost=${activity != null && activeActivity.get() === activity}")
         if (received && activity != null && activeActivity.get() === activity &&
             !activity.isFinishing && !activity.isDestroyed
         ) {
