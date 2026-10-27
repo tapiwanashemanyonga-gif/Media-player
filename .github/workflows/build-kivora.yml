@@ -124,6 +124,24 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
 
+      - name: Audit published v1.4.0 APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLISHED_APK="$RUNNER_TEMP/published-v1.4.0.apk"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/tapiwanashemanyonga-gif/Media-player/releases/download/v1.4.0/A1FamilyMediaPlayer.apk" \
+            --output "$PUBLISHED_APK"
+          test -s "$PUBLISHED_APK"
+          echo "Published v1.4.0 APK package and version:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PUBLISHED_APK" | head -n 1
+          echo "Published v1.4.0 APK signing certificate:"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PUBLISHED_APK"
+          echo "Newly built APK package and version:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/release/app-release.apk | head -n 1
+          echo "Newly built APK signing certificate:"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+
       - name: Verify release AAB signature
         shell: bash
         run: |
