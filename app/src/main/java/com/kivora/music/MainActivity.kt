@@ -402,17 +402,13 @@ class MainActivity : AppCompatActivity() {
             ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: "Selected media"
 
-        val normalizedMime = mimeType.lowercase(Locale.ROOT)
-        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        val isVideo = normalizedMime.startsWith("video/") ||
-            extension in setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "m4v", "ts")
-        val isAudio = normalizedMime.startsWith("audio/") ||
-            extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "mid", "midi")
-
-        when {
-            isVideo -> continueUserPlayback(PendingPlayback("play_video", uri = uri.toString(), title = name))
-            isAudio -> continueUserPlayback(PendingPlayback("play_queue_item", uri = uri.toString(), title = name))
-            else -> Toast.makeText(this, "This file type isn't supported by A1 FAMILY MEDIA.", Toast.LENGTH_LONG).show()
+        when (MediaFileTypeClassifier.classify(mimeType, name)) {
+            MediaFileTypeClassifier.Kind.VIDEO ->
+                continueUserPlayback(PendingPlayback("play_video", uri = uri.toString(), title = name))
+            MediaFileTypeClassifier.Kind.AUDIO ->
+                continueUserPlayback(PendingPlayback("play_queue_item", uri = uri.toString(), title = name))
+            MediaFileTypeClassifier.Kind.UNSUPPORTED ->
+                Toast.makeText(this, "This file type isn't supported by A1 FAMILY MEDIA.", Toast.LENGTH_LONG).show()
         }
     }
 
