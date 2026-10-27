@@ -16,6 +16,7 @@ on:
       - ci/protect-media-integration-and-ad-free-v2
       - ci/enforce-release-identity-match
       - ci/guard-file-open-and-video-permission
+      - test/media-file-classification
 
 permissions:
   contents: read
