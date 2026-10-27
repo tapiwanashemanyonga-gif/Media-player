@@ -5966,6 +5966,14 @@ class MainActivity : AppCompatActivity() {
                 else Color.TRANSPARENT,
                 14
             )
+            button.isSelected = selected
+            button.contentDescription = when (name) {
+                "home" -> if (selected) "Home, selected" else "Open Home"
+                "search" -> if (selected) "Search, selected" else "Search music"
+                "library" -> if (selected) "Library, selected" else "Open music library and playlists"
+                "videos" -> if (selected) "Videos, selected" else "Browse videos"
+                else -> name
+            }
         }
     }
 
