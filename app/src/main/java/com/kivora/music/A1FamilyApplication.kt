@@ -129,8 +129,9 @@ internal data class PlaybackJournal(
 }
 
 /**
- * Central Start.io coordinator. Playback is independent of ads; optional interstitials are
- * shown only at a controlled app-open or download-count checkpoint.
+ * Coordinates durable playback requests and migrates legacy persisted state. The legacy
+ * advertising-state fields below are retained for safe recovery of older installations; this
+ * coordinator no longer displays ads.
  */
 internal object PlaybackRequestCoordinator {
     private const val TAG = "A1FamilyPlayback"
