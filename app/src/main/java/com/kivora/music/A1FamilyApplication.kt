@@ -13,7 +13,7 @@ import org.json.JSONObject
 class A1FamilyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        StartIoVideoAds.initialize(this)
+        PlaybackRequestCoordinator.initialize(this)
     }
 }
 
@@ -132,7 +132,7 @@ internal data class PlaybackJournal(
  * Central Start.io coordinator. Playback is independent of ads; optional interstitials are
  * shown only at a controlled app-open or download-count checkpoint.
  */
-internal object StartIoVideoAds {
+internal object PlaybackRequestCoordinator {
     enum class ShowResult { SHOWN, UNAVAILABLE, BLOCKED_UNRESOLVED, EXPIRED }
 
 
@@ -419,7 +419,7 @@ internal object StartIoVideoAds {
             return
         }
         pendingPlayback = null
-        activity.runPlaybackAfterAd(intent)
+        activity.runPlaybackRequest(intent)
     }
 
     /** Expire only clearly old requests with a trustworthy timestamp and no unresolved ad. */
