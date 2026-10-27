@@ -659,9 +659,18 @@ class MainActivity : AppCompatActivity() {
                     }
                 } else {
                     intent.index.takeIf { it in 0 until p.mediaItemCount }
-                } ?: return false
+                }
                 stopVideoForMusic()
-                dispatchMusicPlayback(intent, index = index)
+                if (index != null) {
+                    // Existing library item: preserve the current queue and its metadata.
+                    dispatchMusicPlayback(intent, index = index)
+                } else if (!intent.uri.isNullOrBlank()) {
+                    // Files/other apps can send a valid audio URI that is not in the scanned
+                    // queue. The playback service can safely build a single-item fallback.
+                    dispatchMusicPlayback(intent)
+                } else {
+                    return false
+                }
                 upNextDialog?.dismiss()
                 return false
             }
