@@ -148,6 +148,7 @@ class MainActivity : AppCompatActivity() {
             val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
             selectedVideoUri = uri
             navigationVideoUri = uri
+            updateVideoPlayerVisibility()
             if (::videoList.isInitialized && ::searchBox.isInitialized) {
                 renderVideos(searchBox.text?.toString().orEmpty())
             }
@@ -185,6 +186,9 @@ class MainActivity : AppCompatActivity() {
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
     private var selectedVideoUri: String? = null
+    private var videoFullscreenButton: View? = null
+    private var videoMinimizeButton: View? = null
+    private var videoPlayerMinimized = false
     private var currentTab = "search"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
@@ -672,6 +676,7 @@ class MainActivity : AppCompatActivity() {
                     return true
                 }
                 selectedVideoUri = uri.toString()
+                videoPlayerMinimized = false
                 navigationVideoUri = uri.toString()
                 lastFailedVideoUri = null
                 renderVideos(searchBox.text?.toString().orEmpty())
@@ -700,6 +705,7 @@ class MainActivity : AppCompatActivity() {
                     // Re-assert the exclusive rule immediately before starting video.
                     player?.pause()
                     video.playWhenReady = true
+                    updateVideoPlayerVisibility()
                 } catch (_: RuntimeException) {
                     reportVideoPlaybackFailure(uri.toString())
                     return false
@@ -1266,6 +1272,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(themeColor(8, 6, 13))
             setShutterBackgroundColor(themeColor(8, 6, 13))
             contentDescription = "Video player"
+            visibility = View.GONE
         }
         val videoPlayerActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1284,6 +1291,8 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Open video in fullscreen"
             setOnClickListener { showVideoFullscreen() }
         }
+        videoFullscreenButton = fullscreenButton
+        fullscreenButton.visibility = View.GONE
         videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
@@ -1324,13 +1333,14 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
+        videoMinimizeButton = minimizeVideoButton
+        minimizeVideoButton.visibility = View.GONE
         minimizeVideoButton.setOnClickListener {
-            val shouldMinimize = videoPlayerView.visibility == View.VISIBLE
-            videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
+            videoPlayerMinimized = !videoPlayerMinimized
+            updateVideoPlayerVisibility()
+            minimizeVideoButton.text = if (videoPlayerMinimized) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
             minimizeVideoButton.contentDescription =
-                if (shouldMinimize) "Restore video player" else "Minimize video player"
+                if (videoPlayerMinimized) "Restore video player" else "Minimize video player"
         }
         videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
@@ -3734,39 +3744,81 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (visibleSongs.isEmpty() && !isLibraryDetail) {
+            val title = when {
+                songs.isEmpty() -> "Your music starts here"
+                selectedPlaylist != null -> "This playlist is empty"
+                showFavoritesOnly -> "Your favourites are waiting"
+                normalized.isNotEmpty() -> "Nothing matched that search"
+                showingCollections && libraryBrowseMode == "albums" -> "No albums to show"
+                showingCollections && libraryBrowseMode == "artists" -> "No artists to show"
+                else -> "Nothing to show yet"
+            }
             val message = when {
                 songs.isEmpty() ->
-                    "No music found yet.\nAdd audio files to your device and try again."
-
+                    "Audio files on this device will appear in your library after media access is granted."
                 selectedPlaylist != null ->
-                    "This playlist has no available tracks.\nAdd songs from a song row or the Playlists menu."
-
+                    "Add tracks from the song list or choose another playlist."
                 showFavoritesOnly ->
-                    "No favourites yet.\nTap ☆ beside a song to add it."
-
-                normalized.isNotEmpty() && showingCollections && libraryBrowseMode == "albums" ->
-                    "No albums match your search. Use × to clear it."
-                normalized.isNotEmpty() && showingCollections && libraryBrowseMode == "artists" ->
-                    "No artists match your search. Use × to clear it."
-                normalized.isNotEmpty() -> "No songs match your search. Use × to clear it."
-                showingCollections && libraryBrowseMode == "albums" -> "No albums available."
-                showingCollections && libraryBrowseMode == "artists" -> "No artists available."
-                else -> "No songs match your filters."
+                    "Mark a song as a favourite using the star beside it, and it will appear here."
+                normalized.isNotEmpty() ->
+                    "Try a different title, artist or album name, or clear your search."
+                showingCollections && libraryBrowseMode == "albums" ->
+                    "Albums from your local music collection will appear here."
+                showingCollections && libraryBrowseMode == "artists" ->
+                    "Artists from your local music collection will appear here."
+                else -> "Try changing your search or library filters."
             }
-
-            songList.addView(
-                label(
-                    message,
-                    14f,
-                    themeColor(174, 159, 194)
-                ).apply {
-                    setPadding(dp(4), dp(18), dp(4), dp(18))
-                    // KIVORA_ROUND23_EMPTY_LIBRARY_CARD
-                    background = roundedBackground(themeColor(34, 16, 56), 18).apply { setStroke(dp(1), themeColor(145, 95, 190)) }
-                    setPadding(dp(16), dp(18), dp(16), dp(18))
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(24), dp(20), dp(24))
+                background = roundedBackground(themeColor(29, 18, 43), 20).apply {
+                    setStroke(dp(1), themeColor(88, 58, 117))
                 }
-            )
-
+            }
+            emptyCard.addView(label("♫", 30f, themeColor(188, 139, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(10))
+            })
+            emptyCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(8))
+            })
+            emptyCard.addView(label(message, 13f, themeColor(184, 168, 204)).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(2))
+            })
+            val actionLabel = when {
+                selectedPlaylist != null || showFavoritesOnly -> "Show all songs"
+                normalized.isNotEmpty() -> "Clear search"
+                else -> null
+            }
+            if (actionLabel != null) {
+                val actionButton = label(actionLabel, 12f, themeColor(250, 247, 255), true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    background = roundedBackground(themeColor(91, 48, 132), 14).apply {
+                        setStroke(dp(1), themeColor(172, 112, 224))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        showFavoritesOnly = false
+                        selectedPlaylist = null
+                        searchBox.text?.clear()
+                        renderSongs("")
+                    }
+                }
+                emptyCard.addView(actionButton, LinearLayout.LayoutParams(-2, -2).apply {
+                    topMargin = dp(14)
+                })
+            }
+            songList.addView(emptyCard, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
+                bottomMargin = dp(12)
+            })
             return
         }
 
@@ -4947,17 +4999,71 @@ class MainActivity : AppCompatActivity() {
     private fun renderVideos(query: String = searchBox.text?.toString().orEmpty()) {
         videoList.removeAllViews()
 
+        fun addVideoEmptyState(title: String, message: String, actionLabel: String? = null, action: (() -> Unit)? = null) {
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(22), dp(24), dp(22), dp(24))
+                background = roundedBackground(themeColor(29, 19, 43), 20).apply {
+                    setStroke(dp(1), themeColor(88, 58, 117))
+                }
+            }
+            emptyCard.addView(label("▶", 30f, themeColor(188, 139, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(10))
+            })
+            emptyCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(7))
+            })
+            emptyCard.addView(label(message, 13f, themeColor(184, 168, 204)).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(4))
+            })
+            if (actionLabel != null && action != null) {
+                val actionButton = label(actionLabel, 12f, themeColor(250, 247, 255), true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    background = roundedBackground(themeColor(91, 48, 132), 14).apply {
+                        setStroke(dp(1), themeColor(172, 112, 224))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { action() }
+                }
+                emptyCard.addView(actionButton, LinearLayout.LayoutParams(-2, -2).apply {
+                    topMargin = dp(14)
+                })
+            }
+            videoList.addView(emptyCard, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
+                bottomMargin = dp(12)
+            })
+        }
+
         if (deviceVideos.isEmpty()) {
-            videoStatus.text = "No videos found. Add videos to your device and retry."
+            videoStatus.text = "Your video library is ready when you are."
+            addVideoEmptyState(
+                "No videos yet",
+                "Videos saved on this device will appear here. Your music library is unchanged.",
+                "Refresh video library"
+            ) { loadVideos() }
             return
         }
 
         val filteredVideos = deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }
         if (filteredVideos.isEmpty()) {
             videoStatus.text = "No videos match your search."
+            addVideoEmptyState(
+                "No matching videos",
+                "Try another title or clear the search field to see your full video library.",
+                "Clear search"
+            ) { searchBox.text?.clear() }
             return
         }
-        videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
+        videoStatus.text = "${filteredVideos.size} matching videos"
 
         filteredVideos.forEach { video ->
             val compactVideoRow = resources.configuration.screenWidthDp < 420
@@ -5354,6 +5460,7 @@ class MainActivity : AppCompatActivity() {
         lastFailedVideoUri = failedUri
         val failedTitle = deviceVideos.firstOrNull { it.uri.toString() == failedUri }?.title ?: "video"
         selectedVideoUri = null
+        updateVideoPlayerVisibility()
         if (::videoStatus.isInitialized) {
             renderVideos(searchBox.text?.toString().orEmpty())
             videoStatus.text = "Couldn't play $failedTitle. Choose another video or use previous/next."
@@ -5363,6 +5470,20 @@ class MainActivity : AppCompatActivity() {
             "Couldn't play $failedTitle. Choose another video.",
             Toast.LENGTH_LONG
         ).show()
+    }
+
+    /** Collapse the inline video surface until a video is actually selected and loaded. */
+    private fun updateVideoPlayerVisibility() {
+        if (!::videoPlayerView.isInitialized) return
+        val currentUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
+        val hasActiveVideo = !selectedVideoUri.isNullOrBlank() && currentUri != null
+        val visibility = if (hasActiveVideo && !videoPlayerMinimized) View.VISIBLE else View.GONE
+        videoPlayerView.visibility = visibility
+        videoFullscreenButton?.visibility = visibility
+        videoMinimizeButton?.visibility = if (hasActiveVideo) View.VISIBLE else View.GONE
+        videoMinimizeButton?.let { button ->
+            button.contentDescription = if (videoPlayerMinimized) "Restore video player" else "Minimize video player"
+        }
     }
 
     private fun restoreVideoPlayerView() {
@@ -5778,6 +5899,7 @@ class MainActivity : AppCompatActivity() {
             if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
             if (tab == "videos") View.VISIBLE else View.GONE
+        updateVideoPlayerVisibility()
         if (tab == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
@@ -5793,6 +5915,23 @@ class MainActivity : AppCompatActivity() {
         homeScroll.visibility = if (tab == "home") View.VISIBLE else View.GONE
         playerScroll.visibility = if (tab == "nowPlaying") View.VISIBLE else View.GONE
         miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
+
+        // A short, restrained entrance transition makes tab changes feel deliberate without
+        // changing any playback state or rebuilding the media lists.
+        if (previousTab != tab) {
+            val incomingContent = when (tab) {
+                "home" -> homeScroll
+                "nowPlaying" -> playerScroll
+                "videos" -> videoPlaceholder
+                "search", "library" -> songScroll
+                else -> null
+            }
+            incomingContent?.let { content ->
+                content.alpha = 0.94f
+                content.translationY = dp(5).toFloat()
+                content.animate().alpha(1f).translationY(0f).setDuration(170L).start()
+            }
+        }
 
         if (tab == "search") {
             if (previousTab != "search") {
@@ -5827,6 +5966,14 @@ class MainActivity : AppCompatActivity() {
                 else Color.TRANSPARENT,
                 14
             )
+            button.isSelected = selected
+            button.contentDescription = when (name) {
+                "home" -> if (selected) "Home, selected" else "Open Home"
+                "search" -> if (selected) "Search, selected" else "Search music"
+                "library" -> if (selected) "Library, selected" else "Open music library and playlists"
+                "videos" -> if (selected) "Videos, selected" else "Browse videos"
+                else -> name
+            }
         }
     }
 
