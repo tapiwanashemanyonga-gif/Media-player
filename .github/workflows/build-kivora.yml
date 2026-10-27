@@ -14,6 +14,7 @@ on:
       - chore/reliability-readme-diff-check
       - chore/clarify-legacy-playback-recovery
       - ci/protect-media-integration-and-ad-free-v2
+      - ci/enforce-release-identity-match
 
 permissions:
   contents: read
@@ -129,18 +130,49 @@ jobs:
         run: |
           set -euo pipefail
           PUBLISHED_APK="$RUNNER_TEMP/published-v1.4.0.apk"
+          BUILT_APK="app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+
           curl --fail --location --retry 3 --silent --show-error \
             "https://github.com/tapiwanashemanyonga-gif/Media-player/releases/download/v1.4.0/A1FamilyMediaPlayer.apk" \
             --output "$PUBLISHED_APK"
           test -s "$PUBLISHED_APK"
-          echo "Published v1.4.0 APK package and version:"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PUBLISHED_APK" | head -n 1
-          echo "Published v1.4.0 APK signing certificate:"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PUBLISHED_APK"
-          echo "Newly built APK package and version:"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/release/app-release.apk | head -n 1
-          echo "Newly built APK signing certificate:"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          test -s "$BUILT_APK"
+
+          published_identity="$("$AAPT" dump badging "$PUBLISHED_APK" | sed -n '1p' | sed -n "s/^package: name='\\([^']*\\)' versionCode='\\([^']*\\)' versionName='\\([^']*\\)'.*/\\1|\\2|\\3/p")"
+          built_identity="$("$AAPT" dump badging "$BUILT_APK" | sed -n '1p' | sed -n "s/^package: name='\\([^']*\\)' versionCode='\\([^']*\\)' versionName='\\([^']*\\)'.*/\\1|\\2|\\3/p")"
+
+          echo "Published APK identity: $published_identity"
+          echo "Newly built APK identity: $built_identity"
+          expected_identity="com.a1family.media|5|1.4"
+          if [[ "$published_identity" != "$expected_identity" ]]; then
+            echo "ERROR: Published APK identity is not the expected A1 Family v1.4 identity ($expected_identity)."
+            exit 1
+          fi
+          if [[ "$built_identity" != "$expected_identity" ]]; then
+            echo "ERROR: Newly built APK identity is not the expected A1 Family v1.4 identity ($expected_identity)."
+            exit 1
+          fi
+          if [[ "$published_identity" != "$built_identity" ]]; then
+            echo "ERROR: Published and newly built APK identities differ."
+            exit 1
+          fi
+
+          published_cert="$("$APKSIGNER" verify --verbose --print-certs "$PUBLISHED_APK" | sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' | sed -n '1p')"
+          built_cert="$("$APKSIGNER" verify --verbose --print-certs "$BUILT_APK" | sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' | sed -n '1p')"
+          if [[ -z "$published_cert" || -z "$built_cert" ]]; then
+            echo "ERROR: Could not read the signing-certificate fingerprint from both APKs."
+            exit 1
+          fi
+          echo "Published APK certificate SHA-256: $published_cert"
+          echo "Newly built APK certificate SHA-256: $built_cert"
+          if [[ "$published_cert" != "$built_cert" ]]; then
+            echo "ERROR: Published and newly built APK signing certificates differ."
+            exit 1
+          fi
+          echo "Published APK identity and signing certificate match the expected release."
+
 
       - name: Verify release AAB signature
         shell: bash
