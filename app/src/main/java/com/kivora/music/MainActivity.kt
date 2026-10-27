@@ -5312,9 +5312,9 @@ class MainActivity : AppCompatActivity() {
             SettingsAction("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
             SettingsAction("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
             SettingsAction("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
-            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player with optional sponsored discovery") {
+            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player with no advertising") {
                 AlertDialog.Builder(this).setTitle("A1 Family")
-                    .setMessage("Enjoy local music and videos, playlists, favourites, and uninterrupted background playback. Optional sponsored content is clearly labelled and never interrupts playback.")
+                    .setMessage("Enjoy an ad-free local music and video player with playlists, favourites, and uninterrupted background playback.")
                     .setPositiveButton("Got it", null).show()
             }
         )
