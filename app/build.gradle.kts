@@ -66,4 +66,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("androidx.media3:media3-session:1.6.1")
     implementation("androidx.media3:media3-ui:1.6.1")
+    // Pin the verified Start.io release; never resolve a changing 5.+ version.
+    implementation("com.startapp:inapp-sdk:5.4.0")
 }
