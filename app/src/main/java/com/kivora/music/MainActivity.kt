@@ -676,6 +676,7 @@ class MainActivity : AppCompatActivity() {
                     return true
                 }
                 selectedVideoUri = uri.toString()
+                videoPlayerMinimized = false
                 navigationVideoUri = uri.toString()
                 lastFailedVideoUri = null
                 renderVideos(searchBox.text?.toString().orEmpty())
