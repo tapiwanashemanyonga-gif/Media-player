@@ -3744,39 +3744,81 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (visibleSongs.isEmpty() && !isLibraryDetail) {
+            val title = when {
+                songs.isEmpty() -> "Your music starts here"
+                selectedPlaylist != null -> "This playlist is empty"
+                showFavoritesOnly -> "Your favourites are waiting"
+                normalized.isNotEmpty() -> "Nothing matched that search"
+                showingCollections && libraryBrowseMode == "albums" -> "No albums to show"
+                showingCollections && libraryBrowseMode == "artists" -> "No artists to show"
+                else -> "Nothing to show yet"
+            }
             val message = when {
                 songs.isEmpty() ->
-                    "No music found yet.\nAdd audio files to your device and try again."
-
+                    "Audio files on this device will appear in your library after media access is granted."
                 selectedPlaylist != null ->
-                    "This playlist has no available tracks.\nAdd songs from a song row or the Playlists menu."
-
+                    "Add tracks from the song list or choose another playlist."
                 showFavoritesOnly ->
-                    "No favourites yet.\nTap ☆ beside a song to add it."
-
-                normalized.isNotEmpty() && showingCollections && libraryBrowseMode == "albums" ->
-                    "No albums match your search. Use × to clear it."
-                normalized.isNotEmpty() && showingCollections && libraryBrowseMode == "artists" ->
-                    "No artists match your search. Use × to clear it."
-                normalized.isNotEmpty() -> "No songs match your search. Use × to clear it."
-                showingCollections && libraryBrowseMode == "albums" -> "No albums available."
-                showingCollections && libraryBrowseMode == "artists" -> "No artists available."
-                else -> "No songs match your filters."
+                    "Mark a song as a favourite using the star beside it, and it will appear here."
+                normalized.isNotEmpty() ->
+                    "Try a different title, artist or album name, or clear your search."
+                showingCollections && libraryBrowseMode == "albums" ->
+                    "Albums from your local music collection will appear here."
+                showingCollections && libraryBrowseMode == "artists" ->
+                    "Artists from your local music collection will appear here."
+                else -> "Try changing your search or library filters."
             }
-
-            songList.addView(
-                label(
-                    message,
-                    14f,
-                    themeColor(174, 159, 194)
-                ).apply {
-                    setPadding(dp(4), dp(18), dp(4), dp(18))
-                    // KIVORA_ROUND23_EMPTY_LIBRARY_CARD
-                    background = roundedBackground(themeColor(34, 16, 56), 18).apply { setStroke(dp(1), themeColor(145, 95, 190)) }
-                    setPadding(dp(16), dp(18), dp(16), dp(18))
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(24), dp(20), dp(24))
+                background = roundedBackground(themeColor(29, 18, 43), 20).apply {
+                    setStroke(dp(1), themeColor(88, 58, 117))
                 }
-            )
-
+            }
+            emptyCard.addView(label("♫", 30f, themeColor(188, 139, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(10))
+            })
+            emptyCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(8))
+            })
+            emptyCard.addView(label(message, 13f, themeColor(184, 168, 204)).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(2))
+            })
+            val actionLabel = when {
+                selectedPlaylist != null || showFavoritesOnly -> "Show all songs"
+                normalized.isNotEmpty() -> "Clear search"
+                else -> null
+            }
+            if (actionLabel != null) {
+                val actionButton = label(actionLabel, 12f, themeColor(250, 247, 255), true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    background = roundedBackground(themeColor(91, 48, 132), 14).apply {
+                        setStroke(dp(1), themeColor(172, 112, 224))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        showFavoritesOnly = false
+                        selectedPlaylist = null
+                        searchBox.text?.clear()
+                        renderSongs("")
+                    }
+                }
+                emptyCard.addView(actionButton, LinearLayout.LayoutParams(-2, -2).apply {
+                    topMargin = dp(14)
+                })
+            }
+            songList.addView(emptyCard, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
+                bottomMargin = dp(12)
+            })
             return
         }
 
