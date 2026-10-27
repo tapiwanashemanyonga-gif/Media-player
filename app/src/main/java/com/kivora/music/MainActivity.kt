@@ -136,6 +136,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoList: LinearLayout
     private lateinit var videoStatus: TextView
     private lateinit var videoPlayerView: PlayerView
+    private var videoPlayerActions: LinearLayout? = null
+    private var fullscreenVideoButton: View? = null
+    private var minimizeVideoButton: View? = null
     private var videoPlayer: ExoPlayer? = null
     private var navigationVideoUri: String? = null
     private var lastFailedVideoUri: String? = null
@@ -673,6 +676,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 selectedVideoUri = uri.toString()
                 navigationVideoUri = uri.toString()
+                updateVideoPlayerVisibility()
                 lastFailedVideoUri = null
                 renderVideos(searchBox.text?.toString().orEmpty())
                 videoStatus.text = "Playing: ${intent.title.orEmpty()}"
@@ -1267,12 +1271,12 @@ class MainActivity : AppCompatActivity() {
             setShutterBackgroundColor(themeColor(8, 6, 13))
             contentDescription = "Video player"
         }
-        val videoPlayerActions = LinearLayout(this).apply {
+        videoPlayerActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("⛶  FULLSCREEN", 12f, themeColor(232, 213, 255), true).apply {
+        fullscreenVideoButton = label("⛶  FULLSCREEN", 12f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(10), dp(14), dp(10))
             minHeight = dp(48)
@@ -1284,7 +1288,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Open video in fullscreen"
             setOnClickListener { showVideoFullscreen() }
         }
-        videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+        videoPlayerActions?.addView(fullscreenVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
@@ -1314,7 +1318,7 @@ class MainActivity : AppCompatActivity() {
             videoScroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
-        val minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, themeColor(232, 213, 255), true).apply {
+        minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             minHeight = dp(48)
@@ -1324,15 +1328,16 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
-        minimizeVideoButton.setOnClickListener {
+        minimizeVideoButton?.setOnClickListener {
             val shouldMinimize = videoPlayerView.visibility == View.VISIBLE
             videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
-            minimizeVideoButton.contentDescription =
-                if (shouldMinimize) "Restore video player" else "Minimize video player"
+            fullscreenVideoButton?.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
+            minimizeVideoButton?.let {
+                (it as? TextView)?.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
+                it.contentDescription = if (shouldMinimize) "Restore video player" else "Minimize video player"
+            }
         }
-        videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        videoPlayerActions?.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
         val videoListButton = label("▤  VIDEO LIST", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
@@ -1349,11 +1354,12 @@ class MainActivity : AppCompatActivity() {
                 videoList.requestFocus()
             }
         }
-        videoPlayerActions.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+        videoPlayerActions?.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
 
         // Keep the video list last so its weight fills the space below the player and controls.
         videoPlaceholder.removeView(videoPlayerActions)
         videoPlaceholder.addView(videoPlayerActions, 1, LinearLayout.LayoutParams(-1, -2))
+        updateVideoPlayerVisibility()
         root.addView(
             videoPlaceholder,
             LinearLayout.LayoutParams(-1, 0, 1f)
@@ -5354,6 +5360,7 @@ class MainActivity : AppCompatActivity() {
         lastFailedVideoUri = failedUri
         val failedTitle = deviceVideos.firstOrNull { it.uri.toString() == failedUri }?.title ?: "video"
         selectedVideoUri = null
+        updateVideoPlayerVisibility()
         if (::videoStatus.isInitialized) {
             renderVideos(searchBox.text?.toString().orEmpty())
             videoStatus.text = "Couldn't play $failedTitle. Choose another video or use previous/next."
@@ -5363,6 +5370,17 @@ class MainActivity : AppCompatActivity() {
             "Couldn't play $failedTitle. Choose another video.",
             Toast.LENGTH_LONG
         ).show()
+    }
+
+    /** Collapse the playback surface and its dedicated controls until a video is selected/loaded. */
+    private fun updateVideoPlayerVisibility() {
+        if (!::videoPlayerView.isInitialized) return
+        val currentUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
+        val hasSelectedVideo = !selectedVideoUri.isNullOrBlank() || !currentUri.isNullOrBlank()
+        // The video library stays available; only the playback surface and its controls collapse.
+        videoPlayerView.visibility = if (hasSelectedVideo) View.VISIBLE else View.GONE
+        fullscreenVideoButton?.visibility = if (hasSelectedVideo) View.VISIBLE else View.GONE
+        minimizeVideoButton?.visibility = if (hasSelectedVideo) View.VISIBLE else View.GONE
     }
 
     private fun restoreVideoPlayerView() {
@@ -5778,6 +5796,7 @@ class MainActivity : AppCompatActivity() {
             if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
             if (tab == "videos") View.VISIBLE else View.GONE
+        updateVideoPlayerVisibility()
         if (tab == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
@@ -5814,6 +5833,19 @@ class MainActivity : AppCompatActivity() {
         } else if (tab == "library") {
             updateLibraryBrowseButtons()
             renderSongs(searchBox.text?.toString().orEmpty())
+        }
+
+        val activeContent: View? = when (tab) {
+            "home" -> homeScroll
+            "search", "library" -> songScroll
+            "videos" -> videoPlaceholder
+            "nowPlaying" -> playerScroll
+            else -> null
+        }
+        activeContent?.let { content ->
+            content.animate().cancel()
+            content.alpha = 0f
+            content.animate().alpha(1f).setDuration(180L).start()
         }
 
         navigationButtons.forEach { (name, button) ->
