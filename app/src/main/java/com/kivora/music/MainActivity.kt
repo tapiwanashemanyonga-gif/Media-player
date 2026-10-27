@@ -104,16 +104,13 @@ class MainActivity : AppCompatActivity() {
     private var hasSeenFirstResume = false
     private var returnedFromBackground = false
     private var suppressNextResumeAd = false
-    private var musicTabAdAttempted = false
     private var notificationPromptQueued = false
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
     private lateinit var searchBox: EditText
     private lateinit var searchRow: LinearLayout
-    private lateinit var searchVisibilityToggle: TextView
     private lateinit var libraryVisibilityToggle: TextView
-    private var searchTabVisible = true
     private var libraryShortcutsVisible = true
     private var libraryHeaderVisible = true
     private var libraryContentVisible = true
@@ -319,14 +316,6 @@ class MainActivity : AppCompatActivity() {
             }
             updatePlayButton()
             updateArtworkMotion(isPlaying)
-            if (!isPlaying && currentTab == "search" && !musicTabAdAttempted && videoPlayer?.isPlaying != true) {
-                musicTabAdAttempted = true
-                handler.postDelayed({
-                    if (!isFinishing && !isDestroyed && currentTab == "search" &&
-                        player?.isPlaying != true && videoPlayer?.isPlaying != true
-                    ) StartIoVideoAds.showOptionalAd(this@MainActivity) { }
-                }, 500L)
-            }
             tryRunPendingPlaybackAfterAd()
         }
 
@@ -360,9 +349,7 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
-        // The Search tab is a permanent navigation destination and must always remain visible.
-        searchTabVisible = true
-        preferences.edit().putBoolean("hide_search_tab", false).apply()
+        // Search is part of the Library screen, not a separate navigation destination.
         libraryShortcutsVisible = !preferences.getBoolean("hide_songs_albums_shortcuts", false)
         // Keep the established A1 Family purple look; do not force the Neon theme.
         if (preferences.getString("theme", null) == null ||
@@ -1034,30 +1021,11 @@ class MainActivity : AppCompatActivity() {
         searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
         root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
 
-        // These preferences hide navigation shortcuts only; the music library stays visible.
+        // The search field belongs to the Library screen. Only the library controls can be hidden.
         val displayOptionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(7), 0, dp(7))
-        }
-        searchVisibilityToggle = label("Hide search tab", 11f, themeColor(232, 213, 255), true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            background = roundedBackground(themeColor(42, 25, 64), 14).apply {
-                setStroke(dp(1), themeColor(119, 78, 159))
-            }
-            isClickable = true
-            isFocusable = true
-            contentDescription = "Show or hide the Search tab in bottom navigation"
-            // Search is intentionally permanent; do not allow this control to hide navigation.
-            setOnClickListener {
-                searchTabVisible = true
-                getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
-                    .putBoolean("hide_search_tab", false).apply()
-                navigationButtons["search"]?.visibility = View.VISIBLE
-                text = "Search tab always visible"
-                Toast.makeText(this@MainActivity, "The Search tab is always available.", Toast.LENGTH_SHORT).show()
-            }
         }
         libraryVisibilityToggle = label("Hide library controls", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
@@ -1078,7 +1046,7 @@ class MainActivity : AppCompatActivity() {
                 text = if (libraryShortcutsVisible) "Hide library controls" else "Show library controls"
             }
         }
-        // Keep Search available; only the library-control section is user-hideable.
+        // Keep the library screen focused; users may hide its controls to give songs more room.
         displayOptionsRow.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(-1, -2))
         root.addView(displayOptionsRow, LinearLayout.LayoutParams(-1, -2))
 
@@ -1940,7 +1908,6 @@ class MainActivity : AppCompatActivity() {
         }
         listOf(
             Triple("home", "⌂", "HOME"),
-            Triple("search", "⌕", "SEARCH"),
             Triple("library", "♫", "LIBRARY"),
             Triple("videos", "▣", "VIDEOS")
         ).forEach { (tab, symbol, title) ->
@@ -1951,14 +1918,12 @@ class MainActivity : AppCompatActivity() {
                 isFocusable = true
                 contentDescription = when (tab) {
                     "home" -> "Open Home"
-                    "search" -> "Search music"
                     "library" -> "Open music library and playlists"
                     else -> "Browse videos"
                 }
                 setOnClickListener { showTab(tab) }
             }
             navigationButtons[tab] = item
-            if (tab == "search") item.visibility = if (searchTabVisible) View.VISIBLE else View.GONE
             navBar.addView(item, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
                 setMargins(dp(2), 0, dp(2), 0)
             })
@@ -5897,19 +5862,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTab(tab: String) {
+        // Keep legacy internal callers working, but route them to the unified Library screen.
+        val destination = if (tab == "search") "library" else tab
         val previousTab = currentTab
-        currentTab = tab
-        if (tab == "home") renderHomeDashboard()
+        currentTab = destination
+        if (destination == "home") renderHomeDashboard()
         searchRow.visibility =
-            if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
+            if (destination == "library" || destination == "videos") View.VISIBLE else View.GONE
         libraryHeader.visibility =
-            if (tab == "library" && libraryContentVisible && libraryShortcutsVisible) View.VISIBLE else View.GONE
+            if (destination == "library" && libraryContentVisible && libraryShortcutsVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
-            if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
+            if (destination == "library" && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
-            if (tab == "videos") View.VISIBLE else View.GONE
+            if (destination == "videos") View.VISIBLE else View.GONE
         updateVideoPlayerVisibility()
-        if (tab == "videos" && !videosLoaded) {
+        if (destination == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
             } else {
@@ -5921,18 +5888,18 @@ class MainActivity : AppCompatActivity() {
                 videoPermissionLauncher.launch(permission)
             }
         }
-        homeScroll.visibility = if (tab == "home") View.VISIBLE else View.GONE
-        playerScroll.visibility = if (tab == "nowPlaying") View.VISIBLE else View.GONE
-        miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
+        homeScroll.visibility = if (destination == "home") View.VISIBLE else View.GONE
+        playerScroll.visibility = if (destination == "nowPlaying") View.VISIBLE else View.GONE
+        miniPlayer.visibility = if (destination == "nowPlaying") View.GONE else View.VISIBLE
 
         // A short, restrained entrance transition makes tab changes feel deliberate without
         // changing any playback state or rebuilding the media lists.
-        if (previousTab != tab) {
-            val incomingContent = when (tab) {
+        if (previousTab != destination) {
+            val incomingContent = when (destination) {
                 "home" -> homeScroll
                 "nowPlaying" -> playerScroll
                 "videos" -> videoPlaceholder
-                "search", "library" -> songScroll
+                "library" -> songScroll
                 else -> null
             }
             incomingContent?.let { content ->
@@ -5942,30 +5909,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (tab == "search") {
-            if (previousTab != "search") {
-                musicTabAdAttempted = false
-                if (player?.isPlaying != true && videoPlayer?.isPlaying != true) {
-                    musicTabAdAttempted = true
-                    handler.postDelayed({
-                        if (!isFinishing && !isDestroyed && currentTab == "search" &&
-                            player?.isPlaying != true && videoPlayer?.isPlaying != true
-                        ) StartIoVideoAds.showOptionalAd(this) { }
-                    }, 650L)
-                }
-            }
-            showFavoritesOnly = false
-            selectedPlaylist = null
-            updateFavoriteFilterButton()
-            updatePlaylistButton()
-            renderSongs(searchBox.text?.toString().orEmpty())
-        } else if (tab == "library") {
+        if (destination == "library") {
             updateLibraryBrowseButtons()
             renderSongs(searchBox.text?.toString().orEmpty())
         }
 
         navigationButtons.forEach { (name, button) ->
-            val selected = name == tab || (name == "home" && tab == "nowPlaying")
+            val selected = name == destination || (name == "home" && destination == "nowPlaying")
             button.setTextColor(
                 if (selected) themeColor(232, 213, 255)
                 else themeColor(174, 159, 194)
@@ -5978,7 +5928,6 @@ class MainActivity : AppCompatActivity() {
             button.isSelected = selected
             button.contentDescription = when (name) {
                 "home" -> if (selected) "Home, selected" else "Open Home"
-                "search" -> if (selected) "Search, selected" else "Search music"
                 "library" -> if (selected) "Library, selected" else "Open music library and playlists"
                 "videos" -> if (selected) "Videos, selected" else "Browse videos"
                 else -> name
