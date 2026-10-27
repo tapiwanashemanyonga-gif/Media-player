@@ -17,6 +17,7 @@ on:
       - ci/enforce-release-identity-match
       - ci/guard-file-open-and-video-permission
       - test/media-file-classification
+      - perf/background-video-library-scan
 
 permissions:
   contents: read
@@ -64,6 +65,9 @@ jobs:
           grep -Fq 'continueUserPlayback(PendingPlayback("play_queue_item"' "$MAIN_ACTIVITY"
           grep -Fq 'Manifest.permission.READ_MEDIA_VIDEO' "$MAIN_ACTIVITY"
           grep -Fq 'videoPermissionLauncher.launch(permission)' "$MAIN_ACTIVITY"
+          grep -Fq 'private val videoScanExecutor = Executors.newSingleThreadExecutor()' "$MAIN_ACTIVITY"
+          grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
+          grep -Fq 'videoScanExecutor.shutdownNow()' "$MAIN_ACTIVITY"
 
           if grep -Eiq 'com\.startapp|StartAppSDK|asiafilm\.org/4/d52fd43d84340c6fa7784c326206088f' "$GRADLE_FILE" app/src/main; then
             echo "Unexpected advertising SDK or SmartLink reference found."

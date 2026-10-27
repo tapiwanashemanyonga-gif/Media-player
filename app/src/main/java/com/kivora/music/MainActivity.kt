@@ -218,6 +218,9 @@ class MainActivity : AppCompatActivity() {
     private var pendingSearchRender: Runnable? = null
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
+    // Keep MediaStore video queries off the UI thread so large libraries don't freeze navigation.
+    private val videoScanExecutor = Executors.newSingleThreadExecutor()
+    private var videoScanRequestId = 0
     private var artworkRequestId = 0
     private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
         (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -4732,6 +4735,9 @@ class MainActivity : AppCompatActivity() {
         artworkMotionAnimator?.cancel()
         artworkMotionAnimator = null
         artworkExecutor.shutdownNow()
+        // Ignore queued scan results and stop any pending background video query.
+        videoScanRequestId++
+        videoScanExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
@@ -4752,51 +4758,68 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
     private fun loadVideos() {
+        val requestId = ++videoScanRequestId
         videoStatus.text = "Scanning videos on this device..."
         videoStatus.setOnClickListener(null)
         deviceVideos.clear()
         videoList.removeAllViews()
 
-        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.TITLE,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DURATION
-        )
+        videoScanExecutor.execute {
+            val scannedVideos = mutableListOf<DeviceVideo>()
+            var scanFailed = false
+            val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.TITLE,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.DURATION
+            )
 
-        try {
-            contentResolver.query(
-                collection, projection, null, null,
-                "${MediaStore.Video.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
-                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+            try {
+                contentResolver.query(
+                    collection, projection, null, null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                )?.use { cursor ->
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                    val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                    val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
 
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }
-                        ?: cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
-                        ?: "Untitled video"
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idColumn)
+                        val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }
+                            ?: cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
+                            ?: "Untitled video"
 
-                    deviceVideos.add(
-                        DeviceVideo(
-                            id,
-                            title,
-                            ContentUris.withAppendedId(collection, id),
-                            cursor.getLong(durationColumn)
+                        scannedVideos.add(
+                            DeviceVideo(
+                                id,
+                                title,
+                                ContentUris.withAppendedId(collection, id),
+                                cursor.getLong(durationColumn)
+                            )
                         )
-                    )
+                    }
                 }
+            } catch (_: Exception) {
+                scanFailed = true
             }
-            videosLoaded = true
-            renderVideos()
-        } catch (error: Exception) {
-            videoStatus.text = "Couldn't read videos. Tap here to retry."
-            videoStatus.setOnClickListener { loadVideos() }
-            Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
+
+            handler.post {
+                if (requestId != videoScanRequestId || isFinishing || isDestroyed) return@post
+
+                if (scanFailed) {
+                    videoStatus.text = "Couldn't read videos. Tap here to retry."
+                    videoStatus.setOnClickListener { loadVideos() }
+                    Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
+                    return@post
+                }
+
+                deviceVideos.clear()
+                deviceVideos.addAll(scannedVideos)
+                videosLoaded = true
+                renderVideos()
+            }
         }
     }
 
