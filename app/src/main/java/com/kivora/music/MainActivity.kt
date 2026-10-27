@@ -4957,17 +4957,71 @@ class MainActivity : AppCompatActivity() {
     private fun renderVideos(query: String = searchBox.text?.toString().orEmpty()) {
         videoList.removeAllViews()
 
+        fun addVideoEmptyState(title: String, message: String, actionLabel: String? = null, action: (() -> Unit)? = null) {
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(22), dp(24), dp(22), dp(24))
+                background = roundedBackground(themeColor(29, 19, 43), 20).apply {
+                    setStroke(dp(1), themeColor(88, 58, 117))
+                }
+            }
+            emptyCard.addView(label("▶", 30f, themeColor(188, 139, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(10))
+            })
+            emptyCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(7))
+            })
+            emptyCard.addView(label(message, 13f, themeColor(184, 168, 204)).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                setPadding(0, 0, 0, dp(4))
+            })
+            if (actionLabel != null && action != null) {
+                val actionButton = label(actionLabel, 12f, themeColor(250, 247, 255), true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    background = roundedBackground(themeColor(91, 48, 132), 14).apply {
+                        setStroke(dp(1), themeColor(172, 112, 224))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { action() }
+                }
+                emptyCard.addView(actionButton, LinearLayout.LayoutParams(-2, -2).apply {
+                    topMargin = dp(14)
+                })
+            }
+            videoList.addView(emptyCard, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
+                bottomMargin = dp(12)
+            })
+        }
+
         if (deviceVideos.isEmpty()) {
-            videoStatus.text = "No videos found. Add videos to your device and retry."
+            videoStatus.text = "Your video library is ready when you are."
+            addVideoEmptyState(
+                "No videos yet",
+                "Videos saved on this device will appear here. Your music library is unchanged.",
+                "Refresh video library"
+            ) { loadVideos() }
             return
         }
 
         val filteredVideos = deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }
         if (filteredVideos.isEmpty()) {
             videoStatus.text = "No videos match your search."
+            addVideoEmptyState(
+                "No matching videos",
+                "Try another title or clear the search field to see your full video library.",
+                "Clear search"
+            ) { searchBox.text?.clear() }
             return
         }
-        videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
+        videoStatus.text = "${filteredVideos.size} matching videos"
 
         filteredVideos.forEach { video ->
             val compactVideoRow = resources.configuration.screenWidthDp < 420
