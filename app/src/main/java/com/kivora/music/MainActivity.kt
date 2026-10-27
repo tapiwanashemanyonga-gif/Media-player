@@ -204,8 +204,8 @@ class MainActivity : AppCompatActivity() {
             if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
         }
     private var activityResumed = false
-    private var pendingPlaybackAfterAd: PendingPlayback? = null
-    private var playbackContinuesAfterAd = false
+    private var pendingPlaybackRequest: PendingPlayback? = null
+    private var playbackRequestInProgress = false
     private var musicDispatchRetryId: String? = null
     private var musicDispatchRetryCount = 0
     private var musicDispatchRetry: Runnable? = null
@@ -445,16 +445,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        pendingPlaybackAfterAd?.writeTo(outState, "activity_pending_playback_")
-        outState.putBoolean("activity_playback_continues_after_ad", playbackContinuesAfterAd)
+        pendingPlaybackRequest?.writeTo(outState, "activity_pending_playback_")
+        outState.putBoolean("activity_playback_continues_after_ad", playbackRequestInProgress)
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
-        pendingPlaybackAfterAd = PendingPlayback.readFrom(
+        pendingPlaybackRequest = PendingPlayback.readFrom(
             savedInstanceState,
             "activity_pending_playback_"
         )
-        playbackContinuesAfterAd = savedInstanceState.getBoolean("activity_playback_continues_after_ad")
+        playbackRequestInProgress = savedInstanceState.getBoolean("activity_playback_continues_after_ad")
         super.onRestoreInstanceState(savedInstanceState)
     }
 
@@ -474,7 +474,7 @@ class MainActivity : AppCompatActivity() {
         // The durable playback journal and ad callback are authoritative. Retrying a
         // local pending request merely because this Activity regained focus can start audio
         // unexpectedly or dispatch the same selection twice.
-        StartIoVideoAds.attach(this)
+        PlaybackRequestCoordinator.attach(this)
     }
 
     override fun onPause() {
@@ -490,22 +490,22 @@ class MainActivity : AppCompatActivity() {
     internal fun isAdHostResumedAndFocused(): Boolean =
         activityResumed && hasWindowFocus() && !isFinishing && !isDestroyed
 
-    /** Prevents full-screen ads from covering active audio or video playback. */
+    /** Reports whether a media session is actively playing. */
     internal fun isMediaPlaybackActive(): Boolean =
         player?.isPlaying == true || videoPlayer?.isPlaying == true
 
     /** Called by the ad coordinator without retaining this Activity in SDK callbacks. */
-    internal fun runPlaybackAfterAd(intent: PendingPlayback?) {
+    internal fun runPlaybackRequest(intent: PendingPlayback?) {
         if (intent == null || isFinishing || isDestroyed) return
-        pendingPlaybackAfterAd = intent
-        playbackContinuesAfterAd = true
+        pendingPlaybackRequest = intent
+        playbackRequestInProgress = true
         tryRunPendingPlaybackAfterAd()
     }
 
     private fun retainPlaybackForUnresolvedAd(intent: PendingPlayback) {
-        pendingPlaybackAfterAd = intent
-        playbackContinuesAfterAd = true
-        if (!StartIoVideoAds.retainPendingPlayback(intent)) {
+        pendingPlaybackRequest = intent
+        playbackRequestInProgress = true
+        if (!PlaybackRequestCoordinator.retainPendingPlayback(intent)) {
             Toast.makeText(
                 this,
                 "Playback request could not be saved yet. Keep A1 Family open; playback remains paused.",
@@ -515,38 +515,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun discardExpiredPlaybackRequest(intent: PendingPlayback): Boolean {
-        if (!StartIoVideoAds.isPlaybackRequestExpired(intent)) return false
-        if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
-            pendingPlaybackAfterAd = null
-            playbackContinuesAfterAd = false
+        if (!PlaybackRequestCoordinator.isPlaybackRequestExpired(intent)) return false
+        if (pendingPlaybackRequest?.requestId == intent.requestId) {
+            pendingPlaybackRequest = null
+            playbackRequestInProgress = false
         }
         return true
     }
 
     private fun tryRunPendingPlaybackAfterAd() {
-        val intent = pendingPlaybackAfterAd ?: return
+        val intent = pendingPlaybackRequest ?: return
         if (discardExpiredPlaybackRequest(intent)) return
-        if (StartIoVideoAds.wasPlaybackAcknowledged(intent)) {
-            pendingPlaybackAfterAd = null
-            playbackContinuesAfterAd = false
+        if (PlaybackRequestCoordinator.wasPlaybackAcknowledged(intent)) {
+            pendingPlaybackRequest = null
+            playbackRequestInProgress = false
             return
         }
         if (!activityResumed) return
         val state = playbackState()
         if (state == PlaybackState.UNKNOWN) {
-            StartIoVideoAds.savePendingPlayback(intent)
+            PlaybackRequestCoordinator.savePendingPlayback(intent)
             return
         }
         if (intent.kind == "play_queue" && !songsLoaded) return
-        // Playback is never gated by an interstitial. Optional ads are shown separately
+        // Playback requests are handled independently of the UI.
         if (!executePlayback(intent)) {
-            pendingPlaybackAfterAd = intent
-            StartIoVideoAds.savePendingPlayback(intent)
+            pendingPlaybackRequest = intent
+            PlaybackRequestCoordinator.savePendingPlayback(intent)
             return
         }
-        pendingPlaybackAfterAd = null
-        playbackContinuesAfterAd = false
-        StartIoVideoAds.acknowledgePendingPlayback(intent)
+        pendingPlaybackRequest = null
+        playbackRequestInProgress = false
+        PlaybackRequestCoordinator.acknowledgePendingPlayback(intent)
     }
 
     private fun playbackState(): PlaybackState {
@@ -570,16 +570,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun continueUserPlayback(intent: PendingPlayback) {
         if (discardExpiredPlaybackRequest(intent)) return
-        // Every explicit play or song-selection request is dispatched without waiting for ads.
+        // Every explicit play or song-selection request is dispatched directly.
         // Persist the request first so service reconnection can safely retry the same selection.
-        pendingPlaybackAfterAd = intent
-        playbackContinuesAfterAd = false
-        if (!StartIoVideoAds.savePendingPlayback(intent)) {
+        pendingPlaybackRequest = intent
+        playbackRequestInProgress = false
+        if (!PlaybackRequestCoordinator.savePendingPlayback(intent)) {
             if (playbackState() == PlaybackState.UNKNOWN) return
         }
         if (executePlayback(intent)) {
-            pendingPlaybackAfterAd = null
-            StartIoVideoAds.acknowledgePendingPlayback(intent)
+            pendingPlaybackRequest = null
+            PlaybackRequestCoordinator.acknowledgePendingPlayback(intent)
         }
     }
 
@@ -712,7 +712,7 @@ class MainActivity : AppCompatActivity() {
         index: Int = intent.index
     ) {
         val controller = player ?: return
-        val dispatchGeneration = StartIoVideoAds.beginPlaybackDispatch(intent) ?: return
+        val dispatchGeneration = PlaybackRequestCoordinator.beginPlaybackDispatch(intent) ?: return
         if (musicDispatchRetryId != intent.requestId) {
             musicDispatchRetry?.let(handler::removeCallbacks)
             musicDispatchRetry = null
@@ -745,24 +745,24 @@ class MainActivity : AppCompatActivity() {
             val succeeded = result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
                 result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)
             if (succeeded) {
-                if (!StartIoVideoAds.canAcknowledgePlayback(intent)) return@addListener
-                if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
-                    pendingPlaybackAfterAd = null
-                    playbackContinuesAfterAd = false
+                if (!PlaybackRequestCoordinator.canAcknowledgePlayback(intent)) return@addListener
+                if (pendingPlaybackRequest?.requestId == intent.requestId) {
+                    pendingPlaybackRequest = null
+                    playbackRequestInProgress = false
                 }
                 musicDispatchRetry?.let(handler::removeCallbacks)
                 musicDispatchRetry = null
                 musicDispatchRetryId = null
                 musicDispatchRetryCount = 0
-                StartIoVideoAds.acknowledgePendingPlayback(intent)
-            } else if (StartIoVideoAds.isCurrentPlaybackDispatch(intent, dispatchGeneration) &&
-                !isFinishing && !isDestroyed && pendingPlaybackAfterAd?.requestId == intent.requestId) {
-                StartIoVideoAds.savePendingPlayback(intent)
+                PlaybackRequestCoordinator.acknowledgePendingPlayback(intent)
+            } else if (PlaybackRequestCoordinator.isCurrentPlaybackDispatch(intent, dispatchGeneration) &&
+                !isFinishing && !isDestroyed && pendingPlaybackRequest?.requestId == intent.requestId) {
+                PlaybackRequestCoordinator.savePendingPlayback(intent)
                 if (musicDispatchRetryCount < 3) {
                     musicDispatchRetryCount++
                     val retry = Runnable {
                         musicDispatchRetry = null
-                        if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
+                        if (pendingPlaybackRequest?.requestId == intent.requestId) {
                             tryRunPendingPlaybackAfterAd()
                         }
                     }
@@ -3944,8 +3944,8 @@ class MainActivity : AppCompatActivity() {
             index = startIndex
         )
         if (p == null) {
-            pendingPlaybackAfterAd = request
-            StartIoVideoAds.savePendingPlayback(request)
+            pendingPlaybackRequest = request
+            PlaybackRequestCoordinator.savePendingPlayback(request)
             Toast.makeText(
                 this,
                 "Connecting to music service. Please wait.",
@@ -4314,8 +4314,8 @@ class MainActivity : AppCompatActivity() {
                 kind = "play_queue_item",
                 index = mediaIndex
             )
-            pendingPlaybackAfterAd = request
-            StartIoVideoAds.savePendingPlayback(request)
+            pendingPlaybackRequest = request
+            PlaybackRequestCoordinator.savePendingPlayback(request)
             showQueueUnavailable()
             return
         }
@@ -4710,7 +4710,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        pendingPlaybackAfterAd = null
+        pendingPlaybackRequest = null
         musicDispatchRetry?.let(handler::removeCallbacks)
         musicDispatchRetry = null
         controllerRetryRunnable?.let(handler::removeCallbacks)
