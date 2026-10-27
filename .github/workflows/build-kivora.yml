@@ -9,6 +9,8 @@ on:
       - feature/a1-family-media-upgrade
       - feature/ui-video-space-polish
       - fix/open-audio-from-files
+      - ui/remove-duplicate-search-tab
+      - feature/ad-free-library-polish
 
 permissions:
   contents: read

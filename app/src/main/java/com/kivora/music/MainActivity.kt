@@ -25,12 +25,6 @@ import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
-import com.startapp.sdk.ads.banner.Banner
-import com.startapp.sdk.ads.banner.BannerListener
-import com.startapp.sdk.ads.nativead.StartAppNativeAd
-import com.startapp.sdk.ads.nativead.NativeAdDetails
-import com.startapp.sdk.ads.nativead.NativeAdPreferences
-import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -60,9 +54,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-// Publisher-provided Adsterra SmartLink. Confirm it is Active and configured for mainstream
-// offers in the Adsterra dashboard; this app opens it only after the user taps the sponsored card.
-private const val ADSTERRA_SMARTLINK_URL = "https://asiafilm.org/4/d52fd43d84340c6fa7784c326206088f"
+
 
 data class Song(
     val title: String,
@@ -98,22 +90,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var artwork: ImageView
     private lateinit var miniArtwork: ImageView
     private var artworkMotionAnimator: android.animation.AnimatorSet? = null
-    private var playerBannerContainer: LinearLayout? = null
-    private var startIoNativeAdRequested = false
-    private var loadedStartIoNativeAd: NativeAdDetails? = null
     private var hasSeenFirstResume = false
     private var returnedFromBackground = false
     private var suppressNextResumeAd = false
-    private var musicTabAdAttempted = false
     private var notificationPromptQueued = false
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
     private lateinit var repeatButton: TextView
     private lateinit var searchBox: EditText
     private lateinit var searchRow: LinearLayout
-    private lateinit var searchVisibilityToggle: TextView
     private lateinit var libraryVisibilityToggle: TextView
-    private var searchTabVisible = true
+    private lateinit var displayOptionsRow: LinearLayout
     private var libraryShortcutsVisible = true
     private var libraryHeaderVisible = true
     private var libraryContentVisible = true
@@ -189,7 +176,7 @@ class MainActivity : AppCompatActivity() {
     private var videoFullscreenButton: View? = null
     private var videoMinimizeButton: View? = null
     private var videoPlayerMinimized = false
-    private var currentTab = "search"
+    private var currentTab = "library"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
@@ -217,8 +204,8 @@ class MainActivity : AppCompatActivity() {
             if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
         }
     private var activityResumed = false
-    private var pendingPlaybackAfterAd: PendingPlayback? = null
-    private var playbackContinuesAfterAd = false
+    private var pendingPlaybackRequest: PendingPlayback? = null
+    private var playbackRequestInProgress = false
     private var musicDispatchRetryId: String? = null
     private var musicDispatchRetryCount = 0
     private var musicDispatchRetry: Runnable? = null
@@ -319,14 +306,6 @@ class MainActivity : AppCompatActivity() {
             }
             updatePlayButton()
             updateArtworkMotion(isPlaying)
-            if (!isPlaying && currentTab == "search" && !musicTabAdAttempted && videoPlayer?.isPlaying != true) {
-                musicTabAdAttempted = true
-                handler.postDelayed({
-                    if (!isFinishing && !isDestroyed && currentTab == "search" &&
-                        player?.isPlaying != true && videoPlayer?.isPlaying != true
-                    ) StartIoVideoAds.showOptionalAd(this@MainActivity) { }
-                }, 500L)
-            }
             tryRunPendingPlaybackAfterAd()
         }
 
@@ -360,9 +339,7 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
-        // The Search tab is a permanent navigation destination and must always remain visible.
-        searchTabVisible = true
-        preferences.edit().putBoolean("hide_search_tab", false).apply()
+        // Search is part of the Library screen, not a separate navigation destination.
         libraryShortcutsVisible = !preferences.getBoolean("hide_songs_albums_shortcuts", false)
         // Keep the established A1 Family purple look; do not force the Neon theme.
         if (preferences.getString("theme", null) == null ||
@@ -382,7 +359,6 @@ class MainActivity : AppCompatActivity() {
         buildScreen()
         connectToPlaybackService()
         handler.post(progressUpdater)
-        if (savedInstanceState == null) scheduleOpenAdIfDue()
 
         val permission = if (Build.VERSION.SDK_INT >= 33) {
             Manifest.permission.READ_MEDIA_AUDIO
@@ -469,21 +445,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        // Start.io requires saving the state of the same StartAppAd used for the interstitial.
-        StartIoVideoAds.saveInstanceState(this, outState)
-        pendingPlaybackAfterAd?.writeTo(outState, "activity_pending_playback_")
-        outState.putBoolean("activity_playback_continues_after_ad", playbackContinuesAfterAd)
+        pendingPlaybackRequest?.writeTo(outState, "activity_pending_playback_")
+        outState.putBoolean("activity_playback_continues_after_ad", playbackRequestInProgress)
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
-        // Restore the StartAppAd instance before the Activity restores its own state, as required
-        // for Start.io video interstitials.
-        pendingPlaybackAfterAd = PendingPlayback.readFrom(
+        pendingPlaybackRequest = PendingPlayback.readFrom(
             savedInstanceState,
             "activity_pending_playback_"
         )
-        playbackContinuesAfterAd = savedInstanceState.getBoolean("activity_playback_continues_after_ad")
-        StartIoVideoAds.restoreInstanceState(this, savedInstanceState)
+        playbackRequestInProgress = savedInstanceState.getBoolean("activity_playback_continues_after_ad")
         super.onRestoreInstanceState(savedInstanceState)
     }
 
@@ -499,12 +470,11 @@ class MainActivity : AppCompatActivity() {
         } else if (returnedFromBackground) {
             returnedFromBackground = false
             if (suppressNextResumeAd) suppressNextResumeAd = false
-            else scheduleOpenAdIfDue()
         }
         // The durable playback journal and ad callback are authoritative. Retrying a
         // local pending request merely because this Activity regained focus can start audio
         // unexpectedly or dispatch the same selection twice.
-        StartIoVideoAds.attach(this)
+        PlaybackRequestCoordinator.attach(this)
     }
 
     override fun onPause() {
@@ -520,22 +490,22 @@ class MainActivity : AppCompatActivity() {
     internal fun isAdHostResumedAndFocused(): Boolean =
         activityResumed && hasWindowFocus() && !isFinishing && !isDestroyed
 
-    /** Prevents full-screen ads from covering active audio or video playback. */
+    /** Reports whether a media session is actively playing. */
     internal fun isMediaPlaybackActive(): Boolean =
         player?.isPlaying == true || videoPlayer?.isPlaying == true
 
     /** Called by the ad coordinator without retaining this Activity in SDK callbacks. */
-    internal fun runPlaybackAfterAd(intent: PendingPlayback?) {
+    internal fun runPlaybackRequest(intent: PendingPlayback?) {
         if (intent == null || isFinishing || isDestroyed) return
-        pendingPlaybackAfterAd = intent
-        playbackContinuesAfterAd = true
+        pendingPlaybackRequest = intent
+        playbackRequestInProgress = true
         tryRunPendingPlaybackAfterAd()
     }
 
     private fun retainPlaybackForUnresolvedAd(intent: PendingPlayback) {
-        pendingPlaybackAfterAd = intent
-        playbackContinuesAfterAd = true
-        if (!StartIoVideoAds.retainPendingPlayback(intent)) {
+        pendingPlaybackRequest = intent
+        playbackRequestInProgress = true
+        if (!PlaybackRequestCoordinator.retainPendingPlayback(intent)) {
             Toast.makeText(
                 this,
                 "Playback request could not be saved yet. Keep A1 Family open; playback remains paused.",
@@ -545,38 +515,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun discardExpiredPlaybackRequest(intent: PendingPlayback): Boolean {
-        if (!StartIoVideoAds.isPlaybackRequestExpired(intent)) return false
-        if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
-            pendingPlaybackAfterAd = null
-            playbackContinuesAfterAd = false
+        if (!PlaybackRequestCoordinator.isPlaybackRequestExpired(intent)) return false
+        if (pendingPlaybackRequest?.requestId == intent.requestId) {
+            pendingPlaybackRequest = null
+            playbackRequestInProgress = false
         }
         return true
     }
 
     private fun tryRunPendingPlaybackAfterAd() {
-        val intent = pendingPlaybackAfterAd ?: return
+        val intent = pendingPlaybackRequest ?: return
         if (discardExpiredPlaybackRequest(intent)) return
-        if (StartIoVideoAds.wasPlaybackAcknowledged(intent)) {
-            pendingPlaybackAfterAd = null
-            playbackContinuesAfterAd = false
+        if (PlaybackRequestCoordinator.wasPlaybackAcknowledged(intent)) {
+            pendingPlaybackRequest = null
+            playbackRequestInProgress = false
             return
         }
         if (!activityResumed) return
         val state = playbackState()
         if (state == PlaybackState.UNKNOWN) {
-            StartIoVideoAds.savePendingPlayback(intent)
+            PlaybackRequestCoordinator.savePendingPlayback(intent)
             return
         }
         if (intent.kind == "play_queue" && !songsLoaded) return
-        // Playback is never gated by an interstitial. Optional ads are shown separately
+        // Playback requests are handled independently of the UI.
         if (!executePlayback(intent)) {
-            pendingPlaybackAfterAd = intent
-            StartIoVideoAds.savePendingPlayback(intent)
+            pendingPlaybackRequest = intent
+            PlaybackRequestCoordinator.savePendingPlayback(intent)
             return
         }
-        pendingPlaybackAfterAd = null
-        playbackContinuesAfterAd = false
-        StartIoVideoAds.acknowledgePendingPlayback(intent)
+        pendingPlaybackRequest = null
+        playbackRequestInProgress = false
+        PlaybackRequestCoordinator.acknowledgePendingPlayback(intent)
     }
 
     private fun playbackState(): PlaybackState {
@@ -600,16 +570,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun continueUserPlayback(intent: PendingPlayback) {
         if (discardExpiredPlaybackRequest(intent)) return
-        // Every explicit play or song-selection request is dispatched without waiting for ads.
+        // Every explicit play or song-selection request is dispatched directly.
         // Persist the request first so service reconnection can safely retry the same selection.
-        pendingPlaybackAfterAd = intent
-        playbackContinuesAfterAd = false
-        if (!StartIoVideoAds.savePendingPlayback(intent)) {
+        pendingPlaybackRequest = intent
+        playbackRequestInProgress = false
+        if (!PlaybackRequestCoordinator.savePendingPlayback(intent)) {
             if (playbackState() == PlaybackState.UNKNOWN) return
         }
         if (executePlayback(intent)) {
-            pendingPlaybackAfterAd = null
-            StartIoVideoAds.acknowledgePendingPlayback(intent)
+            pendingPlaybackRequest = null
+            PlaybackRequestCoordinator.acknowledgePendingPlayback(intent)
         }
     }
 
@@ -742,7 +712,7 @@ class MainActivity : AppCompatActivity() {
         index: Int = intent.index
     ) {
         val controller = player ?: return
-        val dispatchGeneration = StartIoVideoAds.beginPlaybackDispatch(intent) ?: return
+        val dispatchGeneration = PlaybackRequestCoordinator.beginPlaybackDispatch(intent) ?: return
         if (musicDispatchRetryId != intent.requestId) {
             musicDispatchRetry?.let(handler::removeCallbacks)
             musicDispatchRetry = null
@@ -775,24 +745,24 @@ class MainActivity : AppCompatActivity() {
             val succeeded = result?.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS &&
                 result.extras.getBoolean(KivoraPlaybackService.KEY_SUPPORTED)
             if (succeeded) {
-                if (!StartIoVideoAds.canAcknowledgePlayback(intent)) return@addListener
-                if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
-                    pendingPlaybackAfterAd = null
-                    playbackContinuesAfterAd = false
+                if (!PlaybackRequestCoordinator.canAcknowledgePlayback(intent)) return@addListener
+                if (pendingPlaybackRequest?.requestId == intent.requestId) {
+                    pendingPlaybackRequest = null
+                    playbackRequestInProgress = false
                 }
                 musicDispatchRetry?.let(handler::removeCallbacks)
                 musicDispatchRetry = null
                 musicDispatchRetryId = null
                 musicDispatchRetryCount = 0
-                StartIoVideoAds.acknowledgePendingPlayback(intent)
-            } else if (StartIoVideoAds.isCurrentPlaybackDispatch(intent, dispatchGeneration) &&
-                !isFinishing && !isDestroyed && pendingPlaybackAfterAd?.requestId == intent.requestId) {
-                StartIoVideoAds.savePendingPlayback(intent)
+                PlaybackRequestCoordinator.acknowledgePendingPlayback(intent)
+            } else if (PlaybackRequestCoordinator.isCurrentPlaybackDispatch(intent, dispatchGeneration) &&
+                !isFinishing && !isDestroyed && pendingPlaybackRequest?.requestId == intent.requestId) {
+                PlaybackRequestCoordinator.savePendingPlayback(intent)
                 if (musicDispatchRetryCount < 3) {
                     musicDispatchRetryCount++
                     val retry = Runnable {
                         musicDispatchRetry = null
-                        if (pendingPlaybackAfterAd?.requestId == intent.requestId) {
+                        if (pendingPlaybackRequest?.requestId == intent.requestId) {
                             tryRunPendingPlaybackAfterAd()
                         }
                     }
@@ -1034,30 +1004,11 @@ class MainActivity : AppCompatActivity() {
         searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
         root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
 
-        // These preferences hide navigation shortcuts only; the music library stays visible.
-        val displayOptionsRow = LinearLayout(this).apply {
+        // The search field belongs to the Library screen. Only the library controls can be hidden.
+        displayOptionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(7), 0, dp(7))
-        }
-        searchVisibilityToggle = label("Hide search tab", 11f, themeColor(232, 213, 255), true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            background = roundedBackground(themeColor(42, 25, 64), 14).apply {
-                setStroke(dp(1), themeColor(119, 78, 159))
-            }
-            isClickable = true
-            isFocusable = true
-            contentDescription = "Show or hide the Search tab in bottom navigation"
-            // Search is intentionally permanent; do not allow this control to hide navigation.
-            setOnClickListener {
-                searchTabVisible = true
-                getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
-                    .putBoolean("hide_search_tab", false).apply()
-                navigationButtons["search"]?.visibility = View.VISIBLE
-                text = "Search tab always visible"
-                Toast.makeText(this@MainActivity, "The Search tab is always available.", Toast.LENGTH_SHORT).show()
-            }
         }
         libraryVisibilityToggle = label("Hide library controls", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
@@ -1072,48 +1023,12 @@ class MainActivity : AppCompatActivity() {
                 libraryShortcutsVisible = !libraryShortcutsVisible
                 getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
                     .putBoolean("hide_songs_albums_shortcuts", !libraryShortcutsVisible).apply()
-                // Hide the entire library control/header section, but never hide the track list.
-                // This lets songs move upward and use the space freed by the controls.
                 libraryHeader.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
                 text = if (libraryShortcutsVisible) "Hide library controls" else "Show library controls"
             }
         }
-        // Keep Search available; only the library-control section is user-hideable.
         displayOptionsRow.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(-1, -2))
         root.addView(displayOptionsRow, LinearLayout.LayoutParams(-1, -2))
-
-        // Keep a live-capable Start.io banner visible on the main library screen,
-        // rather than limiting banner inventory to the Now Playing card.
-        val libraryAdContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(6))
-            contentDescription = "Advertisement area"
-        }
-        val libraryStartIoBanner = Banner(this, object : BannerListener {
-            override fun onReceiveAd(view: View) {
-                Log.i("A1FamilyAds", "Library banner loaded")
-                libraryAdContainer.visibility = View.VISIBLE
-            }
-            override fun onFailedToReceiveAd(view: View) {
-                Log.w("A1FamilyAds", "Library banner failed to load; hiding empty ad slot")
-                libraryAdContainer.visibility = View.GONE
-            }
-            override fun onImpression(view: View) {
-                Log.i("A1FamilyAds", "Library banner impression")
-            }
-            override fun onClick(view: View) {
-                Log.i("A1FamilyAds", "Library banner clicked")
-            }
-        }).apply {
-            contentDescription = "Start.io banner advertisement"
-        }
-        libraryAdContainer.visibility = View.GONE
-        libraryAdContainer.addView(
-            libraryStartIoBanner,
-            LinearLayout.LayoutParams(-1, -2)
-        )
-        root.addView(libraryAdContainer, LinearLayout.LayoutParams(-1, -2))
 
         libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1394,49 +1309,6 @@ class MainActivity : AppCompatActivity() {
             }
             elevation = dp(7).toFloat()
         }
-
-        val playerAdRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(4), dp(4), dp(4))
-            background = roundedBackground(themeColor(25, 17, 38), 14).apply {
-                setStroke(dp(1), themeColor(79, 54, 103))
-            }
-        }
-        val startIoBanner = Banner(this, object : BannerListener {
-            override fun onReceiveAd(view: View) {
-                Log.i("A1FamilyAds", "Now Playing banner loaded")
-                playerAdRow.visibility = View.VISIBLE
-            }
-            override fun onFailedToReceiveAd(view: View) {
-                Log.w("A1FamilyAds", "Now Playing banner failed to load; hiding empty ad slot")
-                playerAdRow.visibility = View.GONE
-            }
-            override fun onImpression(view: View) {
-                Log.i("A1FamilyAds", "Now Playing banner impression")
-            }
-            override fun onClick(view: View) {
-                Log.i("A1FamilyAds", "Now Playing banner clicked")
-            }
-        }).apply {
-            contentDescription = "Start.io banner advertisement"
-        }
-        playerAdRow.visibility = View.GONE
-        playerAdRow.addView(startIoBanner, LinearLayout.LayoutParams(0, -2, 1f))
-        val closeBanner = label("×", 23f, themeColor(217, 195, 239), true).apply {
-            gravity = Gravity.CENTER
-            minWidth = dp(36)
-            minHeight = dp(40)
-            contentDescription = "Close banner advertisement"
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { playerAdRow.visibility = View.GONE }
-        }
-        playerAdRow.addView(closeBanner, LinearLayout.LayoutParams(dp(36), dp(40)))
-        playerBannerContainer = playerAdRow
-        playerCard.addView(playerAdRow, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(12)
-        })
 
         playerCard.addView(
             label("NOW PLAYING", 11f, themeColor(211, 176, 255), true).apply {
@@ -1940,7 +1812,6 @@ class MainActivity : AppCompatActivity() {
         }
         listOf(
             Triple("home", "⌂", "HOME"),
-            Triple("search", "⌕", "SEARCH"),
             Triple("library", "♫", "LIBRARY"),
             Triple("videos", "▣", "VIDEOS")
         ).forEach { (tab, symbol, title) ->
@@ -1951,14 +1822,12 @@ class MainActivity : AppCompatActivity() {
                 isFocusable = true
                 contentDescription = when (tab) {
                     "home" -> "Open Home"
-                    "search" -> "Search music"
                     "library" -> "Open music library and playlists"
                     else -> "Browse videos"
                 }
                 setOnClickListener { showTab(tab) }
             }
             navigationButtons[tab] = item
-            if (tab == "search") item.visibility = if (searchTabVisible) View.VISIBLE else View.GONE
             navBar.addView(item, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
                 setMargins(dp(2), 0, dp(2), 0)
             })
@@ -3133,38 +3002,6 @@ class MainActivity : AppCompatActivity() {
             bottomMargin = dp(10)
         })
 
-        // Home is the first screen for most sessions, so place one clearly labelled banner
-        // here as well as the existing Library and Now Playing banners.
-        val homeAdContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(10))
-            contentDescription = "Start.io home banner advertisement area"
-        }
-        homeAdContainer.visibility = View.GONE
-        homeAdContainer.addView(
-            Banner(this, object : BannerListener {
-                override fun onReceiveAd(view: View) {
-                    Log.i("A1FamilyAds", "Home banner loaded")
-                    homeAdContainer.visibility = View.VISIBLE
-                }
-                override fun onFailedToReceiveAd(view: View) {
-                    Log.w("A1FamilyAds", "Home banner failed to load; hiding empty ad slot")
-                    homeAdContainer.visibility = View.GONE
-                }
-                override fun onImpression(view: View) {
-                    Log.i("A1FamilyAds", "Home banner impression")
-                }
-                override fun onClick(view: View) {
-                    Log.i("A1FamilyAds", "Home banner clicked")
-                }
-            }).apply {
-                contentDescription = "Start.io home banner advertisement"
-            },
-            LinearLayout.LayoutParams(-1, -2)
-        )
-        homeContent.addView(homeAdContainer, LinearLayout.LayoutParams(-1, -2))
-
         homeContent.addView(label("QUICK ACCESS", 12f, themeColor(215, 194, 236), true).apply {
             letterSpacing = 0.08f
             setPadding(dp(2), dp(2), 0, dp(10))
@@ -3203,43 +3040,6 @@ class MainActivity : AppCompatActivity() {
             }
             homeContent.addView(row)
         }
-
-        val sponsoredCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(themeColor(20, 39, 70), themeColor(27, 19, 50), themeColor(16, 16, 34))
-            ).apply {
-                cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), themeColor(40, 224, 255))
-            }
-        }
-        sponsoredCard.addView(label("SPONSORED  •  OPTIONAL", 10f, themeColor(40, 224, 255), true).apply { letterSpacing = 0.12f })
-        sponsoredCard.addView(label("Explore something new", 17f, themeColor(250, 250, 255), true).apply { setPadding(0, dp(6), 0, dp(3)) })
-        sponsoredCard.addView(label("Optional offers from our advertising partner. Your music stays uninterrupted.", 12f, themeColor(185, 198, 224)).apply { setPadding(0, 0, 0, dp(10)) })
-        if (ADSTERRA_SMARTLINK_URL.isBlank()) {
-            sponsoredCard.addView(label(
-                "Sponsored offers are coming soon.",
-                12f,
-                themeColor(185, 198, 224)
-            ).apply {
-                setPadding(0, dp(4), 0, 0)
-                contentDescription = "Sponsored offers are not enabled yet"
-            })
-        } else {
-            sponsoredCard.addView(label("Explore sponsored offers  ↗", 12f, themeColor(40, 224, 255), true).apply {
-                gravity = Gravity.CENTER
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = roundedBackground(themeColor(19, 42, 68), 13).apply { setStroke(dp(1), themeColor(40, 224, 255)) }
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { openSponsoredOffers() }
-            })
-        }
-        homeContent.addView(sponsoredCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(14) })
-        sponsoredCard.tag = "adsterra_smartlink_card"
-        ensureStartIoNativeAd(sponsoredCard)
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
@@ -4144,8 +3944,8 @@ class MainActivity : AppCompatActivity() {
             index = startIndex
         )
         if (p == null) {
-            pendingPlaybackAfterAd = request
-            StartIoVideoAds.savePendingPlayback(request)
+            pendingPlaybackRequest = request
+            PlaybackRequestCoordinator.savePendingPlayback(request)
             Toast.makeText(
                 this,
                 "Connecting to music service. Please wait.",
@@ -4514,8 +4314,8 @@ class MainActivity : AppCompatActivity() {
                 kind = "play_queue_item",
                 index = mediaIndex
             )
-            pendingPlaybackAfterAd = request
-            StartIoVideoAds.savePendingPlayback(request)
+            pendingPlaybackRequest = request
+            PlaybackRequestCoordinator.savePendingPlayback(request)
             showQueueUnavailable()
             return
         }
@@ -4910,10 +4710,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        pendingPlaybackAfterAd = null
+        pendingPlaybackRequest = null
         musicDispatchRetry?.let(handler::removeCallbacks)
         musicDispatchRetry = null
-        StartIoVideoAds.detach(this)
         controllerRetryRunnable?.let(handler::removeCallbacks)
         controllerRetryRunnable = null
         handler.removeCallbacks(progressUpdater)
@@ -5513,9 +5312,9 @@ class MainActivity : AppCompatActivity() {
             SettingsAction("↻", "Rescan music", "Refresh songs and album artwork") { songsLoaded = false; loadSongs() },
             SettingsAction("▣", "Rescan videos", "Refresh videos stored on this device") { videosLoaded = false; loadVideos() },
             SettingsAction("♧", "Weekly reminders", "Turn listening reminders on or off") { configureListeningReminders() },
-            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player with optional sponsored discovery") {
+            SettingsAction("ⓘ", "About A1 Family", "Offline-first music and video player with no advertising") {
                 AlertDialog.Builder(this).setTitle("A1 Family")
-                    .setMessage("Enjoy local music and videos, playlists, favourites, and uninterrupted background playback. Optional sponsored content is clearly labelled and never interrupts playback.")
+                    .setMessage("Enjoy an ad-free local music and video player with playlists, favourites, and uninterrupted background playback.")
                     .setPositiveButton("Got it", null).show()
             }
         )
@@ -5717,24 +5516,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun scheduleOpenAdIfDue() {
-        val prefs = getSharedPreferences("a1_family_ad_policy", MODE_PRIVATE)
-        val opens = prefs.getInt("app_open_count", 0) + 1
-        prefs.edit().putInt("app_open_count", opens).apply()
-        handler.postDelayed({ tryShowOpenAdWhenReady() }, 1_800L)
-    }
-
-    private fun tryShowOpenAdWhenReady(attempt: Int = 0) {
-        if (isFinishing || isDestroyed || player?.isPlaying == true || videoPlayer?.isPlaying == true) return
-        if (hasWindowFocus()) {
-            StartIoVideoAds.showOptionalAd(this) { }
-        } else if (attempt < 15) {
-            // Wait through permission prompts and startup window-focus transitions.
-            handler.postDelayed({ tryShowOpenAdWhenReady(attempt + 1) }, 900L)
-        }
-    }
-
-
     private fun openMoreMusicCatalogues(query: String) {
         val q = Uri.encode(query.trim())
         val catalogues = listOf(
@@ -5791,125 +5572,23 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    /**
-     * Loads one Start.io native ad per Activity instance and places it beside the clearly
-     * labelled Adsterra SmartLink card. Native ads are optional; a no-fill response is silent.
-     */
-    private fun ensureStartIoNativeAd(sponsoredCard: View) {
-        if (loadedStartIoNativeAd != null) {
-            attachStartIoNativeAd(sponsoredCard, loadedStartIoNativeAd!!)
-            return
-        }
-        if (startIoNativeAdRequested) return
-        startIoNativeAdRequested = true
-        val nativeRequest = try {
-            StartAppNativeAd(this)
-        } catch (error: RuntimeException) {
-            android.util.Log.w("A1FamilyAds", "Could not create Start.io native ad", error)
-            return
-        }
-        try {
-            nativeRequest.loadAd(
-                NativeAdPreferences().setAutoBitmapDownload(true),
-                object : AdEventListener {
-                    override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
-                        runOnUiThread {
-                            if (isFinishing || isDestroyed) return@runOnUiThread
-                            loadedStartIoNativeAd = nativeRequest.getNativeAds()?.firstOrNull()
-                            loadedStartIoNativeAd?.let { attachStartIoNativeAd(sponsoredCard, it) }
-                        }
-                    }
-
-                    override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                        android.util.Log.i("A1FamilyAds", "Start.io native ad unavailable; continuing without it")
-                    }
-                }
-            )
-        } catch (error: RuntimeException) {
-            android.util.Log.w("A1FamilyAds", "Start.io native ad request failed", error)
-        }
-    }
-
-    private fun attachStartIoNativeAd(sponsoredCard: View, details: NativeAdDetails) {
-        // Home content is rebuilt after library/playback updates; resolve the current SmartLink
-        // card instead of attaching the native ad to an obsolete view from an earlier render.
-        val currentSponsoredCard = homeContent.findViewWithTag<View>("adsterra_smartlink_card") ?: sponsoredCard
-        val existing = homeContent.findViewWithTag<View>("startio_native_ad_card")
-        if (existing != null) return
-        val nativeCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(13), dp(16), dp(13))
-            background = roundedBackground(themeColor(25, 17, 38), 18).apply {
-                setStroke(dp(1), themeColor(79, 54, 103))
-            }
-            tag = "startio_native_ad_card"
-            contentDescription = "Sponsored Start.io native advertisement"
-        }
-        nativeCard.addView(label("ADVERTISEMENT  •  START.IO", 9f, themeColor(40, 224, 255), true).apply {
-            letterSpacing = 0.12f
-        })
-        val title = details.getTitle().orEmpty().trim()
-        if (title.isNotEmpty()) {
-            nativeCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
-                setPadding(0, dp(7), 0, dp(4))
-            })
-        }
-        val description = details.getDescription().orEmpty().trim()
-        if (description.isNotEmpty()) {
-            nativeCard.addView(label(description, 12f, themeColor(211, 194, 232)).apply {
-                setPadding(0, 0, 0, dp(4))
-            })
-        }
-        details.getImageBitmap()?.let { bitmap ->
-            nativeCard.addView(ImageView(this).apply {
-                setImageBitmap(bitmap)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = "Sponsored image"
-            }, LinearLayout.LayoutParams(-1, dp(132)).apply {
-                topMargin = dp(7)
-                bottomMargin = dp(7)
-            })
-        }
-        details.registerViewForInteraction(nativeCard)
-        val position = homeContent.indexOfChild(currentSponsoredCard)
-        if (position >= 0) {
-            homeContent.addView(nativeCard, position + 1, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(14)
-            })
-        }
-    }
-
-    private fun openSponsoredOffers() {
-        val rawUrl = ADSTERRA_SMARTLINK_URL.trim()
-        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull()
-        if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
-            Toast.makeText(
-                this,
-                "Sponsored offers are not enabled yet. An approved Adsterra SmartLink must be configured first.",
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-        runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }.onFailure {
-            Toast.makeText(this, "No browser is available to open sponsored offers.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun showTab(tab: String) {
+        // Keep legacy internal callers working, but route them to the unified Library screen.
+        val destination = if (tab == "search") "library" else tab
         val previousTab = currentTab
-        currentTab = tab
-        if (tab == "home") renderHomeDashboard()
+        currentTab = destination
+        if (destination == "home") renderHomeDashboard()
         searchRow.visibility =
-            if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
+            if (destination == "library" || destination == "videos") View.VISIBLE else View.GONE
+        displayOptionsRow.visibility = if (destination == "library") View.VISIBLE else View.GONE
         libraryHeader.visibility =
-            if (tab == "library" && libraryContentVisible && libraryShortcutsVisible) View.VISIBLE else View.GONE
+            if (destination == "library" && libraryContentVisible && libraryShortcutsVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
-            if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
+            if (destination == "library" && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
-            if (tab == "videos") View.VISIBLE else View.GONE
+            if (destination == "videos") View.VISIBLE else View.GONE
         updateVideoPlayerVisibility()
-        if (tab == "videos" && !videosLoaded) {
+        if (destination == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
             } else {
@@ -5921,18 +5600,18 @@ class MainActivity : AppCompatActivity() {
                 videoPermissionLauncher.launch(permission)
             }
         }
-        homeScroll.visibility = if (tab == "home") View.VISIBLE else View.GONE
-        playerScroll.visibility = if (tab == "nowPlaying") View.VISIBLE else View.GONE
-        miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
+        homeScroll.visibility = if (destination == "home") View.VISIBLE else View.GONE
+        playerScroll.visibility = if (destination == "nowPlaying") View.VISIBLE else View.GONE
+        miniPlayer.visibility = if (destination == "nowPlaying") View.GONE else View.VISIBLE
 
         // A short, restrained entrance transition makes tab changes feel deliberate without
         // changing any playback state or rebuilding the media lists.
-        if (previousTab != tab) {
-            val incomingContent = when (tab) {
+        if (previousTab != destination) {
+            val incomingContent = when (destination) {
                 "home" -> homeScroll
                 "nowPlaying" -> playerScroll
                 "videos" -> videoPlaceholder
-                "search", "library" -> songScroll
+                "library" -> songScroll
                 else -> null
             }
             incomingContent?.let { content ->
@@ -5942,30 +5621,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (tab == "search") {
-            if (previousTab != "search") {
-                musicTabAdAttempted = false
-                if (player?.isPlaying != true && videoPlayer?.isPlaying != true) {
-                    musicTabAdAttempted = true
-                    handler.postDelayed({
-                        if (!isFinishing && !isDestroyed && currentTab == "search" &&
-                            player?.isPlaying != true && videoPlayer?.isPlaying != true
-                        ) StartIoVideoAds.showOptionalAd(this) { }
-                    }, 650L)
-                }
-            }
-            showFavoritesOnly = false
-            selectedPlaylist = null
-            updateFavoriteFilterButton()
-            updatePlaylistButton()
-            renderSongs(searchBox.text?.toString().orEmpty())
-        } else if (tab == "library") {
+        if (destination == "library") {
             updateLibraryBrowseButtons()
             renderSongs(searchBox.text?.toString().orEmpty())
         }
 
         navigationButtons.forEach { (name, button) ->
-            val selected = name == tab || (name == "home" && tab == "nowPlaying")
+            val selected = name == destination || (name == "home" && destination == "nowPlaying")
             button.setTextColor(
                 if (selected) themeColor(232, 213, 255)
                 else themeColor(174, 159, 194)
@@ -5978,7 +5640,6 @@ class MainActivity : AppCompatActivity() {
             button.isSelected = selected
             button.contentDescription = when (name) {
                 "home" -> if (selected) "Home, selected" else "Open Home"
-                "search" -> if (selected) "Search, selected" else "Search music"
                 "library" -> if (selected) "Library, selected" else "Open music library and playlists"
                 "videos" -> if (selected) "Videos, selected" else "Browse videos"
                 else -> name
