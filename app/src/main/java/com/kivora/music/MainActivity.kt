@@ -25,12 +25,6 @@ import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
-import com.startapp.sdk.ads.banner.Banner
-import com.startapp.sdk.ads.banner.BannerListener
-import com.startapp.sdk.ads.nativead.StartAppNativeAd
-import com.startapp.sdk.ads.nativead.NativeAdDetails
-import com.startapp.sdk.ads.nativead.NativeAdPreferences
-import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -60,9 +54,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-// Publisher-provided Adsterra SmartLink. Confirm it is Active and configured for mainstream
-// offers in the Adsterra dashboard; this app opens it only after the user taps the sponsored card.
-private const val ADSTERRA_SMARTLINK_URL = "https://asiafilm.org/4/d52fd43d84340c6fa7784c326206088f"
+
 
 data class Song(
     val title: String,
@@ -98,9 +90,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var artwork: ImageView
     private lateinit var miniArtwork: ImageView
     private var artworkMotionAnimator: android.animation.AnimatorSet? = null
-    private var playerBannerContainer: LinearLayout? = null
-    private var startIoNativeAdRequested = false
-    private var loadedStartIoNativeAd: NativeAdDetails? = null
     private var hasSeenFirstResume = false
     private var returnedFromBackground = false
     private var suppressNextResumeAd = false
@@ -111,6 +100,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchBox: EditText
     private lateinit var searchRow: LinearLayout
     private lateinit var libraryVisibilityToggle: TextView
+    private lateinit var displayOptionsRow: LinearLayout
     private var libraryShortcutsVisible = true
     private var libraryHeaderVisible = true
     private var libraryContentVisible = true
@@ -369,7 +359,6 @@ class MainActivity : AppCompatActivity() {
         buildScreen()
         connectToPlaybackService()
         handler.post(progressUpdater)
-        if (savedInstanceState == null) scheduleOpenAdIfDue()
 
         val permission = if (Build.VERSION.SDK_INT >= 33) {
             Manifest.permission.READ_MEDIA_AUDIO
@@ -456,21 +445,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        // Start.io requires saving the state of the same StartAppAd used for the interstitial.
-        StartIoVideoAds.saveInstanceState(this, outState)
         pendingPlaybackAfterAd?.writeTo(outState, "activity_pending_playback_")
         outState.putBoolean("activity_playback_continues_after_ad", playbackContinuesAfterAd)
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
-        // Restore the StartAppAd instance before the Activity restores its own state, as required
-        // for Start.io video interstitials.
         pendingPlaybackAfterAd = PendingPlayback.readFrom(
             savedInstanceState,
             "activity_pending_playback_"
         )
         playbackContinuesAfterAd = savedInstanceState.getBoolean("activity_playback_continues_after_ad")
-        StartIoVideoAds.restoreInstanceState(this, savedInstanceState)
         super.onRestoreInstanceState(savedInstanceState)
     }
 
@@ -486,7 +470,6 @@ class MainActivity : AppCompatActivity() {
         } else if (returnedFromBackground) {
             returnedFromBackground = false
             if (suppressNextResumeAd) suppressNextResumeAd = false
-            else scheduleOpenAdIfDue()
         }
         // The durable playback journal and ad callback are authoritative. Retrying a
         // local pending request merely because this Activity regained focus can start audio
@@ -1022,7 +1005,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
 
         // The search field belongs to the Library screen. Only the library controls can be hidden.
-        val displayOptionsRow = LinearLayout(this).apply {
+        displayOptionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(7), 0, dp(7))
@@ -1040,48 +1023,12 @@ class MainActivity : AppCompatActivity() {
                 libraryShortcutsVisible = !libraryShortcutsVisible
                 getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
                     .putBoolean("hide_songs_albums_shortcuts", !libraryShortcutsVisible).apply()
-                // Hide the entire library control/header section, but never hide the track list.
-                // This lets songs move upward and use the space freed by the controls.
                 libraryHeader.visibility = if (libraryShortcutsVisible) View.VISIBLE else View.GONE
                 text = if (libraryShortcutsVisible) "Hide library controls" else "Show library controls"
             }
         }
-        // Keep the library screen focused; users may hide its controls to give songs more room.
         displayOptionsRow.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(-1, -2))
         root.addView(displayOptionsRow, LinearLayout.LayoutParams(-1, -2))
-
-        // Keep a live-capable Start.io banner visible on the main library screen,
-        // rather than limiting banner inventory to the Now Playing card.
-        val libraryAdContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(6))
-            contentDescription = "Advertisement area"
-        }
-        val libraryStartIoBanner = Banner(this, object : BannerListener {
-            override fun onReceiveAd(view: View) {
-                Log.i("A1FamilyAds", "Library banner loaded")
-                libraryAdContainer.visibility = View.VISIBLE
-            }
-            override fun onFailedToReceiveAd(view: View) {
-                Log.w("A1FamilyAds", "Library banner failed to load; hiding empty ad slot")
-                libraryAdContainer.visibility = View.GONE
-            }
-            override fun onImpression(view: View) {
-                Log.i("A1FamilyAds", "Library banner impression")
-            }
-            override fun onClick(view: View) {
-                Log.i("A1FamilyAds", "Library banner clicked")
-            }
-        }).apply {
-            contentDescription = "Start.io banner advertisement"
-        }
-        libraryAdContainer.visibility = View.GONE
-        libraryAdContainer.addView(
-            libraryStartIoBanner,
-            LinearLayout.LayoutParams(-1, -2)
-        )
-        root.addView(libraryAdContainer, LinearLayout.LayoutParams(-1, -2))
 
         libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1362,49 +1309,6 @@ class MainActivity : AppCompatActivity() {
             }
             elevation = dp(7).toFloat()
         }
-
-        val playerAdRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(4), dp(4), dp(4))
-            background = roundedBackground(themeColor(25, 17, 38), 14).apply {
-                setStroke(dp(1), themeColor(79, 54, 103))
-            }
-        }
-        val startIoBanner = Banner(this, object : BannerListener {
-            override fun onReceiveAd(view: View) {
-                Log.i("A1FamilyAds", "Now Playing banner loaded")
-                playerAdRow.visibility = View.VISIBLE
-            }
-            override fun onFailedToReceiveAd(view: View) {
-                Log.w("A1FamilyAds", "Now Playing banner failed to load; hiding empty ad slot")
-                playerAdRow.visibility = View.GONE
-            }
-            override fun onImpression(view: View) {
-                Log.i("A1FamilyAds", "Now Playing banner impression")
-            }
-            override fun onClick(view: View) {
-                Log.i("A1FamilyAds", "Now Playing banner clicked")
-            }
-        }).apply {
-            contentDescription = "Start.io banner advertisement"
-        }
-        playerAdRow.visibility = View.GONE
-        playerAdRow.addView(startIoBanner, LinearLayout.LayoutParams(0, -2, 1f))
-        val closeBanner = label("×", 23f, themeColor(217, 195, 239), true).apply {
-            gravity = Gravity.CENTER
-            minWidth = dp(36)
-            minHeight = dp(40)
-            contentDescription = "Close banner advertisement"
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { playerAdRow.visibility = View.GONE }
-        }
-        playerAdRow.addView(closeBanner, LinearLayout.LayoutParams(dp(36), dp(40)))
-        playerBannerContainer = playerAdRow
-        playerCard.addView(playerAdRow, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(12)
-        })
 
         playerCard.addView(
             label("NOW PLAYING", 11f, themeColor(211, 176, 255), true).apply {
@@ -3098,38 +3002,6 @@ class MainActivity : AppCompatActivity() {
             bottomMargin = dp(10)
         })
 
-        // Home is the first screen for most sessions, so place one clearly labelled banner
-        // here as well as the existing Library and Now Playing banners.
-        val homeAdContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(10))
-            contentDescription = "Start.io home banner advertisement area"
-        }
-        homeAdContainer.visibility = View.GONE
-        homeAdContainer.addView(
-            Banner(this, object : BannerListener {
-                override fun onReceiveAd(view: View) {
-                    Log.i("A1FamilyAds", "Home banner loaded")
-                    homeAdContainer.visibility = View.VISIBLE
-                }
-                override fun onFailedToReceiveAd(view: View) {
-                    Log.w("A1FamilyAds", "Home banner failed to load; hiding empty ad slot")
-                    homeAdContainer.visibility = View.GONE
-                }
-                override fun onImpression(view: View) {
-                    Log.i("A1FamilyAds", "Home banner impression")
-                }
-                override fun onClick(view: View) {
-                    Log.i("A1FamilyAds", "Home banner clicked")
-                }
-            }).apply {
-                contentDescription = "Start.io home banner advertisement"
-            },
-            LinearLayout.LayoutParams(-1, -2)
-        )
-        homeContent.addView(homeAdContainer, LinearLayout.LayoutParams(-1, -2))
-
         homeContent.addView(label("QUICK ACCESS", 12f, themeColor(215, 194, 236), true).apply {
             letterSpacing = 0.08f
             setPadding(dp(2), dp(2), 0, dp(10))
@@ -3168,43 +3040,6 @@ class MainActivity : AppCompatActivity() {
             }
             homeContent.addView(row)
         }
-
-        val sponsoredCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(themeColor(20, 39, 70), themeColor(27, 19, 50), themeColor(16, 16, 34))
-            ).apply {
-                cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), themeColor(40, 224, 255))
-            }
-        }
-        sponsoredCard.addView(label("SPONSORED  •  OPTIONAL", 10f, themeColor(40, 224, 255), true).apply { letterSpacing = 0.12f })
-        sponsoredCard.addView(label("Explore something new", 17f, themeColor(250, 250, 255), true).apply { setPadding(0, dp(6), 0, dp(3)) })
-        sponsoredCard.addView(label("Optional offers from our advertising partner. Your music stays uninterrupted.", 12f, themeColor(185, 198, 224)).apply { setPadding(0, 0, 0, dp(10)) })
-        if (ADSTERRA_SMARTLINK_URL.isBlank()) {
-            sponsoredCard.addView(label(
-                "Sponsored offers are coming soon.",
-                12f,
-                themeColor(185, 198, 224)
-            ).apply {
-                setPadding(0, dp(4), 0, 0)
-                contentDescription = "Sponsored offers are not enabled yet"
-            })
-        } else {
-            sponsoredCard.addView(label("Explore sponsored offers  ↗", 12f, themeColor(40, 224, 255), true).apply {
-                gravity = Gravity.CENTER
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = roundedBackground(themeColor(19, 42, 68), 13).apply { setStroke(dp(1), themeColor(40, 224, 255)) }
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { openSponsoredOffers() }
-            })
-        }
-        homeContent.addView(sponsoredCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(14) })
-        sponsoredCard.tag = "adsterra_smartlink_card"
-        ensureStartIoNativeAd(sponsoredCard)
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
@@ -4878,7 +4713,6 @@ class MainActivity : AppCompatActivity() {
         pendingPlaybackAfterAd = null
         musicDispatchRetry?.let(handler::removeCallbacks)
         musicDispatchRetry = null
-        StartIoVideoAds.detach(this)
         controllerRetryRunnable?.let(handler::removeCallbacks)
         controllerRetryRunnable = null
         handler.removeCallbacks(progressUpdater)
@@ -5682,24 +5516,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun scheduleOpenAdIfDue() {
-        val prefs = getSharedPreferences("a1_family_ad_policy", MODE_PRIVATE)
-        val opens = prefs.getInt("app_open_count", 0) + 1
-        prefs.edit().putInt("app_open_count", opens).apply()
-        handler.postDelayed({ tryShowOpenAdWhenReady() }, 1_800L)
-    }
-
-    private fun tryShowOpenAdWhenReady(attempt: Int = 0) {
-        if (isFinishing || isDestroyed || player?.isPlaying == true || videoPlayer?.isPlaying == true) return
-        if (hasWindowFocus()) {
-            StartIoVideoAds.showOptionalAd(this) { }
-        } else if (attempt < 15) {
-            // Wait through permission prompts and startup window-focus transitions.
-            handler.postDelayed({ tryShowOpenAdWhenReady(attempt + 1) }, 900L)
-        }
-    }
-
-
     private fun openMoreMusicCatalogues(query: String) {
         val q = Uri.encode(query.trim())
         val catalogues = listOf(
@@ -5756,111 +5572,6 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    /**
-     * Loads one Start.io native ad per Activity instance and places it beside the clearly
-     * labelled Adsterra SmartLink card. Native ads are optional; a no-fill response is silent.
-     */
-    private fun ensureStartIoNativeAd(sponsoredCard: View) {
-        if (loadedStartIoNativeAd != null) {
-            attachStartIoNativeAd(sponsoredCard, loadedStartIoNativeAd!!)
-            return
-        }
-        if (startIoNativeAdRequested) return
-        startIoNativeAdRequested = true
-        val nativeRequest = try {
-            StartAppNativeAd(this)
-        } catch (error: RuntimeException) {
-            android.util.Log.w("A1FamilyAds", "Could not create Start.io native ad", error)
-            return
-        }
-        try {
-            nativeRequest.loadAd(
-                NativeAdPreferences().setAutoBitmapDownload(true),
-                object : AdEventListener {
-                    override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
-                        runOnUiThread {
-                            if (isFinishing || isDestroyed) return@runOnUiThread
-                            loadedStartIoNativeAd = nativeRequest.getNativeAds()?.firstOrNull()
-                            loadedStartIoNativeAd?.let { attachStartIoNativeAd(sponsoredCard, it) }
-                        }
-                    }
-
-                    override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                        android.util.Log.i("A1FamilyAds", "Start.io native ad unavailable; continuing without it")
-                    }
-                }
-            )
-        } catch (error: RuntimeException) {
-            android.util.Log.w("A1FamilyAds", "Start.io native ad request failed", error)
-        }
-    }
-
-    private fun attachStartIoNativeAd(sponsoredCard: View, details: NativeAdDetails) {
-        // Home content is rebuilt after library/playback updates; resolve the current SmartLink
-        // card instead of attaching the native ad to an obsolete view from an earlier render.
-        val currentSponsoredCard = homeContent.findViewWithTag<View>("adsterra_smartlink_card") ?: sponsoredCard
-        val existing = homeContent.findViewWithTag<View>("startio_native_ad_card")
-        if (existing != null) return
-        val nativeCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(13), dp(16), dp(13))
-            background = roundedBackground(themeColor(25, 17, 38), 18).apply {
-                setStroke(dp(1), themeColor(79, 54, 103))
-            }
-            tag = "startio_native_ad_card"
-            contentDescription = "Sponsored Start.io native advertisement"
-        }
-        nativeCard.addView(label("ADVERTISEMENT  •  START.IO", 9f, themeColor(40, 224, 255), true).apply {
-            letterSpacing = 0.12f
-        })
-        val title = details.getTitle().orEmpty().trim()
-        if (title.isNotEmpty()) {
-            nativeCard.addView(label(title, 16f, themeColor(250, 247, 255), true).apply {
-                setPadding(0, dp(7), 0, dp(4))
-            })
-        }
-        val description = details.getDescription().orEmpty().trim()
-        if (description.isNotEmpty()) {
-            nativeCard.addView(label(description, 12f, themeColor(211, 194, 232)).apply {
-                setPadding(0, 0, 0, dp(4))
-            })
-        }
-        details.getImageBitmap()?.let { bitmap ->
-            nativeCard.addView(ImageView(this).apply {
-                setImageBitmap(bitmap)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = "Sponsored image"
-            }, LinearLayout.LayoutParams(-1, dp(132)).apply {
-                topMargin = dp(7)
-                bottomMargin = dp(7)
-            })
-        }
-        details.registerViewForInteraction(nativeCard)
-        val position = homeContent.indexOfChild(currentSponsoredCard)
-        if (position >= 0) {
-            homeContent.addView(nativeCard, position + 1, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(14)
-            })
-        }
-    }
-
-    private fun openSponsoredOffers() {
-        val rawUrl = ADSTERRA_SMARTLINK_URL.trim()
-        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull()
-        if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
-            Toast.makeText(
-                this,
-                "Sponsored offers are not enabled yet. An approved Adsterra SmartLink must be configured first.",
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-        runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }.onFailure {
-            Toast.makeText(this, "No browser is available to open sponsored offers.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun showTab(tab: String) {
         // Keep legacy internal callers working, but route them to the unified Library screen.
         val destination = if (tab == "search") "library" else tab
@@ -5869,6 +5580,7 @@ class MainActivity : AppCompatActivity() {
         if (destination == "home") renderHomeDashboard()
         searchRow.visibility =
             if (destination == "library" || destination == "videos") View.VISIBLE else View.GONE
+        displayOptionsRow.visibility = if (destination == "library") View.VISIBLE else View.GONE
         libraryHeader.visibility =
             if (destination == "library" && libraryContentVisible && libraryShortcutsVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
