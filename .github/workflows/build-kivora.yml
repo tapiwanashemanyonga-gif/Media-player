@@ -13,6 +13,7 @@ on:
       - feature/ad-free-library-polish
       - chore/reliability-readme-diff-check
       - chore/clarify-legacy-playback-recovery
+      - ci/protect-media-integration-and-ad-free-v2
 
 permissions:
   contents: read
@@ -36,6 +37,26 @@ jobs:
           else
             git diff --check
           fi
+
+      - name: Verify media integration and ad-free safeguards
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="app/src/main/AndroidManifest.xml"
+          GRADLE_FILE="app/build.gradle.kts"
+          test -s "$MANIFEST"
+          test -s "$GRADLE_FILE"
+          grep -Fq 'android:label="A1 FAMILY MEDIA"' "$MANIFEST"
+          grep -Fq 'android:name=".KivoraPlaybackService"' "$MANIFEST"
+          grep -Fq 'androidx.media3.session.MediaSessionService' "$MANIFEST"
+          grep -Fq 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK' "$MANIFEST"
+          grep -Fq 'android:mimeType="audio/*"' "$MANIFEST"
+          grep -Fq 'android:mimeType="video/*"' "$MANIFEST"
+          if grep -Eiq 'com\.startapp|StartAppSDK|asiafilm\.org/4/d52fd43d84340c6fa7784c326206088f' "$GRADLE_FILE" app/src/main; then
+            echo "Unexpected advertising SDK or SmartLink reference found."
+            exit 1
+          fi
+          echo "Media-service, file-opening, app-label, and ad-free checks passed."
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -102,6 +123,24 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+
+      - name: Audit published v1.4.0 APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLISHED_APK="$RUNNER_TEMP/published-v1.4.0.apk"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/tapiwanashemanyonga-gif/Media-player/releases/download/v1.4.0/A1FamilyMediaPlayer.apk" \
+            --output "$PUBLISHED_APK"
+          test -s "$PUBLISHED_APK"
+          echo "Published v1.4.0 APK package and version:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PUBLISHED_APK" | head -n 1
+          echo "Published v1.4.0 APK signing certificate:"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PUBLISHED_APK"
+          echo "Newly built APK package and version:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/release/app-release.apk | head -n 1
+          echo "Newly built APK signing certificate:"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 
       - name: Verify release AAB signature
         shell: bash
