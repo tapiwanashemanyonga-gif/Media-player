@@ -12,6 +12,7 @@ on:
       - ui/remove-duplicate-search-tab
       - feature/ad-free-library-polish
       - chore/reliability-readme-diff-check
+      - chore/clarify-legacy-playback-recovery
 
 permissions:
   contents: read
