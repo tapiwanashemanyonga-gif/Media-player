@@ -14,6 +14,7 @@ on:
       - chore/reliability-readme-diff-check
       - chore/clarify-legacy-playback-recovery
       - ci/protect-media-integration-and-ad-free-v2
+      - ci/enforce-release-identity-match
 
 permissions:
   contents: read
