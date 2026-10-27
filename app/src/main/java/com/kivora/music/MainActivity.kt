@@ -188,6 +188,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedVideoUri: String? = null
     private var videoFullscreenButton: View? = null
     private var videoMinimizeButton: View? = null
+    private var videoPlayerMinimized = false
     private var currentTab = "search"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
@@ -1334,12 +1335,11 @@ class MainActivity : AppCompatActivity() {
         videoMinimizeButton = minimizeVideoButton
         minimizeVideoButton.visibility = View.GONE
         minimizeVideoButton.setOnClickListener {
-            val shouldMinimize = videoPlayerView.visibility == View.VISIBLE
-            videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
+            videoPlayerMinimized = !videoPlayerMinimized
+            updateVideoPlayerVisibility()
+            minimizeVideoButton.text = if (videoPlayerMinimized) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
             minimizeVideoButton.contentDescription =
-                if (shouldMinimize) "Restore video player" else "Minimize video player"
+                if (videoPlayerMinimized) "Restore video player" else "Minimize video player"
         }
         videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
@@ -5380,10 +5380,13 @@ class MainActivity : AppCompatActivity() {
         if (!::videoPlayerView.isInitialized) return
         val currentUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
         val hasActiveVideo = !selectedVideoUri.isNullOrBlank() && currentUri != null
-        val visibility = if (hasActiveVideo) View.VISIBLE else View.GONE
+        val visibility = if (hasActiveVideo && !videoPlayerMinimized) View.VISIBLE else View.GONE
         videoPlayerView.visibility = visibility
         videoFullscreenButton?.visibility = visibility
-        videoMinimizeButton?.visibility = visibility
+        videoMinimizeButton?.visibility = if (hasActiveVideo) View.VISIBLE else View.GONE
+        videoMinimizeButton?.let { button ->
+            button.contentDescription = if (videoPlayerMinimized) "Restore video player" else "Minimize video player"
+        }
     }
 
     private fun restoreVideoPlayerView() {
