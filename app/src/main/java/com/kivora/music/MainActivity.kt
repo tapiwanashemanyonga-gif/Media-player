@@ -148,6 +148,7 @@ class MainActivity : AppCompatActivity() {
             val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
             selectedVideoUri = uri
             navigationVideoUri = uri
+            updateVideoPlayerVisibility()
             if (::videoList.isInitialized && ::searchBox.isInitialized) {
                 renderVideos(searchBox.text?.toString().orEmpty())
             }
@@ -185,6 +186,8 @@ class MainActivity : AppCompatActivity() {
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
     private var selectedVideoUri: String? = null
+    private var videoFullscreenButton: View? = null
+    private var videoMinimizeButton: View? = null
     private var currentTab = "search"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
@@ -700,6 +703,7 @@ class MainActivity : AppCompatActivity() {
                     // Re-assert the exclusive rule immediately before starting video.
                     player?.pause()
                     video.playWhenReady = true
+                    updateVideoPlayerVisibility()
                 } catch (_: RuntimeException) {
                     reportVideoPlaybackFailure(uri.toString())
                     return false
@@ -1266,6 +1270,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(themeColor(8, 6, 13))
             setShutterBackgroundColor(themeColor(8, 6, 13))
             contentDescription = "Video player"
+            visibility = View.GONE
         }
         val videoPlayerActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1284,6 +1289,8 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Open video in fullscreen"
             setOnClickListener { showVideoFullscreen() }
         }
+        videoFullscreenButton = fullscreenButton
+        fullscreenButton.visibility = View.GONE
         videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
@@ -1324,6 +1331,8 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
         }
+        videoMinimizeButton = minimizeVideoButton
+        minimizeVideoButton.visibility = View.GONE
         minimizeVideoButton.setOnClickListener {
             val shouldMinimize = videoPlayerView.visibility == View.VISIBLE
             videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
@@ -5354,6 +5363,7 @@ class MainActivity : AppCompatActivity() {
         lastFailedVideoUri = failedUri
         val failedTitle = deviceVideos.firstOrNull { it.uri.toString() == failedUri }?.title ?: "video"
         selectedVideoUri = null
+        updateVideoPlayerVisibility()
         if (::videoStatus.isInitialized) {
             renderVideos(searchBox.text?.toString().orEmpty())
             videoStatus.text = "Couldn't play $failedTitle. Choose another video or use previous/next."
@@ -5363,6 +5373,17 @@ class MainActivity : AppCompatActivity() {
             "Couldn't play $failedTitle. Choose another video.",
             Toast.LENGTH_LONG
         ).show()
+    }
+
+    /** Collapse the inline video surface until a video is actually selected and loaded. */
+    private fun updateVideoPlayerVisibility() {
+        if (!::videoPlayerView.isInitialized) return
+        val currentUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
+        val hasActiveVideo = !selectedVideoUri.isNullOrBlank() && currentUri != null
+        val visibility = if (hasActiveVideo) View.VISIBLE else View.GONE
+        videoPlayerView.visibility = visibility
+        videoFullscreenButton?.visibility = visibility
+        videoMinimizeButton?.visibility = visibility
     }
 
     private fun restoreVideoPlayerView() {
@@ -5778,6 +5799,7 @@ class MainActivity : AppCompatActivity() {
             if ((tab == "search" || tab == "library") && libraryContentVisible) View.VISIBLE else View.GONE
         videoPlaceholder.visibility =
             if (tab == "videos") View.VISIBLE else View.GONE
+        updateVideoPlayerVisibility()
         if (tab == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
@@ -5793,6 +5815,23 @@ class MainActivity : AppCompatActivity() {
         homeScroll.visibility = if (tab == "home") View.VISIBLE else View.GONE
         playerScroll.visibility = if (tab == "nowPlaying") View.VISIBLE else View.GONE
         miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
+
+        // A short, restrained entrance transition makes tab changes feel deliberate without
+        // changing any playback state or rebuilding the media lists.
+        if (previousTab != tab) {
+            val incomingContent = when (tab) {
+                "home" -> homeScroll
+                "nowPlaying" -> playerScroll
+                "videos" -> videoPlaceholder
+                "search", "library" -> songScroll
+                else -> null
+            }
+            incomingContent?.let { content ->
+                content.alpha = 0.94f
+                content.translationY = dp(5).toFloat()
+                content.animate().alpha(1f).translationY(0f).setDuration(170L).start()
+            }
+        }
 
         if (tab == "search") {
             if (previousTab != "search") {
