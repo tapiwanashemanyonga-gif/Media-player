@@ -11,6 +11,7 @@ on:
       - fix/open-audio-from-files
       - ui/remove-duplicate-search-tab
       - feature/ad-free-library-polish
+      - chore/reliability-readme-diff-check
 
 permissions:
   contents: read
@@ -22,6 +23,18 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check patch whitespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-list --count HEAD)" -gt 1 ]]; then
+            git diff --check HEAD^ HEAD
+          else
+            git diff --check
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
