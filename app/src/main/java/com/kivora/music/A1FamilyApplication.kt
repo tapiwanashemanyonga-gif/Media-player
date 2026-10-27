@@ -8,12 +8,18 @@ import java.lang.ref.WeakReference
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
+import com.startapp.sdk.adsbase.Ad
+import com.startapp.sdk.adsbase.StartAppAd
+import com.startapp.sdk.adsbase.StartAppAd.AdMode
+import com.startapp.sdk.adsbase.StartAppSDK
+import com.startapp.sdk.adsbase.adlisteners.AdDisplayListener
+import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 
-/** Initializes durable playback request recovery without any advertising SDK. */
+/** Owns the single SDK initialization and the activity-scoped interstitial preload. */
 class A1FamilyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        PlaybackRequestCoordinator.initialize(this)
+        StartIoVideoAds.initialize(this)
     }
 }
 
@@ -132,25 +138,41 @@ internal data class PlaybackJournal(
  * Central Start.io coordinator. Playback is independent of ads; optional interstitials are
  * shown only at a controlled app-open or download-count checkpoint.
  */
-internal object PlaybackRequestCoordinator {
+internal object StartIoVideoAds {
     enum class ShowResult { SHOWN, UNAVAILABLE, BLOCKED_UNRESOLVED, EXPIRED }
 
-
+    private const val TAG = "A1FamilyAds"
+    private const val STARTIO_APP_ID = "209565109"
+    private const val FREQUENCY_CAP_MS = 30 * 60 * 1000L
+    private const val OPTIONAL_FREQUENCY_CAP_MS = 30 * 60 * 1000L
+    private const val LAST_OPTIONAL_SHOWN_AT = "last_optional_ad_shown_at"
     private const val PREFS = "a1_family_ad_policy"
+    private const val LAST_SHOWN_AT = "last_video_interstitial_shown_at"
     private const val DISPLAY_UNRESOLVED = "startio_display_unresolved"
     private const val PENDING_PLAYBACK_JSON = "startio_pending_playback_json"
     private const val COMPLETED_PLAYBACK_IDS = "startio_completed_playback_ids"
     private const val PENDING_WRITE_UNCERTAIN = "startio_pending_write_uncertain"
     private const val JOURNAL = "startio_playback_journal_v1"
     private const val PENDING_PREFIX = "startio_pending_playback_"
+    private const val HAD_LOADED_AD = "startio_had_loaded_video_ad"
+    private const val LOAD_TIMEOUT_MS = 30_000L
+    private const val DISPLAY_TIMEOUT_MS = 60_000L
     private const val RESOLUTION_RETRY_MS = 5_000L
     private const val PENDING_RETRY_MS = 5_000L
     private const val STALE_REQUEST_AGE_MS = 30L * 24 * 60 * 60 * 1000
+    private const val SHOW_FAILURE_RECOVERY_MS = 1_500L
 
     private lateinit var app: Application
     private var initialized = false
+    private var sdkReady = false
     private var activeActivity = WeakReference<MainActivity>(null)
+    private var loadedOwner = WeakReference<MainActivity>(null)
+    private var loadedAd: StartAppAd? = null
+    private var currentAd: StartAppAd? = null
+    private var loading = false
     private var showing = false
+    private var optionalAdShowing = false
+    private var optionalAdPending = false
     private var pendingPlayback: PendingPlayback? = null
     private var journal = PlaybackJournal(null, PlaybackJournal.RequestState.EMPTY, PlaybackJournal.AdState.NONE)
     private var pendingPersistenceFailed = false
@@ -161,7 +183,13 @@ internal object PlaybackRequestCoordinator {
     private var expiryRetry: Runnable? = null
     private var acknowledgementRetryIntent: String? = null
     private var acknowledgementRetry: Runnable? = null
+    private var loadGeneration = 0L
+    private var loadTimeout: Runnable? = null
     private var showingGeneration = 0L
+    private var displayTimeout: Runnable? = null
+    private var terminalConfirmedGeneration: Long? = null
+    private var resolutionRetry: Runnable? = null
+    private var showFailureRecovery: Runnable? = null
     private var priorProcessDisplayRecovery: Runnable? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -229,15 +257,40 @@ internal object PlaybackRequestCoordinator {
             schedulePriorProcessDisplayRecovery()
         }
         expireStalePendingRequest()
-        Log.i(TAG, "Playback journal initialized; advertising disabled")
+        Log.i(TAG, "SDK init requested; appId=$STARTIO_APP_ID; testAds=${BuildConfig.DEBUG}")
+        try {
+            // Keep test ads enabled until production configuration is explicitly approved.
+            // Debug APKs use test inventory; signed release builds request live ads.
+            // Never click ads while testing the debug build.
+            StartAppSDK.setTestAdsEnabled(BuildConfig.DEBUG)
+            StartAppSDK.initParams(application, STARTIO_APP_ID)
+                .setReturnAdsEnabled(false)
+                .setCallback {
+                    sdkReady = true
+                    Log.i(TAG, "SDK initialization callback received; SDK marked ready")
+                    preloadForActiveActivity()
+                }
+                .init()
+            Log.i(TAG, "Start.io init() returned without a synchronous exception")
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Start.io initialization failed; playback remains available", error)
+        }
     }
 
     fun attach(activity: MainActivity) {
-        Log.i(TAG, "Playback host attached; initialized=$initialized finishing=${activity.isFinishing} destroyed=${activity.isDestroyed}")
+        Log.i(TAG, "Ad host attached; initialized=$initialized sdkReady=$sdkReady finishing=${activity.isFinishing} destroyed=${activity.isDestroyed}")
         val isNewActivity = activeActivity.get() !== activity
         activeActivity = WeakReference(activity)
         if (isNewActivity) recoverDispatchedPlayback()
-        // Playback is dispatched only after explicit user actions.
+        if (loadedAd != null && loadedOwner.get() !== activity) {
+            // A preloaded StartAppAd belongs to its creating Activity. Recreate it from the
+            // saved SDK state instead of showing an ad tied to a destroyed Activity.
+            loadedAd = null
+            loadedOwner.clear()
+        }
+        // Do not dispatch a durable request just because the app resumes. New explicit
+        // selections are dispatched by MainActivity; stale retries here caused surprise autoplay.
+        preloadForActiveActivity()
     }
 
     /** Reclaim a request whose prior Activity may have been destroyed before its result arrived. */
@@ -292,7 +345,7 @@ internal object PlaybackRequestCoordinator {
             }
             showing = false
             dispatchPendingIfReady()
-
+            preloadForActiveActivity()
         }
         priorProcessDisplayRecovery = retry
         mainHandler.postDelayed(retry, RESOLUTION_RETRY_MS)
@@ -419,7 +472,7 @@ internal object PlaybackRequestCoordinator {
             return
         }
         pendingPlayback = null
-        activity.runPlaybackRequest(intent)
+        activity.runPlaybackAfterAd(intent)
     }
 
     /** Expire only clearly old requests with a trustworthy timestamp and no unresolved ad. */
@@ -475,7 +528,7 @@ internal object PlaybackRequestCoordinator {
                 }
                 Log.i(TAG, "Expired stale playback request ${request.requestId} after retry")
                 dispatchPendingIfReady()
-
+                preloadForActiveActivity()
             } else {
                 pendingPersistenceFailed = true
                 scheduleExpiryRetry(request)
@@ -546,4 +599,423 @@ internal object PlaybackRequestCoordinator {
         mainHandler.postDelayed(retry, PENDING_RETRY_MS)
     }
 
+    fun detach(activity: MainActivity) {
+        if (activeActivity.get() === activity) activeActivity.clear()
+        // Do not abandon an in-flight request on rotation. Its listener holds only a weak Activity
+        // reference; the timeout below releases the request if the SDK never calls back.
+        if (!showing && loadedAd != null) {
+            loadedAd = null
+            loadedOwner.clear()
+            currentAd = null
+        }
+    }
+
+    fun saveInstanceState(activity: MainActivity, outState: Bundle) {
+        if (activeActivity.get() !== activity) return
+        outState.putBoolean(HAD_LOADED_AD, loadedAd != null)
+        currentAd?.onSaveInstanceState(outState)
+        pendingPlayback?.writeTo(outState, PENDING_PREFIX)
+    }
+
+    fun restoreInstanceState(activity: MainActivity, savedState: Bundle) {
+        // A prior Activity's request can still callback after rotation. Invalidate it before
+        // replacing currentAd so neither its callback nor timeout can own the loading state.
+        loadGeneration++
+        loadTimeout?.let(mainHandler::removeCallbacks)
+        loadTimeout = null
+        loading = false
+        if (!showing) currentAd = null
+
+        val ad = StartAppAd(activity)
+        ad.onRestoreInstanceState(savedState)
+        currentAd = ad
+        loadedAd = if (savedState.getBoolean(HAD_LOADED_AD)) ad else null
+        if (loadedAd != null) loadedOwner = WeakReference(activity)
+        // The durable journal is authoritative. Bundle state may be from an older request.
+        if (pendingPlayback == null && !pendingPersistenceFailed && journal.request == null) {
+            pendingPlayback = PendingPlayback.readFrom(savedState, PENDING_PREFIX)
+        }
+        if (pendingPersistenceFailed) pendingPlayback?.let(::schedulePendingPersistenceRetry)
+    }
+
+    /**
+     * A standalone, dismissible full-page ad for opt-in frequency points. It never owns a
+     * playback request, so a missing ad or a close callback cannot delay music playback.
+     */
+    /**
+     * Shows a standalone app-open interstitial only after SDK readiness, when the Activity
+     * is resumed/focused and playback is idle. A separate cooldown prevents repeated opens
+     * from producing excessive full-screen ads.
+     */
+    fun showOptionalAd(activity: MainActivity, onFinished: () -> Unit) {
+        if (optionalAdShowing || optionalAdPending) {
+            onFinished()
+            return
+        }
+        optionalAdPending = true
+        tryStartOptionalAd(activity, onFinished, attempt = 0)
+    }
+
+    private fun tryStartOptionalAd(
+        activity: MainActivity,
+        onFinished: () -> Unit,
+        attempt: Int
+    ) {
+        if (activity.isFinishing || activity.isDestroyed) {
+            optionalAdPending = false
+            onFinished()
+            return
+        }
+        if (activity.isMediaPlaybackActive()) {
+            optionalAdPending = false
+            Log.i(TAG, "Skipping app-open interstitial because media is playing")
+            onFinished()
+            return
+        }
+        if (!initialized || !sdkReady || !activity.isAdHostResumedAndFocused()) {
+            if (attempt >= 15) {
+                optionalAdPending = false
+                Log.i(TAG, "App-open interstitial skipped: SDK or Activity not ready")
+                onFinished()
+                return
+            }
+            mainHandler.postDelayed({
+                tryStartOptionalAd(activity, onFinished, attempt + 1)
+            }, 1_000L)
+            return
+        }
+
+        val preferences = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val lastShown = maxOf(
+            preferences.getLong(LAST_OPTIONAL_SHOWN_AT, 0L),
+            preferences.getLong(LAST_SHOWN_AT, 0L)
+        )
+        val elapsed = System.currentTimeMillis() - lastShown
+        if (lastShown > 0L && elapsed >= 0L && elapsed < OPTIONAL_FREQUENCY_CAP_MS) {
+            optionalAdPending = false
+            Log.i(TAG, "App-open interstitial skipped by frequency cap")
+            onFinished()
+            return
+        }
+
+        optionalAdPending = false
+        optionalAdShowing = true
+        var finished = false
+        var displayed = false
+        val finishOnce = {
+            if (!finished) {
+                finished = true
+                optionalAdShowing = false
+                onFinished()
+            }
+        }
+        val request = try {
+            StartAppAd(activity)
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Optional interstitial could not be created", error)
+            finishOnce()
+            return
+        }
+        val timeout = Runnable {
+            Log.w(TAG, if (displayed) "Optional interstitial did not return a terminal callback" else "Optional interstitial timed out before display")
+            finishOnce()
+        }
+        mainHandler.postDelayed(timeout, 60_000L)
+        try {
+            request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
+                override fun onReceiveAd(ad: Ad) {
+                    mainHandler.post {
+                        if (finished || activity.isFinishing || activity.isDestroyed ||
+                            !activity.isAdHostResumedAndFocused() || activity.isMediaPlaybackActive()
+                        ) {
+                            mainHandler.removeCallbacks(timeout)
+                            finishOnce()
+                            return@post
+                        }
+                        try {
+                            request.showAd(object : AdDisplayListener {
+                                override fun adDisplayed(ad: Ad) {
+                                    displayed = true
+                                    val shownAt = System.currentTimeMillis()
+                                    preferences.edit()
+                                        .putLong(LAST_OPTIONAL_SHOWN_AT, shownAt)
+                                        .putLong(LAST_SHOWN_AT, shownAt)
+                                        .apply()
+                                    Log.i(TAG, "App-open interstitial displayed")
+                                }
+                                override fun adHidden(ad: Ad) {
+                                    mainHandler.removeCallbacks(timeout)
+                                    finishOnce()
+                                }
+                                override fun adNotDisplayed(ad: Ad) {
+                                    mainHandler.removeCallbacks(timeout)
+                                    Log.i(TAG, "App-open interstitial was not displayed")
+                                    finishOnce()
+                                }
+                                override fun adClicked(ad: Ad) = Unit
+                            })
+                        } catch (error: RuntimeException) {
+                            Log.w(TAG, "Optional interstitial could not be displayed", error)
+                            mainHandler.removeCallbacks(timeout)
+                            finishOnce()
+                        }
+                    }
+                }
+                override fun onFailedToReceiveAd(ad: Ad?) {
+                    mainHandler.post {
+                        mainHandler.removeCallbacks(timeout)
+                        Log.i(TAG, "Optional interstitial unavailable; continuing without interruption")
+                        finishOnce()
+                    }
+                }
+            })
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Optional interstitial load failed", error)
+            mainHandler.removeCallbacks(timeout)
+            finishOnce()
+        }
+    }
+
+    fun showIfReady(activity: MainActivity, intent: PendingPlayback): ShowResult {
+        // Unknown/unconnected playback state is rejected by the caller before reaching this point.
+        if (isPlaybackRequestExpired(intent)) return ShowResult.EXPIRED
+        if (showing || pendingPersistenceFailed) return ShowResult.BLOCKED_UNRESOLVED
+        if (activeActivity.get() !== activity) return ShowResult.UNAVAILABLE
+        val ad = loadedAd ?: return ShowResult.UNAVAILABLE
+        if (!underFrequencyCap()) return ShowResult.UNAVAILABLE
+
+        loadedAd = null
+        loadedOwner.clear()
+        currentAd = ad
+        priorProcessDisplayRecovery?.let(mainHandler::removeCallbacks)
+        priorProcessDisplayRecovery = null
+        showing = true
+        pendingPlayback = intent
+        val generation = ++showingGeneration
+        val attemptId = UUID.randomUUID().toString()
+        val markerSaved = writeJournal(PlaybackJournal(intent, PlaybackJournal.RequestState.PENDING,
+            PlaybackJournal.AdState.IN_FLIGHT, attemptId))
+        if (!markerSaved) {
+            showing = false
+            pendingPlayback = null
+            currentAd = null
+            Log.w(TAG, "Could not persist unresolved ad display; skipping ad to keep playback safe")
+            return ShowResult.UNAVAILABLE
+        }
+        val timeout = Runnable { onDisplayTimeout(generation) }
+        displayTimeout = timeout
+        mainHandler.postDelayed(timeout, DISPLAY_TIMEOUT_MS)
+        try {
+            ad.showAd(object : AdDisplayListener {
+                override fun adDisplayed(ad: Ad) {
+                    if (!transition(intent.requestId, attemptId,
+                            journal.copy(adState = PlaybackJournal.AdState.DISPLAYED))) {
+                        pendingPersistenceFailed = true
+                        schedulePendingPersistenceRetry(intent, dispatchWhenSaved = false)
+                    }
+                    app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        .edit()
+                        .putLong(LAST_SHOWN_AT, System.currentTimeMillis())
+                        .apply()
+                }
+
+                override fun adHidden(ad: Ad) = finishShowing(generation, intent.requestId, attemptId)
+                override fun adNotDisplayed(ad: Ad) = finishShowing(generation, intent.requestId, attemptId)
+                override fun adClicked(ad: Ad) = Unit
+            })
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Start.io could not show the video interstitial", error)
+            // A synchronous show failure is not itself proof that the host is visible again.
+            // Recover only after the host Activity is resumed and owns window focus.
+            scheduleShowFailureRecovery(generation, WeakReference(activity))
+        }
+        return ShowResult.SHOWN
+    }
+
+    private fun underFrequencyCap(): Boolean {
+        val lastShown = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong(LAST_SHOWN_AT, 0L)
+        val elapsed = System.currentTimeMillis() - lastShown
+        return lastShown == 0L || elapsed >= FREQUENCY_CAP_MS
+    }
+
+    private fun finishShowing(generation: Long, requestId: String, attemptId: String) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            mainHandler.post { finishShowing(generation, requestId, attemptId) }
+            return
+        }
+        if (!showing || generation != showingGeneration || terminalConfirmedGeneration == generation) return
+        terminalConfirmedGeneration = generation
+        if (!transition(requestId, attemptId, journal.copy(adState = PlaybackJournal.AdState.RESOLVED))) {
+            pendingPersistenceFailed = true
+            if (resolutionRetry == null) {
+                val retry = Runnable {
+                    resolutionRetry = null
+                    if (showing && generation == showingGeneration &&
+                        terminalConfirmedGeneration == generation) {
+                        terminalConfirmedGeneration = null
+                        finishShowing(generation, requestId, attemptId)
+                    }
+                }
+                resolutionRetry = retry
+                mainHandler.postDelayed(retry, RESOLUTION_RETRY_MS)
+            }
+            return
+        }
+        pendingPersistenceFailed = false
+        if (pendingPersistenceTarget?.requestId == requestId) {
+            pendingPersistenceTarget = null
+            pendingPersistenceRetry?.let(mainHandler::removeCallbacks)
+            pendingPersistenceRetry = null
+        }
+        showFailureRecovery?.let(mainHandler::removeCallbacks)
+        showFailureRecovery = null
+        displayTimeout?.let(mainHandler::removeCallbacks)
+        displayTimeout = null
+            clearResolvedDisplay(generation)
+    }
+
+    private fun recoverFailedShowIfHostIsSafe(
+        generation: Long,
+        host: WeakReference<MainActivity>
+    ) {
+        showFailureRecovery = null
+        if (!showing || generation != showingGeneration) return
+        val activity = host.get()?.takeUnless { it.isDestroyed } ?: activeActivity.get() ?: return
+        if (activity.isAdHostResumedAndFocused()) {
+            Log.w(TAG, "Show failed and host regained focus; resolving as not displayed")
+            val requestId = journal.request?.requestId ?: return
+            val attemptId = journal.adAttemptId ?: return
+            finishShowing(generation, requestId, attemptId)
+        } else {
+            scheduleShowFailureRecovery(generation, host)
+        }
+    }
+
+    private fun scheduleShowFailureRecovery(
+        generation: Long,
+        host: WeakReference<MainActivity>
+    ) {
+        if (!showing || generation != showingGeneration) return
+        val recovery = Runnable { recoverFailedShowIfHostIsSafe(generation, host) }
+        showFailureRecovery = recovery
+        mainHandler.postDelayed(recovery, SHOW_FAILURE_RECOVERY_MS)
+    }
+
+    private fun clearResolvedDisplay(generation: Long) {
+        if (!showing || generation != showingGeneration || terminalConfirmedGeneration != generation) return
+        val cleared = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(DISPLAY_UNRESOLVED, false)
+            .putBoolean(PENDING_WRITE_UNCERTAIN, pendingPersistenceFailed)
+            .commit()
+        if (!cleared) {
+            Log.e(TAG, "Could not clear unresolved ad marker; keeping playback blocked and retrying")
+            if (resolutionRetry == null) {
+                val retry = Runnable {
+                    resolutionRetry = null
+                    clearResolvedDisplay(generation)
+                }
+                resolutionRetry = retry
+                mainHandler.postDelayed(retry, RESOLUTION_RETRY_MS)
+            }
+            return
+        }
+
+        resolutionRetry?.let(mainHandler::removeCallbacks)
+        resolutionRetry = null
+        showing = false
+        currentAd = null
+        val intent = pendingPlayback
+        if (intent != null) dispatchPendingIfReady()
+        preloadForActiveActivity()
+    }
+
+    private fun onDisplayTimeout(generation: Long) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            mainHandler.post { onDisplayTimeout(generation) }
+            return
+        }
+        if (!showing || generation != showingGeneration) return
+        displayTimeout = null
+        Log.w(TAG, "Start.io video ad display is unresolved; keeping playback pending until a terminal callback")
+    }
+
+    private fun preloadForActiveActivity() {
+        val activity = activeActivity.get() ?: return
+        if (!initialized || !sdkReady || loading || showing || pendingPersistenceFailed || loadedAd != null ||
+            activity.isFinishing || activity.isDestroyed
+        ) {
+            Log.i(TAG, "Preload skipped; initialized=$initialized sdkReady=$sdkReady loading=$loading showing=$showing persistenceFailed=$pendingPersistenceFailed loaded=${loadedAd != null} finishing=${activity.isFinishing} destroyed=${activity.isDestroyed}")
+            return
+        }
+
+        Log.i(TAG, "Starting interstitial preload")
+        loading = true
+        val generation = ++loadGeneration
+        val owner = WeakReference(activity)
+        val request = try {
+            StartAppAd(activity)
+        } catch (error: RuntimeException) {
+            loading = false
+            Log.w(TAG, "Start.io video preload could not start", error)
+            return
+        }
+        currentAd = request
+        val timeout = Runnable {
+            Log.e(TAG, "Interstitial preload watchdog timed out after ${LOAD_TIMEOUT_MS}ms")
+            completeLoad(generation, owner, request, received = false)
+        }
+        loadTimeout = timeout
+        mainHandler.postDelayed(timeout, LOAD_TIMEOUT_MS)
+
+        try {
+            request.loadAd(AdMode.AUTOMATIC, object : AdEventListener {
+                override fun onReceiveAd(ad: Ad) {
+                    Log.i(TAG, "Interstitial preload onReceiveAd callback received")
+                    mainHandler.post {
+                        mainHandler.removeCallbacks(timeout)
+                        completeLoad(generation, owner, request, received = true)
+                    }
+                }
+
+                override fun onFailedToReceiveAd(ad: Ad?) {
+                    // Start.io documents that it retries after this callback. Keep the request
+                    // active and let the watchdog recover only if no later callback arrives.
+                    Log.e(TAG, "Interstitial preload onFailedToReceiveAd callback received; adPresent=${ad != null}")
+                }
+            })
+        } catch (error: RuntimeException) {
+            mainHandler.removeCallbacks(timeout)
+            Log.w(TAG, "Start.io video preload failed", error)
+            completeLoad(generation, owner, request, received = false)
+        }
+    }
+
+    private fun completeLoad(
+        generation: Long,
+        owner: WeakReference<MainActivity>,
+        request: StartAppAd,
+        received: Boolean
+    ) {
+        if (!loading || generation != loadGeneration || currentAd !== request) return
+        loadTimeout = null
+        loading = false
+        val activity = owner.get()
+        Log.i(TAG, "Preload completed; received=$received hostPresent=${activity != null} activeHost=${activity != null && activeActivity.get() === activity}")
+        if (received && activity != null && activeActivity.get() === activity &&
+            !activity.isFinishing && !activity.isDestroyed
+        ) {
+            loadedAd = request
+            loadedOwner = WeakReference(activity)
+        } else {
+            // An old completion must not erase a StartAppAd restored for a recreated Activity.
+            if (currentAd === request) currentAd = null
+            if (loadedAd == null) schedulePreloadRetry()
+        }
+    }
+
+    private fun schedulePreloadRetry() {
+        mainHandler.postDelayed({ preloadForActiveActivity() }, 1_000L)
+    }
 }
