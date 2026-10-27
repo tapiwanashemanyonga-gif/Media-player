@@ -15,6 +15,7 @@ on:
       - chore/clarify-legacy-playback-recovery
       - ci/protect-media-integration-and-ad-free-v2
       - ci/enforce-release-identity-match
+      - ci/guard-file-open-and-video-permission
 
 permissions:
   contents: read
@@ -53,6 +54,16 @@ jobs:
           grep -Fq 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK' "$MANIFEST"
           grep -Fq 'android:mimeType="audio/*"' "$MANIFEST"
           grep -Fq 'android:mimeType="video/*"' "$MANIFEST"
+
+          MAIN_ACTIVITY="app/src/main/java/com/kivora/music/MainActivity.kt"
+          test -s "$MAIN_ACTIVITY"
+          grep -Fq 'private fun handleIncomingMediaIntent(incoming: Intent?)' "$MAIN_ACTIVITY"
+          grep -Fq 'incoming?.action != Intent.ACTION_VIEW' "$MAIN_ACTIVITY"
+          grep -Fq 'continueUserPlayback(PendingPlayback("play_video"' "$MAIN_ACTIVITY"
+          grep -Fq 'continueUserPlayback(PendingPlayback("play_queue_item"' "$MAIN_ACTIVITY"
+          grep -Fq 'Manifest.permission.READ_MEDIA_VIDEO' "$MAIN_ACTIVITY"
+          grep -Fq 'videoPermissionLauncher.launch(permission)' "$MAIN_ACTIVITY"
+
           if grep -Eiq 'com\.startapp|StartAppSDK|asiafilm\.org/4/d52fd43d84340c6fa7784c326206088f' "$GRADLE_FILE" app/src/main; then
             echo "Unexpected advertising SDK or SmartLink reference found."
             exit 1
