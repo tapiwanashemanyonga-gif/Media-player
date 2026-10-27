@@ -186,7 +186,7 @@ class MainActivity : AppCompatActivity() {
     private var videoFullscreenButton: View? = null
     private var videoMinimizeButton: View? = null
     private var videoPlayerMinimized = false
-    private var currentTab = "search"
+    private var currentTab = "library"
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
