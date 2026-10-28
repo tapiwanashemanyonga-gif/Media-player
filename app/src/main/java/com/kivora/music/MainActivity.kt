@@ -3321,7 +3321,8 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             } catch (error: Exception) {
-                scanError = error.message
+                scanError = error.message?.takeIf { it.isNotBlank() }
+                    ?: error.javaClass.simpleName.ifBlank { "Unknown error" }
             }
 
             handler.post {
