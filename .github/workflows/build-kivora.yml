@@ -19,6 +19,7 @@ on:
       - test/media-file-classification
       - perf/background-video-library-scan
       - perf/background-music-library-scan
+      - fix/preserve-library-on-scan-error
 
 permissions:
   contents: read
@@ -73,6 +74,8 @@ jobs:
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.shutdownNow()' "$MAIN_ACTIVITY"
           grep -Fq 'requestId != musicScanRequestId' "$MAIN_ACTIVITY"
+          grep -Fq 'MediaStore returned no music cursor' "$MAIN_ACTIVITY"
+          grep -Fq 'Keep the last good library intact' "$MAIN_ACTIVITY"
 
           if grep -Eiq 'com\.startapp|StartAppSDK|asiafilm\.org/4/d52fd43d84340c6fa7784c326206088f' "$GRADLE_FILE" app/src/main; then
             echo "Unexpected advertising SDK or SmartLink reference found."
