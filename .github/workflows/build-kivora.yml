@@ -21,6 +21,7 @@ on:
       - perf/background-music-library-scan
       - fix/preserve-library-on-scan-error
       - fix/non-null-music-scan-errors
+      - fix/preserve-video-library-on-scan-error
 
 permissions:
   contents: read
@@ -79,6 +80,8 @@ jobs:
           grep -Fq 'Keep the last good library intact' "$MAIN_ACTIVITY"
           grep -Fq 'error.message?.takeIf { it.isNotBlank() }' "$MAIN_ACTIVITY"
           grep -Fq 'error.javaClass.simpleName.ifBlank { "Unknown error" }' "$MAIN_ACTIVITY"
+          grep -Fq 'MediaStore returned no video cursor' "$MAIN_ACTIVITY"
+          grep -Fq 'Keep the last good video library intact' "$MAIN_ACTIVITY"
 
           if grep -Eiq 'com\.startapp|StartAppSDK|asiafilm\.org/4/d52fd43d84340c6fa7784c326206088f' "$GRADLE_FILE" app/src/main; then
             echo "Unexpected advertising SDK or SmartLink reference found."
