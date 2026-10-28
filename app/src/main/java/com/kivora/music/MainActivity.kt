@@ -221,6 +221,9 @@ class MainActivity : AppCompatActivity() {
     // Keep MediaStore video queries off the UI thread so large libraries don't freeze navigation.
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private var videoScanRequestId = 0
+    // Keep audio MediaStore queries off the UI thread as well.
+    private val musicScanExecutor = Executors.newSingleThreadExecutor()
+    private var musicScanRequestId = 0
     private var artworkRequestId = 0
     private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
         (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -3232,119 +3235,118 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadSongs() {
-        songs.clear()
-        normalizedSearchText.clear()
+        val requestId = ++musicScanRequestId
+        musicScanExecutor.execute {
+            val scannedSongs = mutableListOf<Song>()
+            var scanError: String? = null
+            val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
 
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID
-        )
-
-        try {
-            val cursor: Cursor? = contentResolver.query(
-                collection,
-                projection,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                null,
-                "${MediaStore.Audio.Media.TITLE} ASC"
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.ALBUM_ID
             )
 
-            cursor?.use {
-                val idColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media._ID
-                )
-                val titleColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.TITLE
-                )
-                val displayNameColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.DISPLAY_NAME
-                )
-                val artistColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ARTIST
-                )
-                val albumNameColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ALBUM
-                )
-                val albumColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ALBUM_ID
+            try {
+                val cursor: Cursor? = contentResolver.query(
+                    collection,
+                    projection,
+                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                    null,
+                    "${MediaStore.Audio.Media.TITLE} ASC"
                 )
 
-                while (it.moveToNext()) {
-                    val id = it.getLong(idColumn)
+                cursor?.use {
+                    val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val displayNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val albumNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val albumColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
 
-                    val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
-                    val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
-                    val fileTitle = displayName
-                        .substringBeforeLast('.', displayName)
-                        .replace(Regex("[._-]+"), " ")
-                        .trim()
-                        .ifBlank { "Unknown title" }
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
 
-                    val title = if (
-                        rawTitle.isBlank() ||
-                        rawTitle.equals("unknown", ignoreCase = true) ||
-                        rawTitle.equals("unknown title", ignoreCase = true)
-                    ) fileTitle else rawTitle
+                        val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
+                        val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
+                        val fileTitle = displayName
+                            .substringBeforeLast('.', displayName)
+                            .replace(Regex("[._-]+"), " ")
+                            .trim()
+                            .ifBlank { "Unknown title" }
 
-                    val artistValue = it.getString(artistColumn)
+                        val title = if (
+                            rawTitle.isBlank() ||
+                            rawTitle.equals("unknown", ignoreCase = true) ||
+                            rawTitle.equals("unknown title", ignoreCase = true)
+                        ) fileTitle else rawTitle
 
-                    val artist = artistValue?.takeIf { value ->
-                        value.isNotBlank() &&
-                            !value.equals("<unknown>", ignoreCase = true) &&
-                            !value.equals("unknown", ignoreCase = true)
-                    } ?: "Unknown artist"
+                        val artistValue = it.getString(artistColumn)
+                        val artist = artistValue?.takeIf { value ->
+                            value.isNotBlank() &&
+                                !value.equals("<unknown>", ignoreCase = true) &&
+                                !value.equals("unknown", ignoreCase = true)
+                        } ?: "Unknown artist"
 
-                    val albumId = it.getLong(albumColumn)
-                    val rawAlbum = it.getString(albumNameColumn)?.trim().orEmpty()
-                    val album = rawAlbum.takeIf { value ->
-                        value.isNotBlank() &&
-                            !value.equals("<unknown>", ignoreCase = true) &&
-                            !value.equals("unknown", ignoreCase = true)
-                    } ?: "Unknown album"
+                        val albumId = it.getLong(albumColumn)
+                        val rawAlbum = it.getString(albumNameColumn)?.trim().orEmpty()
+                        val album = rawAlbum.takeIf { value ->
+                            value.isNotBlank() &&
+                                !value.equals("<unknown>", ignoreCase = true) &&
+                                !value.equals("unknown", ignoreCase = true)
+                        } ?: "Unknown album"
 
-                    val artUri = if (albumId > 0L) {
-                        ContentUris.withAppendedId(
-                            Uri.parse(
-                                "content://media/external/audio/albumart"
-                            ),
-                            albumId
+                        val artUri = if (albumId > 0L) {
+                            ContentUris.withAppendedId(
+                                Uri.parse("content://media/external/audio/albumart"),
+                                albumId
+                            )
+                        } else {
+                            null
+                        }
+
+                        scannedSongs.add(
+                            Song(
+                                title,
+                                artist,
+                                album,
+                                albumId,
+                                ContentUris.withAppendedId(collection, id),
+                                artUri
+                            )
                         )
-                    } else {
-                        null
                     }
-
-                    songs.add(
-                        Song(
-                            title,
-                            artist,
-                            album,
-                            albumId,
-                            ContentUris.withAppendedId(collection, id),
-                            artUri
-                        )
-                    )
                 }
+            } catch (error: Exception) {
+                scanError = error.message
             }
-        } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Couldn't scan music: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
 
-        syncPlaylistToPlayer()
-        recordRecentlyPlayed(player?.currentMediaItem)
-        renderHomeDashboard()
-        renderSongs(searchBox.text?.toString().orEmpty())
-        songsLoaded = true
-        tryRunPendingPlaybackAfterAd()
+            handler.post {
+                if (requestId != musicScanRequestId || isFinishing || isDestroyed) return@post
+
+                songs.clear()
+                songs.addAll(scannedSongs)
+                normalizedSearchText.clear()
+
+                scanError?.let { message ->
+                    Toast.makeText(
+                        this,
+                        "Couldn't scan music: $message",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+                syncPlaylistToPlayer()
+                recordRecentlyPlayed(player?.currentMediaItem)
+                renderHomeDashboard()
+                renderSongs(searchBox.text?.toString().orEmpty())
+                songsLoaded = true
+                tryRunPendingPlaybackAfterAd()
+            }
+        }
     }
 
     private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
@@ -4738,6 +4740,9 @@ class MainActivity : AppCompatActivity() {
         // Ignore queued scan results and stop any pending background video query.
         videoScanRequestId++
         videoScanExecutor.shutdownNow()
+        // Ignore queued music scan results and stop any pending background audio query.
+        musicScanRequestId++
+        musicScanExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
