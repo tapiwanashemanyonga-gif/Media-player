@@ -3251,15 +3251,15 @@ class MainActivity : AppCompatActivity() {
             )
 
             try {
-                val cursor: Cursor? = contentResolver.query(
+                val cursor: Cursor = contentResolver.query(
                     collection,
                     projection,
                     "${MediaStore.Audio.Media.IS_MUSIC} != 0",
                     null,
                     "${MediaStore.Audio.Media.TITLE} ASC"
-                )
+                ) ?: throw IllegalStateException("MediaStore returned no music cursor")
 
-                cursor?.use {
+                cursor.use {
                     val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                     val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                     val displayNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
@@ -3327,17 +3327,19 @@ class MainActivity : AppCompatActivity() {
             handler.post {
                 if (requestId != musicScanRequestId || isFinishing || isDestroyed) return@post
 
+                if (scanError != null) {
+                    Toast.makeText(
+                        this,
+                        "Couldn't scan music: ${scanError}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    // Keep the last good library intact and allow a later rescan to retry.
+                    return@post
+                }
+
                 songs.clear()
                 songs.addAll(scannedSongs)
                 normalizedSearchText.clear()
-
-                scanError?.let { message ->
-                    Toast.makeText(
-                        this,
-                        "Couldn't scan music: $message",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
 
                 syncPlaylistToPlayer()
                 recordRecentlyPlayed(player?.currentMediaItem)
