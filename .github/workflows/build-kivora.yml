@@ -23,6 +23,7 @@ on:
       - fix/non-null-music-scan-errors
       - fix/preserve-video-library-on-scan-error
       - perf/background-video-thumbnails
+      - perf/cache-video-thumbnails
 
 permissions:
   contents: read
