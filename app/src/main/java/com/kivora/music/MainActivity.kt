@@ -223,6 +223,14 @@ class MainActivity : AppCompatActivity() {
     private var videoScanRequestId = 0
     // Decode video thumbnails off the main thread to keep scrolling and navigation responsive.
     private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
+    private val videoThumbnailCache = object : LruCache<String, android.graphics.Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024L / 16L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    ) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
+            (value.byteCount / 1024).coerceAtLeast(1)
+    }
+    // Multiple list renders can request the same URI; attach all current views to one decode.
+    private val videoThumbnailTargets = HashMap<String, MutableList<ImageView>>()
     // Keep audio MediaStore queries off the UI thread as well.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
     private var musicScanRequestId = 0
@@ -4937,23 +4945,39 @@ class MainActivity : AppCompatActivity() {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val thumbnailUri = video.uri
+                val thumbnailKey = thumbnailUri.toString()
                 val thumbnailSize = Size(dp(videoThumbWidth), dp(videoThumbHeight))
-                thumbnail.tag = thumbnailUri.toString()
-                videoThumbnailExecutor.execute {
-                    val bitmap = try {
-                        contentResolver.loadThumbnail(thumbnailUri, thumbnailSize, null)
-                    } catch (_: Exception) {
-                        null
+                thumbnail.tag = thumbnailKey
+                val cachedThumbnail = videoThumbnailCache.get(thumbnailKey)
+                if (cachedThumbnail != null) {
+                    thumbnail.setImageBitmap(cachedThumbnail)
+                } else {
+                    val shouldDecode = synchronized(videoThumbnailTargets) {
+                        val targets = videoThumbnailTargets.getOrPut(thumbnailKey) { mutableListOf() }
+                        targets.add(thumbnail)
+                        targets.size == 1
                     }
-
-                    if (bitmap != null) {
-                        handler.post {
-                            if (
-                                thumbnail.tag == thumbnailUri.toString() &&
-                                !isFinishing &&
-                                !isDestroyed
-                            ) {
-                                thumbnail.setImageBitmap(bitmap)
+                    if (shouldDecode) {
+                        videoThumbnailExecutor.execute {
+                            val bitmap = try {
+                                contentResolver.loadThumbnail(thumbnailUri, thumbnailSize, null)
+                            } catch (_: Exception) {
+                                null
+                            }
+                            handler.post {
+                                if (bitmap != null && !isFinishing && !isDestroyed) {
+                                    videoThumbnailCache.put(thumbnailKey, bitmap)
+                                }
+                                val targets = synchronized(videoThumbnailTargets) {
+                                    videoThumbnailTargets.remove(thumbnailKey).orEmpty()
+                                }
+                                if (!isFinishing && !isDestroyed && bitmap != null) {
+                                    targets.forEach { target ->
+                                        if (target.tag == thumbnailKey) {
+                                            target.setImageBitmap(bitmap)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
