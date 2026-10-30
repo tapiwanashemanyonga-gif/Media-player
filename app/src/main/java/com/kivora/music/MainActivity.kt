@@ -41,6 +41,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -5189,6 +5190,35 @@ class MainActivity : AppCompatActivity() {
 
         fun refreshMenu() {
             menuPanel.removeAllViews()
+
+            val speedOptions = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f, 4.0f)
+            val currentSpeed = videoPlayer?.playbackParameters?.speed ?: 1.0f
+            val speedRow = label("Playback speed  ·  ${currentSpeed}×", 14f, themeColor(225, 205, 246), true).apply {
+                setPadding(dp(12), dp(13), dp(12), dp(13))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Change video playback speed. Current speed ${currentSpeed} times"
+                background = roundedBackground(themeColor(48, 31, 64), 12)
+                setOnClickListener {
+                    val labels = speedOptions.map { speed ->
+                        if (speed == 1.0f) "Normal (1×)" else "${speed}×"
+                    }.toTypedArray()
+                    val selected = speedOptions.indices.minByOrNull { index ->
+                        kotlin.math.abs(speedOptions[index] - currentSpeed)
+                    } ?: 2
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Video playback speed")
+                        .setSingleChoiceItems(labels, selected) { dialog, which ->
+                            videoPlayer?.setPlaybackParameters(PlaybackParameters(speedOptions[which]))
+                            dialog.dismiss()
+                            refreshMenu()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+            menuPanel.addView(speedRow)
+
             if (deviceVideos.isEmpty()) {
                 menuPanel.addView(label("No videos available", 14f, themeColor(190, 175, 210)))
                 return
