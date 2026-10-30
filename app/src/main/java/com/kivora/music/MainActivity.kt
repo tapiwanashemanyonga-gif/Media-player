@@ -5219,6 +5219,39 @@ class MainActivity : AppCompatActivity() {
             }
             menuPanel.addView(speedRow)
 
+            val resizeModes = intArrayOf(
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT,
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL,
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            )
+            val resizeLabels = arrayOf("Fit screen", "Stretch to fill", "Zoom to fill")
+            val currentResizeMode = videoPlayerView.resizeMode
+            val currentResizeLabel = when (currentResizeMode) {
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Stretch to fill"
+                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom to fill"
+                else -> "Fit screen"
+            }
+            val resizeRow = label("Screen size  ·  $currentResizeLabel", 14f, themeColor(225, 205, 246), true).apply {
+                setPadding(dp(12), dp(13), dp(12), dp(13))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Change video screen size. Current mode $currentResizeLabel"
+                background = roundedBackground(themeColor(48, 31, 64), 12)
+                setOnClickListener {
+                    val selected = resizeModes.indexOf(currentResizeMode).coerceAtLeast(0)
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Video screen size")
+                        .setSingleChoiceItems(resizeLabels, selected) { dialog, which ->
+                            videoPlayerView.resizeMode = resizeModes[which]
+                            dialog.dismiss()
+                            refreshMenu()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+            menuPanel.addView(resizeRow)
+
             if (deviceVideos.isEmpty()) {
                 menuPanel.addView(label("No videos available", 14f, themeColor(190, 175, 210)))
                 return
