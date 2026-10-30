@@ -221,6 +221,8 @@ class MainActivity : AppCompatActivity() {
     // Keep MediaStore video queries off the UI thread so large libraries don't freeze navigation.
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private var videoScanRequestId = 0
+    // Decode video thumbnails off the main thread to keep scrolling and navigation responsive.
+    private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
     // Keep audio MediaStore queries off the UI thread as well.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
     private var musicScanRequestId = 0
@@ -4743,6 +4745,7 @@ class MainActivity : AppCompatActivity() {
         // Ignore queued scan results and stop any pending background video query.
         videoScanRequestId++
         videoScanExecutor.shutdownNow()
+        videoThumbnailExecutor.shutdownNow()
         // Ignore queued music scan results and stop any pending background audio query.
         musicScanRequestId++
         musicScanExecutor.shutdownNow()
@@ -4933,16 +4936,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    thumbnail.setImageBitmap(
-                        contentResolver.loadThumbnail(
-                            video.uri,
-                            Size(dp(videoThumbWidth), dp(videoThumbHeight)),
-                            null
-                        )
-                    )
-                } catch (_: Exception) {
-                    // Keep the play icon if a thumbnail cannot be loaded.
+                val thumbnailUri = video.uri
+                val thumbnailSize = Size(dp(videoThumbWidth), dp(videoThumbHeight))
+                thumbnail.tag = thumbnailUri.toString()
+                videoThumbnailExecutor.execute {
+                    val bitmap = try {
+                        contentResolver.loadThumbnail(thumbnailUri, thumbnailSize, null)
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    if (bitmap != null) {
+                        handler.post {
+                            if (
+                                thumbnail.tag == thumbnailUri.toString() &&
+                                !isFinishing &&
+                                !isDestroyed
+                            ) {
+                                thumbnail.setImageBitmap(bitmap)
+                            }
+                        }
+                    }
                 }
             }
 

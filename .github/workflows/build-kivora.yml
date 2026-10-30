@@ -22,6 +22,7 @@ on:
       - fix/preserve-library-on-scan-error
       - fix/non-null-music-scan-errors
       - fix/preserve-video-library-on-scan-error
+      - perf/background-video-thumbnails
 
 permissions:
   contents: read
@@ -82,6 +83,9 @@ jobs:
           grep -Fq 'error.javaClass.simpleName.ifBlank { "Unknown error" }' "$MAIN_ACTIVITY"
           grep -Fq 'MediaStore returned no video cursor' "$MAIN_ACTIVITY"
           grep -Fq 'Keep the last good video library intact' "$MAIN_ACTIVITY"
+          grep -Fq 'Executors.newFixedThreadPool(2)' "$MAIN_ACTIVITY"
+          grep -Fq 'contentResolver.loadThumbnail(thumbnailUri, thumbnailSize, null)' "$MAIN_ACTIVITY"
+          grep -Fq 'videoThumbnailExecutor.shutdownNow()' "$MAIN_ACTIVITY"
 
           if grep -Eiq 'com\.startapp|StartAppSDK|asiafilm\.org/4/d52fd43d84340c6fa7784c326206088f' "$GRADLE_FILE" app/src/main; then
             echo "Unexpected advertising SDK or SmartLink reference found."
