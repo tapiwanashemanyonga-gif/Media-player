@@ -4769,12 +4769,10 @@ class MainActivity : AppCompatActivity() {
         val requestId = ++videoScanRequestId
         videoStatus.text = "Scanning videos on this device..."
         videoStatus.setOnClickListener(null)
-        deviceVideos.clear()
-        videoList.removeAllViews()
 
         videoScanExecutor.execute {
             val scannedVideos = mutableListOf<DeviceVideo>()
-            var scanFailed = false
+            var scanError: String? = null
             val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             val projection = arrayOf(
                 MediaStore.Video.Media._ID,
@@ -4784,19 +4782,21 @@ class MainActivity : AppCompatActivity() {
             )
 
             try {
-                contentResolver.query(
+                val cursor: Cursor = contentResolver.query(
                     collection, projection, null, null,
                     "${MediaStore.Video.Media.DATE_ADDED} DESC"
-                )?.use { cursor ->
-                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                    val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
-                    val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                    val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                ) ?: throw IllegalStateException("MediaStore returned no video cursor")
 
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getLong(idColumn)
-                        val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }
-                            ?: cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
+                cursor.use {
+                    val idColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                    val nameColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                    val durationColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
+                        val title = it.getString(titleColumn)?.takeIf { value -> value.isNotBlank() }
+                            ?: it.getString(nameColumn)?.takeIf { value -> value.isNotBlank() }
                             ?: "Untitled video"
 
                         scannedVideos.add(
@@ -4804,22 +4804,24 @@ class MainActivity : AppCompatActivity() {
                                 id,
                                 title,
                                 ContentUris.withAppendedId(collection, id),
-                                cursor.getLong(durationColumn)
+                                it.getLong(durationColumn)
                             )
                         )
                     }
                 }
-            } catch (_: Exception) {
-                scanFailed = true
+            } catch (error: Exception) {
+                scanError = error.message?.takeIf { it.isNotBlank() }
+                    ?: error.javaClass.simpleName.ifBlank { "Unknown error" }
             }
 
             handler.post {
                 if (requestId != videoScanRequestId || isFinishing || isDestroyed) return@post
 
-                if (scanFailed) {
+                if (scanError != null) {
                     videoStatus.text = "Couldn't read videos. Tap here to retry."
                     videoStatus.setOnClickListener { loadVideos() }
-                    Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Video library couldn't be refreshed. Your previous list is kept.", Toast.LENGTH_LONG).show()
+                    // Keep the last good video library intact and allow a later rescan to retry.
                     return@post
                 }
 
