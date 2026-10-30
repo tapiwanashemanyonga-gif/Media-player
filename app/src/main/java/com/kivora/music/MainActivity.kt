@@ -910,7 +910,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildScreen() {
-        val compactLayout = resources.configuration.screenWidthDp < 420
+        val screenWidthDp = resources.configuration.screenWidthDp
+        val compactLayout = screenWidthDp < 420
+        val narrowPhoneLayout = screenWidthDp < 360
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(if (compactLayout) 12 else 18), dp(if (compactLayout) 10 else 14), dp(if (compactLayout) 12 else 18), dp(8))
@@ -964,13 +966,15 @@ class MainActivity : AppCompatActivity() {
         header.addView(settingsButton, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             rightMargin = dp(5)
         })
-        header.addView(label("●  LOCAL LIBRARY", 9f, themeColor(210, 190, 232), true).apply {
-            letterSpacing = 0.06f
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(themeColor(39, 24, 58), 18).apply {
-                setStroke(dp(1), themeColor(83, 56, 115))
-            }
-        })
+        if (!narrowPhoneLayout) {
+            header.addView(label("●  LOCAL LIBRARY", 9f, themeColor(210, 190, 232), true).apply {
+                letterSpacing = 0.06f
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedBackground(themeColor(39, 24, 58), 18).apply {
+                    setStroke(dp(1), themeColor(83, 56, 115))
+                }
+            })
+        }
 
         root.addView(header)
 
@@ -1052,10 +1056,14 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        titleRow.addView(
-            label("Your library", 24f, themeColor(250, 247, 255), true),
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
+        val libraryTitle = label("Your library", if (narrowPhoneLayout) 22f else 24f, themeColor(250, 247, 255), true)
+        if (narrowPhoneLayout) {
+            titleRow.orientation = LinearLayout.VERTICAL
+            titleRow.gravity = Gravity.START
+            titleRow.addView(libraryTitle, LinearLayout.LayoutParams(-1, -2))
+        } else {
+            titleRow.addView(libraryTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        }
 
         libraryCount = label(
             "0 tracks in your collection",
@@ -1064,7 +1072,10 @@ class MainActivity : AppCompatActivity() {
             // KIVORA_ROUND17_LIBRARY_COUNT_BADGE
         ).apply { setPadding(dp(10), dp(6), dp(10), dp(6)); background = roundedBackground(themeColor(55, 27, 79), 14).apply { setStroke(dp(1), themeColor(192, 132, 252)) } }
 
-        libraryCount.gravity = Gravity.CENTER
+        libraryCount.gravity = if (narrowPhoneLayout) Gravity.START else Gravity.CENTER
+        if (narrowPhoneLayout) {
+            libraryCount.setPadding(0, dp(5), 0, dp(2))
+        }
         titleRow.addView(libraryCount)
         libraryHeader.addView(titleRow)
 
@@ -1307,7 +1318,7 @@ class MainActivity : AppCompatActivity() {
         playerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(20), dp(20), dp(18))
+            setPadding(dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20), dp(if (compactLayout) 14 else 20), dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20), dp(18))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(
@@ -1346,7 +1357,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val artworkSize = if (compactLayout) {
-            (resources.configuration.screenWidthDp - 104).coerceIn(148, 228)
+            (resources.configuration.screenWidthDp - if (narrowPhoneLayout) 76 else 104).coerceIn(if (narrowPhoneLayout) 132 else 148, 228)
         } else {
             (resources.configuration.screenWidthDp - 120).coerceIn(220, 340)
         }
@@ -1378,7 +1389,7 @@ class MainActivity : AppCompatActivity() {
 
         nowTitle = label(
             "Choose a song",
-            if (resources.configuration.screenWidthDp >= 600) 32f else 28f,
+            if (resources.configuration.screenWidthDp >= 600) 32f else if (narrowPhoneLayout) 24f else 28f,
             themeColor(255, 252, 255),
             true
         ).apply {
@@ -1399,7 +1410,7 @@ class MainActivity : AppCompatActivity() {
 
         nowArtist = label(
             "Your library is ready",
-            if (resources.configuration.screenWidthDp >= 600) 17f else 16f,
+            if (resources.configuration.screenWidthDp >= 600) 17f else if (narrowPhoneLayout) 14f else 16f,
             themeColor(211, 190, 235)
         ).apply {
             gravity = Gravity.CENTER
@@ -1609,10 +1620,22 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openBassBoost() }
         }
 
-        playerShortcuts.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
-        playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
-        playerShortcuts.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
-        playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+        if (narrowPhoneLayout) {
+            playerShortcuts.orientation = LinearLayout.VERTICAL
+            val firstShortcutRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            val secondShortcutRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            firstShortcutRow.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+            firstShortcutRow.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+            secondShortcutRow.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+            secondShortcutRow.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+            playerShortcuts.addView(firstShortcutRow, LinearLayout.LayoutParams(-1, -2))
+            playerShortcuts.addView(secondShortcutRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+        } else {
+            playerShortcuts.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+            playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+            playerShortcuts.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+            playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+        }
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
