@@ -24,6 +24,7 @@ on:
       - fix/preserve-video-library-on-scan-error
       - perf/background-video-thumbnails
       - perf/cache-video-thumbnails
+      - feature/auto-english-subtitles
 
 permissions:
   contents: read
