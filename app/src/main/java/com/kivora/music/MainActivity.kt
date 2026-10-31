@@ -3,6 +3,7 @@ package com.kivora.music
 
 import android.Manifest
 import android.content.ComponentName
+import android.media.AudioManager
 import android.content.Context
 import android.content.Intent
 import android.content.ContentUris
@@ -23,6 +24,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.view.Gravity
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
@@ -5429,13 +5432,95 @@ class MainActivity : AppCompatActivity() {
             menuPanel.visibility = if (open) View.VISIBLE else View.GONE
             showControls?.invoke()
         }
-        videoPlayerView.setOnClickListener {
-            if (controlsVisible && videoPlayer?.isPlaying == true && !seeking) {
-                handler.removeCallbacks(hideControls)
-                controls.visibility = View.GONE
-                bottomControls.visibility = View.GONE
-                controlsVisible = false
-            } else showControls?.invoke()
+        var gestureStartX = 0f
+        var gestureStartY = 0f
+        var gestureBrightness = (dialog.window?.attributes?.screenBrightness ?: -1f)
+            .takeIf { it >= 0f } ?: 0.5f
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        var gestureChanged = false
+        var gestureSide = 0
+        val videoGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (controlsVisible && videoPlayer?.isPlaying == true && !seeking) {
+                    handler.removeCallbacks(hideControls)
+                    controls.visibility = View.GONE
+                    bottomControls.visibility = View.GONE
+                    controlsVisible = false
+                } else showControls?.invoke()
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                val activePlayer = videoPlayer ?: return true
+                if (menuPanel.visibility == View.VISIBLE || seeking) return true
+                val forward = e.x >= videoPlayerView.width / 2f
+                val target = activePlayer.currentPosition + if (forward) 10_000L else -10_000L
+                activePlayer.seekTo(target.coerceAtLeast(0L))
+                showControls?.invoke()
+                Toast.makeText(
+                    this@MainActivity,
+                    if (forward) "Forward 10 seconds" else "Back 10 seconds",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return true
+            }
+
+            override fun onScroll(
+                first: MotionEvent?,
+                current: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+                if (first == null || menuPanel.visibility == View.VISIBLE || seeking) return false
+                if (kotlin.math.abs(distanceY) <= kotlin.math.abs(distanceX)) return false
+                if (gestureSide == 0) {
+                    gestureSide = if (first.x < videoPlayerView.width / 2f) 1 else 2
+                    gestureStartY = first.y
+                    gestureBrightness = (dialog.window?.attributes?.screenBrightness ?: -1f)
+                        .takeIf { it >= 0f } ?: 0.5f
+                    gestureChanged = false
+                }
+                val scale = (videoPlayerView.height.coerceAtLeast(1)).toFloat()
+                val delta = -distanceY / scale * 1.5f
+                if (gestureSide == 1) {
+                    val attributes = dialog.window?.attributes ?: return true
+                    attributes.screenBrightness = (attributes.screenBrightness.takeIf { it >= 0f }
+                        ?: gestureBrightness).plus(delta).coerceIn(0.05f, 1f)
+                    dialog.window?.attributes = attributes
+                } else {
+                    val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    val nextVolume = (currentVolume + (delta * maxVolume).toInt())
+                        .coerceIn(0, maxVolume)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
+                }
+                gestureChanged = true
+                return true
+            }
+        })
+        videoPlayerView.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    gestureStartX = event.x
+                    gestureStartY = event.y
+                    gestureSide = 0
+                    gestureChanged = false
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (gestureChanged) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (gestureSide == 1) "Screen brightness adjusted" else "Volume adjusted",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    gestureSide = 0
+                }
+            }
+            videoGestures.onTouchEvent(event)
+            true
         }
         val progressTick = object : Runnable {
             override fun run() {
@@ -5464,7 +5549,7 @@ class MainActivity : AppCompatActivity() {
             handler.removeCallbacks(hideControls)
             handler.removeCallbacks(progressTick)
             videoPlayer?.removeListener(playerListener)
-            videoPlayerView.setOnClickListener(null)
+            videoPlayerView.setOnTouchListener(null)
             videoPlayerView.useController = true
             restoreVideoPlayerView()
             if (fullscreenVideoDialog === dialog) fullscreenVideoDialog = null
