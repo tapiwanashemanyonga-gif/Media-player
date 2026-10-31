@@ -1577,6 +1577,21 @@ class MainActivity : AppCompatActivity() {
         sessionActions.addView(lyricsButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
             leftMargin = dp(5)
         })
+        val musicSpeedButton = label("1.0× SPEED", 10f, themeColor(226, 202, 255), true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Change music playback speed"
+            minHeight = dp(44)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = roundedBackground(themeColor(48, 31, 68), 14).apply {
+                setStroke(dp(1), themeColor(192, 132, 252))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openMusicPlaybackSpeed() }
+        }
+        sessionActions.addView(musicSpeedButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            leftMargin = dp(5)
+        })
 
         val playerShortcuts = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2202,6 +2217,33 @@ class MainActivity : AppCompatActivity() {
             }
             dialog.show()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun openMusicPlaybackSpeed() {
+        val activePlayer = player
+        if (activePlayer == null || activePlayer.mediaItemCount == 0) {
+            Toast.makeText(this, "Play a song before changing playback speed.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val speeds = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+        val labels = speeds.map { speed ->
+            if (speed == 1.0f) "1.0×  ·  Normal" else String.format(Locale.getDefault(), "%.2f×", speed).trimEnd('0').trimEnd('.')
+        }.toTypedArray()
+        val currentSpeed = activePlayer.playbackParameters.speed
+        val selectedIndex = speeds.indices.minByOrNull { index ->
+            kotlin.math.abs(speeds[index] - currentSpeed)
+        } ?: 2
+
+        AlertDialog.Builder(this)
+            .setTitle("Music playback speed")
+            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
+                val current = player?.playbackParameters ?: PlaybackParameters(1f)
+                player?.setPlaybackParameters(PlaybackParameters(speeds[which], current.pitch))
+                dialog.dismiss()
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun openSleepTimer() {
