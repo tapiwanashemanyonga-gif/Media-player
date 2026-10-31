@@ -921,6 +921,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildScreen() {
         val screenWidthDp = resources.configuration.screenWidthDp
+        // Use compact spacing and stacked shortcut rows on phones up to 419dp wide.
+        // This keeps labels and touch targets inside the actual content width.
         val compactLayout = screenWidthDp < 420
         val narrowPhoneLayout = screenWidthDp < 360
         val root = LinearLayout(this).apply {
@@ -1645,7 +1647,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openBassBoost() }
         }
 
-        if (narrowPhoneLayout) {
+        if (compactLayout) {
             playerShortcuts.orientation = LinearLayout.VERTICAL
             val firstShortcutRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
             val secondShortcutRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
@@ -1752,9 +1754,11 @@ class MainActivity : AppCompatActivity() {
         playbackModes.addView(shuffleButton, transportParams())
         playbackModes.addView(repeatButton, transportParams())
         playerCard.addView(playbackModes)
-        val availableCardWidth = (resources.configuration.screenWidthDp - 76).coerceAtLeast(180)
-        playerCard.addView(sessionActions, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(480)), -2))
-        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(600)), -2))
+        // Match the measured card content width instead of estimating from screenWidthDp.
+        // The estimate can exceed the real window width on compact phones, split-screen,
+        // and devices with display scaling or system insets.
+        playerCard.addView(sessionActions, LinearLayout.LayoutParams(-1, -2))
+        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(-1, -2))
 
         playerScroll = ScrollView(this).apply {
             clipToPadding = false
