@@ -25,6 +25,7 @@ on:
       - perf/background-video-thumbnails
       - perf/cache-video-thumbnails
       - feature/auto-english-subtitles
+      - fix/responsive-layout-all-phones
 
 permissions:
   contents: read
