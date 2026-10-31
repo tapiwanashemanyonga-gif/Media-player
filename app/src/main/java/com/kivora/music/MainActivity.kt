@@ -41,6 +41,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -204,6 +205,10 @@ class MainActivity : AppCompatActivity() {
     private val lyricsPdfLauncher =
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
             if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
+        }
+    private val externalSubtitleLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) attachExternalSubtitle(uri)
         }
     private var activityResumed = false
     private var pendingPlaybackRequest: PendingPlayback? = null
@@ -5046,6 +5051,70 @@ class MainActivity : AppCompatActivity() {
         return videoPlayer != null
     }
 
+    /** Attach a user-selected subtitle without losing the current video position or pause state. */
+    private fun attachExternalSubtitle(subtitleUri: Uri) {
+        val activePlayer = videoPlayer ?: return
+        val currentItem = activePlayer.currentMediaItem ?: run {
+            Toast.makeText(this, "Start a video before loading subtitles.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val displayName = runCatching {
+            contentResolver.query(
+                subtitleUri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (column >= 0) cursor.getString(column) else null
+                } else null
+            }
+        }.getOrNull().orEmpty()
+        val extension = displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val mimeType = when (extension) {
+            "srt" -> MimeTypes.APPLICATION_SUBRIP
+            "vtt" -> MimeTypes.TEXT_VTT
+            "ass", "ssa" -> MimeTypes.TEXT_SSA
+            else -> {
+                Toast.makeText(this, "Choose an SRT, VTT, ASS or SSA subtitle file.", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                subtitleUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+
+        val currentUri = currentItem.localConfiguration?.uri ?: run {
+            Toast.makeText(this, "The current video cannot be reloaded.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val existingSubtitles = currentItem.localConfiguration?.subtitleConfigurations.orEmpty()
+        val subtitleConfiguration = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
+            .setMimeType(mimeType)
+            .setLanguage(Locale.getDefault().language.ifBlank { "en" })
+            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+            .build()
+        val updatedItem = MediaItem.Builder()
+            .setUri(currentUri)
+            .setMediaMetadata(currentItem.mediaMetadata)
+            .setSubtitleConfigurations(existingSubtitles + subtitleConfiguration)
+            .build()
+        val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+        val wasPlaying = activePlayer.playWhenReady
+        val playbackSpeed = activePlayer.playbackParameters
+        activePlayer.setMediaItem(updatedItem, positionMs)
+        activePlayer.prepare()
+        activePlayer.setPlaybackParameters(playbackSpeed)
+        activePlayer.playWhenReady = wasPlaying
+        Toast.makeText(this, "Subtitle loaded: $displayName", Toast.LENGTH_SHORT).show()
+    }
+
     /** Move the existing PlayerView into fullscreen without recreating its player. */
     private fun showVideoFullscreen() {
         if (videoPlayer?.currentMediaItem == null) return
@@ -5252,6 +5321,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             menuPanel.addView(resizeRow)
+
+            val loadSubtitleRow = label("Load external subtitles  ·  SRT / VTT / ASS", 14f, themeColor(225, 205, 246), true).apply {
+                setPadding(dp(12), dp(13), dp(12), dp(13))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Load an external subtitle file"
+                background = roundedBackground(themeColor(48, 31, 64), 12)
+                setOnClickListener {
+                    externalSubtitleLauncher.launch(arrayOf("*/*"))
+                }
+            }
+            menuPanel.addView(loadSubtitleRow)
 
             fun addTrackSelectionRow(title: String, trackType: Int) {
                 val available = videoPlayer?.currentTracks?.groups?.any { group ->
