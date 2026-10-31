@@ -46,6 +46,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
@@ -5251,6 +5252,30 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             menuPanel.addView(resizeRow)
+
+            fun addTrackSelectionRow(title: String, trackType: Int) {
+                val available = videoPlayer?.currentTracks?.groups?.any { group ->
+                    group.type == trackType && group.length > 0
+                } == true
+                if (!available) return
+                val row = label(title, 14f, themeColor(225, 205, 246), true).apply {
+                    setPadding(dp(12), dp(13), dp(12), dp(13))
+                    isClickable = true
+                    isFocusable = true
+                    contentDescription = title
+                    background = roundedBackground(themeColor(48, 31, 64), 12)
+                    setOnClickListener {
+                        val activePlayer = videoPlayer ?: return@setOnClickListener
+                        TrackSelectionDialogBuilder(this@MainActivity, title, activePlayer, trackType)
+                            .build()
+                            .show()
+                    }
+                }
+                menuPanel.addView(row)
+            }
+
+            addTrackSelectionRow("Audio track", C.TRACK_TYPE_AUDIO)
+            addTrackSelectionRow("Subtitles", C.TRACK_TYPE_TEXT)
 
             if (deviceVideos.isEmpty()) {
                 menuPanel.addView(label("No videos available", 14f, themeColor(190, 175, 210)))
