@@ -14,9 +14,9 @@ internal object SrtSubtitleWriter {
     fun render(segments: List<TimedSubtitleSegment>): String {
         val valid = segments.mapNotNull { segment ->
             val text = segment.text
-                .replace("\\r", " ")
-                .replace("\\n", " ")
-                .replace(Regex("\\s+"), " ")
+                .replace("\r", " ")
+                .replace("\n", " ")
+                .replace(Regex("\s+"), " ")
                 .trim()
             if (text.isEmpty() || !segment.startSeconds.isFinite() ||
                 !segment.endSeconds.isFinite() || segment.startSeconds < 0f ||
@@ -27,8 +27,8 @@ internal object SrtSubtitleWriter {
         return valid.mapIndexed { index, segment ->
             val start = (segment.startSeconds * 1000f).toLong().coerceAtLeast(0L)
             val end = (segment.endSeconds * 1000f).toLong().coerceAtLeast(start + 1L)
-            "${index + 1}\\n${formatTimestamp(start)} --> ${formatTimestamp(end)}\\n${segment.text}"
-        }.joinToString("\\n\\n").let { if (it.isEmpty()) it else "$it\\n" }
+            "${index + 1}\n${formatTimestamp(start)} --> ${formatTimestamp(end)}\n${segment.text}"
+        }.joinToString("\n\n").let { if (it.isEmpty()) it else "$it\n" }
     }
 
     private fun formatTimestamp(milliseconds: Long): String {
