@@ -243,6 +243,9 @@ class MainActivity : AppCompatActivity() {
     private val videoThumbnailTargets = HashMap<String, MutableList<ImageView>>()
     // Keep audio MediaStore queries off the UI thread as well.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
+    private val offlineSubtitleExecutor = Executors.newSingleThreadExecutor()
+    private var offlineSubtitleTask: java.util.concurrent.Future<*>? = null
+    private var offlineSubtitleProgressDialog: android.app.ProgressDialog? = null
     private var musicScanRequestId = 0
     private var artworkRequestId = 0
     private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
@@ -4836,6 +4839,11 @@ class MainActivity : AppCompatActivity() {
         // Ignore queued music scan results and stop any pending background audio query.
         musicScanRequestId++
         musicScanExecutor.shutdownNow()
+        offlineSubtitleTask?.cancel(true)
+        offlineSubtitleTask = null
+        offlineSubtitleProgressDialog?.dismiss()
+        offlineSubtitleProgressDialog = null
+        offlineSubtitleExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
@@ -5102,18 +5110,11 @@ class MainActivity : AppCompatActivity() {
 
     /** Attach a user-selected subtitle without losing the current video position or pause state. */
     private fun attachExternalSubtitle(subtitleUri: Uri) {
-        val activePlayer = videoPlayer ?: return
-        val currentItem = activePlayer.currentMediaItem ?: run {
-            Toast.makeText(this, "Start a video before loading subtitles.", Toast.LENGTH_SHORT).show()
-            return
-        }
         val displayName = runCatching {
             contentResolver.query(
                 subtitleUri,
                 arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null
+                null, null, null
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
@@ -5131,37 +5132,159 @@ class MainActivity : AppCompatActivity() {
                 return
             }
         }
-
         runCatching {
             contentResolver.takePersistableUriPermission(
-                subtitleUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                subtitleUri, Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
         }
+        attachSubtitleToCurrentVideo(subtitleUri, mimeType, displayName.ifBlank { "External subtitle" })
+    }
 
-        val currentUri = currentItem.localConfiguration?.uri ?: run {
-            Toast.makeText(this, "The current video cannot be reloaded.", Toast.LENGTH_SHORT).show()
+    private fun attachSubtitleToCurrentVideo(uri: Uri, mimeType: String, displayName: String) {
+        val activePlayer = videoPlayer ?: return
+        val currentItem = activePlayer.currentMediaItem ?: run {
+            Toast.makeText(this, "Start a video before loading subtitles.", Toast.LENGTH_SHORT).show()
             return
         }
-        val existingSubtitles = currentItem.localConfiguration?.subtitleConfigurations.orEmpty()
-        val subtitleConfiguration = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
+        val currentUri = currentItem.localConfiguration?.uri ?: return
+        val subtitle = MediaItem.SubtitleConfiguration.Builder(uri)
             .setMimeType(mimeType)
-            .setLanguage(Locale.getDefault().language.ifBlank { "en" })
+            .setLanguage("en")
             .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
             .build()
         val updatedItem = MediaItem.Builder()
             .setUri(currentUri)
             .setMediaMetadata(currentItem.mediaMetadata)
-            .setSubtitleConfigurations(existingSubtitles + subtitleConfiguration)
+            .setSubtitleConfigurations(currentItem.localConfiguration?.subtitleConfigurations.orEmpty() + subtitle)
             .build()
-        val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+        val position = activePlayer.currentPosition.coerceAtLeast(0L)
         val wasPlaying = activePlayer.playWhenReady
-        val playbackSpeed = activePlayer.playbackParameters
-        activePlayer.setMediaItem(updatedItem, positionMs)
+        val speed = activePlayer.playbackParameters
+        activePlayer.setMediaItem(updatedItem, position)
         activePlayer.prepare()
-        activePlayer.setPlaybackParameters(playbackSpeed)
+        activePlayer.setPlaybackParameters(speed)
         activePlayer.playWhenReady = wasPlaying
-        Toast.makeText(this, "Subtitle loaded: $displayName", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Subtitle loaded: " + displayName, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startOfflineEnglishSubtitleGeneration() {
+        val videoUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri ?: run {
+            Toast.makeText(this, "Start a video before generating subtitles.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (offlineSubtitleTask?.isDone == false) {
+            Toast.makeText(this, "Subtitle generation is already running.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Generate English subtitles")
+            .setMessage(
+                "The first use downloads an approximately 104 MB speech model once. " +
+                    "After that, subtitles are generated offline on this device. " +
+                    "Your video and audio are never uploaded."
+            )
+            .setPositiveButton("Continue") { _, _ -> runOfflineEnglishSubtitleGeneration(videoUri) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun runOfflineEnglishSubtitleGeneration(videoUri: Uri) {
+        val dialog = android.app.ProgressDialog(this).apply {
+            setTitle("English subtitles")
+            setMessage("Preparing offline speech recognition...")
+            setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
+            max = 1000
+            setCancelable(true)
+            setCanceledOnTouchOutside(false)
+            setOnCancelListener { offlineSubtitleTask?.cancel(true) }
+            show()
+        }
+        offlineSubtitleProgressDialog = dialog
+
+        offlineSubtitleTask = offlineSubtitleExecutor.submit {
+            try {
+                val modelDirectory = OfflineSubtitleModelManager.ensureModelDownloaded(this) { name, bytes, total ->
+                    handler.post {
+                        if (!isFinishing && !isDestroyed && dialog.isShowing) {
+                            val totalLabel = if (total > 0L) (total / 1_048_576L).toString() + " MB)" else "unknown size)"
+                            dialog.setMessage("Downloading " + name + " (" + (bytes / 1_048_576L) + " MB of " + totalLabel)
+                            dialog.isIndeterminate = total <= 0L
+                            if (total > 0L) dialog.progress = (bytes * 1000L / total).toInt().coerceIn(0, 1000)
+                        }
+                    }
+                }
+
+                val cues = mutableListOf<OfflineSubtitleCue>()
+                OfflineWhisperEngine(modelDirectory).use { engine ->
+                    var lastUiUpdate = 0L
+                    OfflineVideoAudioDecoder.decode(
+                        context = this,
+                        videoUri = videoUri,
+                        onWindow = { samples, start, duration ->
+                            if (Thread.currentThread().isInterrupted) {
+                                throw InterruptedException("Subtitle generation cancelled.")
+                            }
+                            cues.addAll(engine.transcribeWindow(samples, start, duration))
+                        },
+                        onProgress = { current, total ->
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (now - lastUiUpdate >= 500L) {
+                                lastUiUpdate = now
+                                handler.post {
+                                    if (!isFinishing && !isDestroyed && dialog.isShowing) {
+                                        dialog.setMessage("Transcribing video audio · " + (current / 60f).toInt() + " min processed")
+                                        dialog.isIndeterminate = total <= 0f
+                                        if (total > 0f) dialog.progress =
+                                            (current * 1000f / total).toInt().coerceIn(0, 1000)
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+
+                if (cues.isEmpty()) throw IllegalStateException("No clear English speech was detected.")
+                val srt = OfflineSubtitleSrtWriter.format(cues.sortedBy { it.startSeconds })
+                if (srt.isBlank()) throw IllegalStateException("No timed subtitle captions could be created.")
+                val folder = java.io.File(filesDir, "generated-subtitles")
+                if (!folder.exists() && !folder.mkdirs()) throw java.io.IOException("Could not save subtitles.")
+                val title = videoUri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')
+                    ?.takeIf { it.isNotBlank() } ?: "video"
+                val safeName = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(64).ifBlank { "video" }
+                val subtitleFile = java.io.File(folder, safeName + ".en.srt")
+                subtitleFile.writeText(srt, Charsets.UTF_8)
+
+                handler.post {
+                    if (!isFinishing && !isDestroyed) {
+                        val activeUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri
+                        if (activeUri == videoUri) {
+                            attachSubtitleToCurrentVideo(
+                                Uri.fromFile(subtitleFile),
+                                MimeTypes.APPLICATION_SUBRIP,
+                                title + ".en.srt",
+                            )
+                        } else {
+                            Toast.makeText(this, "Subtitles were saved, but the video changed.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } catch (error: Exception) {
+                val cancelled = Thread.currentThread().isInterrupted || error is InterruptedException
+                if (!cancelled) handler.post {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(this, error.message ?: "Couldn't generate subtitles.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } finally {
+                handler.post {
+                    if (offlineSubtitleProgressDialog === dialog) {
+                        dialog.dismiss()
+                        offlineSubtitleProgressDialog = null
+                    }
+                    offlineSubtitleTask = null
+                }
+            }
+        }
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
@@ -5382,6 +5505,22 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             menuPanel.addView(loadSubtitleRow)
+
+            val generateEnglishSubtitleRow = label(
+                "Generate English subtitles · offline", 14f,
+                themeColor(225, 205, 246), true
+            ).apply {
+                setPadding(dp(12), dp(13), dp(12), dp(13))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Generate English subtitles locally on this device"
+                background = roundedBackground(themeColor(48, 31, 64), 12)
+                setOnClickListener {
+                    menuPanel.visibility = View.GONE
+                    startOfflineEnglishSubtitleGeneration()
+                }
+            }
+            menuPanel.addView(generateEnglishSubtitleRow)
 
             fun addTrackSelectionRow(title: String, trackType: Int) {
                 val available = videoPlayer?.currentTracks?.groups?.any { group ->
