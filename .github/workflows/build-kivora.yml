@@ -25,6 +25,7 @@ on:
       - perf/background-video-thumbnails
       - perf/cache-video-thumbnails
       - feature/auto-english-subtitles
+      - feature/offline-english-subtitles
       - integration/a1-responsive-media-player
 
 permissions:
