@@ -134,8 +134,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p app/libs
-          curl --fail --location --retry 3 --silent --show-error \\
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" \\
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" \
             --output app/libs/sherpa-onnx-2.0.1.aar
           echo "a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7  app/libs/sherpa-onnx-2.0.1.aar" | sha256sum --check --status
           test -s app/libs/sherpa-onnx-2.0.1.aar
