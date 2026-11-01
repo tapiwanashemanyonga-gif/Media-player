@@ -16,7 +16,7 @@ internal object SrtSubtitleWriter {
             val text = segment.text
                 .replace("\r", " ")
                 .replace("\n", " ")
-                .replace(Regex("\s+"), " ")
+                .replace(Regex("""\s+"""), " ")
                 .trim()
             if (text.isEmpty() || !segment.startSeconds.isFinite() ||
                 !segment.endSeconds.isFinite() || segment.startSeconds < 0f ||
