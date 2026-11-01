@@ -67,4 +67,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("androidx.media3:media3-session:1.6.1")
     implementation("androidx.media3:media3-ui:1.6.1")
+    // Sherpa-ONNX native Android ASR engine; CI fetches the pinned, checksum-verified AAR.
+    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
 }
