@@ -27,6 +27,10 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -125,6 +129,7 @@ class MainActivity : AppCompatActivity() {
     private var videosLoaded = false
     private var selectedVideoUri: String? = null
     private var currentTab = "search"
+    private var selectedNavigationTab by mutableStateOf("home")
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
@@ -1192,37 +1197,18 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        val navBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = roundedBackground(Color.rgb(25, 18, 37), 21).apply { setStroke(dp(1), Color.rgb(70, 50, 92)) }
-        }
-        listOf(
-            Triple("home", "⌂", "HOME"),
-            Triple("search", "⌕", "SEARCH"),
-            Triple("library", "♫", "LIBRARY"),
-            Triple("videos", "▣", "VIDEOS")
-        ).forEach { (tab, symbol, title) ->
-            val item = label("$symbol\n$title", 10f, Color.rgb(190, 175, 210), true).apply {
-                gravity = Gravity.CENTER
-                setPadding(dp(4), dp(4), dp(4), dp(4))
-                isClickable = true
-                isFocusable = true
-                contentDescription = when (tab) {
-                    "home" -> "Open Home"
-                    "search" -> "Search music"
-                    "library" -> "Open music library and playlists"
-                    else -> "Browse videos"
-                }
-                setOnClickListener { showTab(tab) }
+        val composeNavigation = ComposeView(this).apply {
+            setContent {
+                A1NavigationBar(
+                    selectedTab = selectedNavigationTab,
+                    onTabSelected = { tab -> showTab(tab) }
+                )
             }
-            navigationButtons[tab] = item
-            navBar.addView(item, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                setMargins(dp(2), 0, dp(2), 0)
-            })
         }
-        root.addView(navBar, LinearLayout.LayoutParams(-1, dp(60)))
+        root.addView(
+            composeNavigation,
+            LinearLayout.LayoutParams(-1, dp(68))
+        )
         setContentView(root)
 
         searchBox.addTextChangedListener(
@@ -4527,6 +4513,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTab(tab: String) {
         currentTab = tab
+        selectedNavigationTab = if (tab == "nowPlaying") "home" else tab
         if (tab == "home") renderHomeDashboard()
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
