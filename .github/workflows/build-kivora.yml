@@ -25,6 +25,7 @@ on:
       - perf/background-video-thumbnails
       - perf/cache-video-thumbnails
       - feature/auto-english-subtitles
+      - fix/remove-english-subtitles-fullscreen
 
 permissions:
   contents: read
