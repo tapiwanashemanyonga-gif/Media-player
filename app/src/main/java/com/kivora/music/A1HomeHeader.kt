@@ -44,12 +44,6 @@ fun A1HomeHeader(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(
-                "A1 FAMILY MEDIA",
-                color = HomePurple,
-                fontSize = 12.sp,
-                letterSpacing = 2.sp
-            )
-            Text(
                 "Your media. Your way.",
                 color = Color(0xFFFFFAFF),
                 fontSize = 27.sp,
