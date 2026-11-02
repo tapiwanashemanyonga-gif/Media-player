@@ -4287,7 +4287,7 @@ class MainActivity : AppCompatActivity() {
             videoPlaceholder.addView(
                 videoPlayerView,
                 0,
-                LinearLayout.LayoutParams(-1, dp(160))
+                LinearLayout.LayoutParams(-1, videoPreviewHeight())
             )
         }
     }
