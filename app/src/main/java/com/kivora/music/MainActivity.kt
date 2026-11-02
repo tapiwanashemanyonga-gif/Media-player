@@ -5239,7 +5239,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val listToggleButton = android.widget.ImageView(this).apply {
-            setImageResource(R.drawable.ic_video_library)
+            setImageResource(R.drawable.ic_video_list)
             imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
             contentDescription = "Show video list"
             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -5269,8 +5269,29 @@ class MainActivity : AppCompatActivity() {
             if (show) renderSideList()
             sidePanel.visibility = if (show) View.VISIBLE else View.GONE
             listToggleButton.contentDescription = if (show) "Hide video list" else "Show video list"
-            listToggleButton.setImageResource(if (show) R.drawable.ic_close else R.drawable.ic_video_library)
+            listToggleButton.setImageResource(if (show) R.drawable.ic_close else R.drawable.ic_video_list)
         }
+
+        // Red close/cancel control exits fullscreen only; the current video keeps playing inline.
+        val closeFullscreenButton = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_close_red)
+            contentDescription = "Exit fullscreen"
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = roundedBackground(themeColor(20, 14, 31), 16).apply {
+                setStroke(dp(1), themeColor(190, 65, 65))
+            }
+            elevation = dp(10).toFloat()
+            isClickable = true
+            isFocusable = true
+        }
+        root.addView(
+            closeFullscreenButton,
+            android.widget.FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP or Gravity.START).apply {
+                topMargin = dp(18)
+                marginStart = dp(18)
+            }
+        )
+        closeFullscreenButton.setOnClickListener { dialog.dismiss() }
 
         val listener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
