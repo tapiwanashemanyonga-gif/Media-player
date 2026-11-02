@@ -5092,9 +5092,6 @@ class MainActivity : AppCompatActivity() {
         return videoPlayer != null
     }
 
-    /** Attach a user-selected subtitle without losing the current video position or pause state. */
-
-
     /** Move the existing PlayerView into fullscreen without recreating its player. */
     private fun showVideoFullscreen() {
         if (videoPlayer?.currentMediaItem == null) return
