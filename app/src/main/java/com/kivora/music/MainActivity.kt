@@ -614,7 +614,7 @@ class MainActivity : AppCompatActivity() {
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
-            LinearLayout.LayoutParams(-1, dp(160))
+            LinearLayout.LayoutParams(-1, videoPreviewHeight())
         )
 
         videoStatus = label(
@@ -3936,6 +3936,12 @@ class MainActivity : AppCompatActivity() {
             reportVideoPlaybackFailure(video.uri.toString())
             false
         }
+    }
+
+    /** Keep the inline player close to 16:9 while respecting phone and tablet widths. */
+    private fun videoPreviewHeight(): Int {
+        val screenWidth = resources.displayMetrics.widthPixels
+        return (screenWidth * 9f / 16f).toInt().coerceIn(dp(160), dp(240))
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
