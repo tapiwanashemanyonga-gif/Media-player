@@ -78,12 +78,14 @@ jobs:
           grep -Fq 'fun renderSideList()' "$MAIN_ACTIVITY"
           grep -Fq 'OnBackPressedCallback' "$MAIN_ACTIVITY"
           grep -Fq 'tabHistory' "$MAIN_ACTIVITY"
-          grep -Fq 'FULLSCREEN VIDEO LIST' "$MAIN_ACTIVITY"
+          grep -Fq 'contentDescription = "Show video list"' "$MAIN_ACTIVITY"
+          grep -Fq 'visibility = View.GONE' "$MAIN_ACTIVITY"
+          grep -Fq 'if (videoPlayer?.isPlaying == true && fullscreenVideoDialog?.isShowing != true)' "$MAIN_ACTIVITY"
           grep -Fq 'openFullscreenAfterVideoScan' "$MAIN_ACTIVITY"
           grep -Fq 'A1 FAMILY MEDIA logo' "$MAIN_ACTIVITY"
           grep -Fq '#9B36F4' app/src/main/res/drawable/ic_launcher_foreground.xml
           grep -Fq '#D45CFF' app/src/main/res/drawable/ic_launcher_foreground.xml
-          grep -Fq 'val sideWidth = dp(if (resources.configuration.screenWidthDp >= 600) 216 else 132)' "$MAIN_ACTIVITY"
+          grep -Fq 'else if (resources.configuration.screenWidthDp < 360) 184' "$MAIN_ACTIVITY"
           grep -Fq 'contentResolver.loadThumbnail(video.uri, Size(dp(320), dp(180)), null)' "$MAIN_ACTIVITY"
           grep -Fq 'setTitle("Video settings")' "$MAIN_ACTIVITY"
           if grep -Eiq 'YOUR MEDIA, ONE PLACE|Your library\.\\nYour rhythm\.|MUSIC & VIDEO PLAYER|LOCAL LIBRARY' "$MAIN_ACTIVITY"; then
