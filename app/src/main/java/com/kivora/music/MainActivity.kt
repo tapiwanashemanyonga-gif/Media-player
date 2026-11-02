@@ -977,7 +977,9 @@ class MainActivity : AppCompatActivity() {
         }
         brandCopy.addView(label("A1 FAMILY MEDIA", 15f, themeColor(250, 247, 255), true))
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
-        val settingsButton = label("⚙", 22f, themeColor(232, 213, 255), true).apply {
+        val settingsButton = label("", 22f, themeColor(232, 213, 255), true).apply {
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_settings, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(themeColor(232, 213, 255))
             gravity = Gravity.CENTER
             minWidth = dp(44)
             minHeight = dp(44)
@@ -1240,7 +1242,10 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("⛶  OPEN VIDEO", 13f, Color.WHITE, true).apply {
+        val fullscreenButton = label("OPEN VIDEO", 13f, Color.WHITE, true).apply {
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_video_library, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            compoundDrawablePadding = dp(8)
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(10), dp(14), dp(10))
             minHeight = dp(50)
@@ -1773,9 +1778,11 @@ class MainActivity : AppCompatActivity() {
         playbackModes.addView(shuffleButton, transportParams())
         playbackModes.addView(repeatButton, transportParams())
         playerCard.addView(playbackModes)
-        val availableCardWidth = (resources.configuration.screenWidthDp - 76).coerceAtLeast(180)
-        playerCard.addView(sessionActions, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(480)), -2))
-        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(600)), -2))
+        // Use the actual available width; a forced 180dp minimum overflowed on narrow phones.
+        val availableCardWidth = (resources.configuration.screenWidthDp -
+            (if (compactLayout) 24 else 36)).coerceAtLeast(0)
+        playerCard.addView(sessionActions, LinearLayout.LayoutParams(-1, -2))
+        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(-1, -2))
 
         playerScroll = ScrollView(this).apply {
             clipToPadding = false
