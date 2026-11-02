@@ -209,10 +209,6 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
             if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
         }
-    private val externalSubtitleLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) attachExternalSubtitle(uri)
-        }
     private var activityResumed = false
     private var pendingPlaybackRequest: PendingPlayback? = null
     private var playbackRequestInProgress = false
@@ -5097,68 +5093,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Attach a user-selected subtitle without losing the current video position or pause state. */
-    private fun attachExternalSubtitle(subtitleUri: Uri) {
-        val activePlayer = videoPlayer ?: return
-        val currentItem = activePlayer.currentMediaItem ?: run {
-            Toast.makeText(this, "Start a video before loading subtitles.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val displayName = runCatching {
-            contentResolver.query(
-                subtitleUri,
-                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (column >= 0) cursor.getString(column) else null
-                } else null
-            }
-        }.getOrNull().orEmpty()
-        val extension = displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        val mimeType = when (extension) {
-            "srt" -> MimeTypes.APPLICATION_SUBRIP
-            "vtt" -> MimeTypes.TEXT_VTT
-            "ass", "ssa" -> MimeTypes.TEXT_SSA
-            else -> {
-                Toast.makeText(this, "Choose an SRT, VTT, ASS or SSA subtitle file.", Toast.LENGTH_LONG).show()
-                return
-            }
-        }
 
-        runCatching {
-            contentResolver.takePersistableUriPermission(
-                subtitleUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
-
-        val currentUri = currentItem.localConfiguration?.uri ?: run {
-            Toast.makeText(this, "The current video cannot be reloaded.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val existingSubtitles = currentItem.localConfiguration?.subtitleConfigurations.orEmpty()
-        val subtitleConfiguration = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
-            .setMimeType(mimeType)
-            .setLanguage(Locale.getDefault().language.ifBlank { "en" })
-            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-            .build()
-        val updatedItem = MediaItem.Builder()
-            .setUri(currentUri)
-            .setMediaMetadata(currentItem.mediaMetadata)
-            .setSubtitleConfigurations(existingSubtitles + subtitleConfiguration)
-            .build()
-        val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
-        val wasPlaying = activePlayer.playWhenReady
-        val playbackSpeed = activePlayer.playbackParameters
-        activePlayer.setMediaItem(updatedItem, positionMs)
-        activePlayer.prepare()
-        activePlayer.setPlaybackParameters(playbackSpeed)
-        activePlayer.playWhenReady = wasPlaying
-        Toast.makeText(this, "Subtitle loaded: $displayName", Toast.LENGTH_SHORT).show()
-    }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
     private fun showVideoFullscreen() {
@@ -5166,6 +5101,8 @@ class MainActivity : AppCompatActivity() {
         if (fullscreenVideoDialog?.isShowing == true) return
 
         val parent = videoPlayerView.parent as? android.view.ViewGroup ?: return
+        val wasKeepingScreenOn = videoPlayerView.keepScreenOn
+        videoPlayerView.keepScreenOn = true
         videoPlayerView.useController = false
         parent.removeView(videoPlayerView)
 
@@ -5367,18 +5304,6 @@ class MainActivity : AppCompatActivity() {
             }
             menuPanel.addView(resizeRow)
 
-            val loadSubtitleRow = label("Load external subtitles  ·  SRT / VTT / ASS", 14f, themeColor(225, 205, 246), true).apply {
-                setPadding(dp(12), dp(13), dp(12), dp(13))
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Load an external subtitle file"
-                background = roundedBackground(themeColor(48, 31, 64), 12)
-                setOnClickListener {
-                    externalSubtitleLauncher.launch(arrayOf("*/*"))
-                }
-            }
-            menuPanel.addView(loadSubtitleRow)
-
             fun addTrackSelectionRow(title: String, trackType: Int) {
                 val available = videoPlayer?.currentTracks?.groups?.any { group ->
                     group.type == trackType && group.length > 0
@@ -5401,7 +5326,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             addTrackSelectionRow("Audio track", C.TRACK_TYPE_AUDIO)
-            addTrackSelectionRow("Subtitles", C.TRACK_TYPE_TEXT)
 
             if (deviceVideos.isEmpty()) {
                 menuPanel.addView(label("No videos available", 14f, themeColor(190, 175, 210)))
@@ -5593,12 +5517,14 @@ class MainActivity : AppCompatActivity() {
             videoPlayer?.removeListener(playerListener)
             videoPlayerView.setOnTouchListener(null)
             videoPlayerView.useController = true
+            videoPlayerView.keepScreenOn = wasKeepingScreenOn
             restoreVideoPlayerView()
             if (fullscreenVideoDialog === dialog) fullscreenVideoDialog = null
         }
         dialog.setContentView(fullscreenRoot)
         fullscreenVideoDialog = dialog
         dialog.show()
+        dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         dialog.window?.setLayout(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.MATCH_PARENT
