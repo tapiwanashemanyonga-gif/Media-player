@@ -51,41 +51,46 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Configure persistent release signing
+      - name: Restore existing A1 release signing keystore
         shell: bash
         env:
-          A1_RELEASE_KEYSTORE_BASE64: ${{ secrets.A1_RELEASE_KEYSTORE_BASE64 }}
-          A1_RELEASE_STORE_PASSWORD: ${{ secrets.A1_RELEASE_STORE_PASSWORD }}
-          A1_RELEASE_KEY_ALIAS: ${{ secrets.A1_RELEASE_KEY_ALIAS }}
-          A1_RELEASE_KEY_PASSWORD: ${{ secrets.A1_RELEASE_KEY_PASSWORD }}
+          A1_KEYSTORE_BASE64: ${{ secrets.A1_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          for name in A1_RELEASE_KEYSTORE_BASE64 A1_RELEASE_STORE_PASSWORD A1_RELEASE_KEY_ALIAS A1_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Missing GitHub Actions secret: $name"
+          if [[ -z "${A1_KEYSTORE_BASE64}" ]]; then
+            echo "::error::Missing existing GitHub Actions secret: A1_KEYSTORE_BASE64"
+            exit 1
+          fi
+          printf '%s' "$A1_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/a1-family-release.jks"
+          test -s "$RUNNER_TEMP/a1-family-release.jks"
+          chmod 600 "$RUNNER_TEMP/a1-family-release.jks"
+          echo "A1_KEYSTORE_FILE=$RUNNER_TEMP/a1-family-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed production release APK
+        shell: bash
+        env:
+          A1_KEYSTORE_FILE: ${{ runner.temp }}/a1-family-release.jks
+          A1_KEYSTORE_PASSWORD: ${{ secrets.A1_KEYSTORE_PASSWORD }}
+          A1_KEY_PASSWORD: ${{ secrets.A1_KEY_PASSWORD }}
+          A1_KEY_ALIAS: a1family
+        run: |
+          set -euo pipefail
+          for name in A1_KEYSTORE_PASSWORD A1_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing existing GitHub Actions secret: $name"
               exit 1
             fi
           done
-          echo "$A1_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/a1-release.jks"
-          echo "A1_RELEASE_STORE_FILE=$RUNNER_TEMP/a1-release.jks" >> "$GITHUB_ENV"
-          echo "A1_RELEASE_STORE_PASSWORD=$A1_RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "A1_RELEASE_KEY_ALIAS=$A1_RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "A1_RELEASE_KEY_PASSWORD=$A1_RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+          gradle --no-daemon --stacktrace --warning-mode all assembleRelease
 
-      - name: Verify production package identity
+      - name: Verify production package and release signature
         shell: bash
         run: |
-          grep -q 'applicationId = "com.a1family.media"' app/build.gradle.kts
-          echo "Confirmed package ID: com.a1family.media"
-
-      - name: Build signed release APK
-        run: gradle --no-daemon --stacktrace --warning-mode all assembleRelease
-
-      - name: Verify APK exists
-        shell: bash
-        run: |
-          test -s app/build/outputs/apk/release/app-release.apk
-          ls -lh app/build/outputs/apk/release/app-release.apk
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | head -n 1
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
 
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
