@@ -955,10 +955,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(11), 0, 0, 0)
         }
         brandCopy.addView(label("A1 FAMILY MEDIA", 15f, themeColor(250, 247, 255), true))
-        brandCopy.addView(label("MUSIC & VIDEO PLAYER", 9f, themeColor(192, 160, 232), true).apply {
-            letterSpacing = 0.12f
-            setPadding(0, dp(2), 0, 0)
-        })
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
         val settingsButton = label("⚙", 22f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
@@ -972,15 +968,6 @@ class MainActivity : AppCompatActivity() {
         header.addView(settingsButton, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             rightMargin = dp(5)
         })
-        if (!narrowPhoneLayout) {
-            header.addView(label("●  LOCAL LIBRARY", 9f, themeColor(210, 190, 232), true).apply {
-                letterSpacing = 0.06f
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                background = roundedBackground(themeColor(39, 24, 58), 18).apply {
-                    setStroke(dp(1), themeColor(83, 56, 115))
-                }
-            })
-        }
 
         root.addView(header)
 
@@ -3060,30 +3047,6 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         val previousScrollY = if (::homeScroll.isInitialized) homeScroll.scrollY else 0
         homeContent.removeAllViews()
-
-        val hero = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(17, 11, 31), Color.rgb(48, 23, 78), Color.rgb(25, 17, 48))
-            ).apply {
-                cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), themeColor(117, 77, 159))
-            }
-            elevation = dp(3).toFloat()
-        }
-        hero.addView(label("YOUR MEDIA, ONE PLACE", 10f, themeColor(211, 177, 255), true).apply {
-            letterSpacing = 0.14f
-            setPadding(0, 0, 0, dp(9))
-        })
-        hero.addView(label("Your library.\nYour rhythm.", 27f, Color.WHITE, true).apply {
-            setPadding(0, 0, 0, dp(7))
-        })
-        hero.addView(label("Music and videos, beautifully together.", 12f, themeColor(220, 207, 237)))
-        homeContent.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(10)
-        })
 
         homeContent.addView(label("QUICK ACCESS", 12f, themeColor(215, 194, 236), true).apply {
             letterSpacing = 0.08f
