@@ -5133,7 +5133,7 @@ class MainActivity : AppCompatActivity() {
         }
         val sideScroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
         val sideList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        sideScroll.addView(sideList, ScrollView.LayoutParams(-1, -2))
+        sideScroll.addView(sideList, android.widget.FrameLayout.LayoutParams(-1, -2))
         sidePanel.addView(sideScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         fun renderSideList() {
