@@ -5165,7 +5165,7 @@ class MainActivity : AppCompatActivity() {
             }
             visibility = View.GONE
         }
-        val menuScroll = ScrollView(this)
+        val menuScroll = ScrollView(this).apply { visibility = View.GONE }
         menuScroll.addView(menuPanel)
         val menuHeight = minOf(dp(220), (resources.displayMetrics.heightPixels * 0.30f).toInt().coerceAtLeast(dp(120)))
         controls.addView(menuScroll, LinearLayout.LayoutParams(-1, menuHeight).apply { topMargin = dp(8) })
@@ -5344,6 +5344,7 @@ class MainActivity : AppCompatActivity() {
                         refreshMenu()
                         if (started) {
                             menuPanel.visibility = View.GONE
+                            menuScroll.visibility = View.GONE
                             showControls?.invoke()
                         }
                     }
@@ -5395,6 +5396,7 @@ class MainActivity : AppCompatActivity() {
             val open = menuPanel.visibility != View.VISIBLE
             if (open) refreshMenu()
             menuPanel.visibility = if (open) View.VISIBLE else View.GONE
+            menuScroll.visibility = if (open) View.VISIBLE else View.GONE
             showControls?.invoke()
         }
         var gestureStartX = 0f
