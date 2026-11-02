@@ -26,6 +26,7 @@ on:
       - perf/cache-video-thumbnails
       - feature/auto-english-subtitles
       - fix/remove-english-subtitles-fullscreen
+      - feature/a1-family-visual-refresh
 
 permissions:
   contents: read
@@ -59,6 +60,10 @@ jobs:
           test -s "$MANIFEST"
           test -s "$GRADLE_FILE"
           grep -Fq 'android:label="A1 FAMILY MEDIA"' "$MANIFEST"
+          grep -Fq 'android:icon="@mipmap/ic_launcher"' "$MANIFEST"
+          grep -Fq 'android:roundIcon="@mipmap/ic_launcher_round"' "$MANIFEST"
+          test -s app/src/main/res/mipmap-anydpi/ic_launcher.xml
+          test -s app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
           grep -Fq 'android:name=".KivoraPlaybackService"' "$MANIFEST"
           grep -Fq 'androidx.media3.session.MediaSessionService' "$MANIFEST"
           grep -Fq 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK' "$MANIFEST"
@@ -71,6 +76,8 @@ jobs:
           grep -Fq 'private fun showVideoFullscreen()' "$MAIN_ACTIVITY"
           grep -Fq 'videoPlayerView.keepScreenOn = true' "$MAIN_ACTIVITY"
           grep -Fq 'fullscreenSidePadding' "$MAIN_ACTIVITY"
+          grep -Fq 'fullscreenRoot.addView(videoPlayerView, LinearLayout.LayoutParams(-1, 0, 1f))' "$MAIN_ACTIVITY"
+          grep -Fq 'menuScroll.visibility = View.GONE' "$MAIN_ACTIVITY"
           if grep -Eiq 'attachExternalSubtitle|externalSubtitleLauncher|loadSubtitleRow|addTrackSelectionRow\("Subtitles"' "$MAIN_ACTIVITY"; then
             echo "English subtitle feature must remain removed."
             exit 1
