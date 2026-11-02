@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - feature/a1-adsterra-webview-song-list
 
 permissions:
   contents: read
