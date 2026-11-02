@@ -2353,55 +2353,25 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        homeContent.addView(label("HOME", 11f, Color.rgb(203, 162, 242), true).apply {
-            letterSpacing = 0.16f
-            setPadding(dp(2), dp(2), 0, dp(5))
-        })
-        homeContent.addView(label("Your music, ready", 27f, Color.rgb(252, 248, 255), true).apply {
-            setPadding(dp(2), 0, 0, dp(4))
-        })
-        homeContent.addView(label("Pick up where you left off.", 13f, Color.rgb(192, 173, 214)).apply {
-            setPadding(dp(2), 0, 0, dp(18))
-        })
-
-        homeContent.addView(label("QUICK ACCESS", 12f, Color.rgb(215, 194, 236), true).apply {
-            letterSpacing = 0.08f
-            setPadding(dp(2), dp(2), 0, dp(10))
-        })
-        val shortcuts = listOf(
-            Triple("♫", "Songs", "songs"),
-            Triple("▤", "Albums", "albums"),
-            Triple("♙", "Artists", "artists"),
-            Triple("☆", "Favourites", "favourites")
-        )
-        shortcuts.chunked(2).forEach { pair ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            pair.forEach { (symbol, title, destination) ->
-                val shortcut = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(13), dp(12), dp(10), dp(12))
-                    background = roundedBackground(Color.rgb(38, 25, 55), 17).apply {
-                        setStroke(dp(1), Color.rgb(91, 63, 119))
-                    }
-                    isClickable = true
-                    isFocusable = true
-                    contentDescription = "Browse $title"
-                    setOnClickListener { openHomeShortcut(destination) }
+        val albumCount = songs.map(::albumGroupKey).distinct().size
+        homeContent.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1HomeHeader(
+                        songCount = songs.size,
+                        albumCount = albumCount,
+                        playlistCount = playlists.size,
+                        onBrowse = { openHomeShortcut("songs") },
+                        onAlbums = { openHomeShortcut("albums") },
+                        onArtists = { openHomeShortcut("artists") },
+                        onFavourites = { openHomeShortcut("favourites") }
+                    )
                 }
-                shortcut.addView(label(symbol, 21f, Color.rgb(213, 165, 255), true))
-                shortcut.addView(label(title, 13f, Color.rgb(248, 242, 255), true).apply {
-                    setPadding(dp(9), 0, 0, 0)
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                })
-                row.addView(shortcut, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
-                    if (row.childCount == 0) rightMargin = dp(6) else leftMargin = dp(6)
-                    bottomMargin = dp(8)
-                })
+            },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(18)
             }
-            homeContent.addView(row)
-        }
+        )
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
