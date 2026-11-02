@@ -179,6 +179,7 @@ class MainActivity : AppCompatActivity() {
     private var queueOrderRequestId = 0
     private val deviceVideos = mutableListOf<DeviceVideo>()
     private var videosLoaded = false
+    private var openFullscreenAfterVideoScan = false
     private var selectedVideoUri: String? = null
     private var videoFullscreenButton: View? = null
     private var videoMinimizeButton: View? = null
@@ -1242,8 +1243,25 @@ class MainActivity : AppCompatActivity() {
             }
             isClickable = true
             isFocusable = true
-            contentDescription = "Open video in fullscreen"
-            setOnClickListener { showVideoFullscreen() }
+            contentDescription = "Open fullscreen video list"
+            setOnClickListener {
+                if (videosLoaded) {
+                    showVideoFullscreen()
+                } else {
+                    openFullscreenAfterVideoScan = true
+                    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Manifest.permission.READ_MEDIA_VIDEO
+                    } else {
+                        Manifest.permission.READ_EXTERNAL_STORAGE
+                    }
+                    if (ContextCompat.checkSelfPermission(this@MainActivity, permission) == PackageManager.PERMISSION_GRANTED) {
+                        loadVideos()
+                    } else {
+                        videoPermissionLauncher.launch(permission)
+                    }
+                    Toast.makeText(this@MainActivity, "Preparing your fullscreen video list…", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
         videoFullscreenButton = fullscreenButton
         fullscreenButton.visibility = View.GONE
@@ -4877,6 +4895,7 @@ class MainActivity : AppCompatActivity() {
                 if (requestId != videoScanRequestId || isFinishing || isDestroyed) return@post
 
                 if (scanError != null) {
+                    openFullscreenAfterVideoScan = false
                     videoStatus.text = "Couldn't read videos. Tap here to retry."
                     videoStatus.setOnClickListener { loadVideos() }
                     Toast.makeText(this, "Video library couldn't be refreshed. Your previous list is kept.", Toast.LENGTH_LONG).show()
@@ -4888,6 +4907,10 @@ class MainActivity : AppCompatActivity() {
                 deviceVideos.addAll(scannedVideos)
                 videosLoaded = true
                 renderVideos()
+                if (openFullscreenAfterVideoScan) {
+                    openFullscreenAfterVideoScan = false
+                    showVideoFullscreen()
+                }
             }
         }
     }
