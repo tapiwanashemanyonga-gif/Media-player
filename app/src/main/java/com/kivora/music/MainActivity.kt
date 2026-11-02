@@ -34,6 +34,7 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -183,6 +184,8 @@ class MainActivity : AppCompatActivity() {
     private var videoMinimizeButton: View? = null
     private var videoPlayerMinimized = false
     private var currentTab = "library"
+    private val tabHistory = mutableListOf<String>()
+    private var navigationInitialized = false
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
@@ -353,6 +356,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (fullscreenVideoDialog?.isShowing == true) {
+                    fullscreenVideoDialog?.dismiss()
+                    return
+                }
+                if (tabHistory.isNotEmpty()) {
+                    val previous = tabHistory.removeAt(tabHistory.lastIndex)
+                    showTab(previous, recordHistory = false)
+                } else if (currentTab != "home") {
+                    showTab("home", recordHistory = false)
+                } else {
+                    finish()
+                }
+            }
+        })
 
         window.statusBarColor = themeColor(13, 8, 23)
         window.navigationBarColor = themeColor(13, 8, 23)
@@ -934,18 +953,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(2), dp(3), dp(2), dp(2))
         }
 
-        val brandMark = TextView(this).apply {
-            text = "A1"
-            textSize = 17f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
-            gravity = Gravity.CENTER
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(themeColor(174, 98, 255), themeColor(104, 48, 190))
-            ).apply { cornerRadius = dp(16).toFloat() }
+        val brandMark = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = roundedBackground(themeColor(24, 12, 42), 13)
+            clipToOutline = true
             elevation = dp(5).toFloat()
-            contentDescription = "A1 Family"
+            contentDescription = "A1 FAMILY MEDIA logo"
         }
         header.addView(brandMark, LinearLayout.LayoutParams(dp(42), dp(42)))
 
@@ -1219,9 +1233,9 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("⛶", 12f, themeColor(232, 213, 255), true).apply {
+        val fullscreenButton = label("⛶  FULLSCREEN VIDEO LIST", 12f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             minHeight = dp(48)
             background = roundedBackground(themeColor(48, 30, 67), 15).apply {
                 setStroke(dp(1), themeColor(131, 87, 168))
@@ -5057,7 +5071,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
     private fun showVideoFullscreen() {
-        if (videoPlayer?.currentMediaItem == null || fullscreenVideoDialog?.isShowing == true) return
+        if (fullscreenVideoDialog?.isShowing == true) return
         val parent = videoPlayerView.parent as? android.view.ViewGroup ?: return
         val wasKeepingScreenOn = videoPlayerView.keepScreenOn
         val previousResizeMode = videoPlayerView.resizeMode
@@ -5274,7 +5288,8 @@ class MainActivity : AppCompatActivity() {
         val hasActiveVideo = !selectedVideoUri.isNullOrBlank() && currentUri != null
         val visibility = if (hasActiveVideo && !videoPlayerMinimized) View.VISIBLE else View.GONE
         videoPlayerView.visibility = visibility
-        videoFullscreenButton?.visibility = visibility
+        // Keep the fullscreen browser button available on the Videos tab, even before playback.
+        videoFullscreenButton?.visibility = if (currentTab == "videos" || visibility == View.VISIBLE) View.VISIBLE else View.GONE
         videoMinimizeButton?.visibility = if (hasActiveVideo) View.VISIBLE else View.GONE
         videoMinimizeButton?.let { button ->
             button.contentDescription = if (videoPlayerMinimized) "Restore video player" else "Minimize video player"
@@ -5559,11 +5574,16 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    private fun showTab(tab: String) {
+    private fun showTab(tab: String, recordHistory: Boolean = true) {
         // Keep legacy internal callers working, but route them to the unified Library screen.
         val destination = if (tab == "search") "library" else tab
         val previousTab = currentTab
+        if (navigationInitialized && recordHistory && previousTab != destination) {
+            tabHistory.add(previousTab)
+            if (tabHistory.size > 20) tabHistory.removeAt(0)
+        }
         currentTab = destination
+        navigationInitialized = true
         if (destination == "home") renderHomeDashboard()
         searchRow.visibility =
             if (destination == "library" || destination == "videos") View.VISIBLE else View.GONE
