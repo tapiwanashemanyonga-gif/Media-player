@@ -76,6 +76,13 @@ jobs:
           grep -Fq 'private fun showVideoFullscreen()' "$MAIN_ACTIVITY"
           grep -Fq 'videoPlayerView.useController = true' "$MAIN_ACTIVITY"
           grep -Fq 'fun renderSideList()' "$MAIN_ACTIVITY"
+          grep -Fq 'OnBackPressedCallback' "$MAIN_ACTIVITY"
+          grep -Fq 'tabHistory' "$MAIN_ACTIVITY"
+          grep -Fq 'FULLSCREEN VIDEO LIST' "$MAIN_ACTIVITY"
+          grep -Fq 'openFullscreenAfterVideoScan' "$MAIN_ACTIVITY"
+          grep -Fq 'A1 FAMILY MEDIA logo' "$MAIN_ACTIVITY"
+          grep -Fq '#9B36F4' app/src/main/res/drawable/ic_launcher_foreground.xml
+          grep -Fq '#D45CFF' app/src/main/res/drawable/ic_launcher_foreground.xml
           grep -Fq 'val sideWidth = dp(if (resources.configuration.screenWidthDp >= 600) 216 else 132)' "$MAIN_ACTIVITY"
           grep -Fq 'contentResolver.loadThumbnail(video.uri, Size(dp(320), dp(180)), null)' "$MAIN_ACTIVITY"
           grep -Fq 'setTitle("Video settings")' "$MAIN_ACTIVITY"
