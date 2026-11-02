@@ -2944,7 +2944,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Keep the iframe banner inside the scrolling song list, never over playback controls.
-            if ((songIndex + 1) % 8 == 0 && songIndex < visibleSongs.lastIndex) {
+            if ((songIndex + 1) % 4 == 0 && songIndex < visibleSongs.lastIndex) {
                 songList.addView(
                     AdsterraSongListBanner.create(this),
                     LinearLayout.LayoutParams(-1, -2).apply {
