@@ -1219,7 +1219,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("⛶  FULLSCREEN", 12f, themeColor(232, 213, 255), true).apply {
+        val fullscreenButton = label("⛶", 12f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(10), dp(14), dp(10))
             minHeight = dp(48)
@@ -1263,7 +1263,7 @@ class MainActivity : AppCompatActivity() {
             videoScroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
-        val minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, themeColor(232, 213, 255), true).apply {
+        val minimizeVideoButton = label("↓", 11f, themeColor(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             minHeight = dp(48)
@@ -1510,7 +1510,7 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(1)
             bottomMargin = dp(4)
         })
-        val sleepTimerButton = label("☾ TIMER", 10f, themeColor(226, 202, 255), true).apply {
+        val sleepTimerButton = label("☾", 10f, themeColor(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Open sleep timer options"
             isClickable = true
@@ -1545,7 +1545,7 @@ class MainActivity : AppCompatActivity() {
         sessionActions.addView(upNextButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
             leftMargin = dp(5)
         })
-        val lyricsButton = label("♫ LYRICS", 10f, themeColor(226, 202, 255), true).apply {
+        val lyricsButton = label("♫", 10f, themeColor(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Write or view lyrics for the current song"
             minHeight = dp(44)
@@ -1560,7 +1560,7 @@ class MainActivity : AppCompatActivity() {
         sessionActions.addView(lyricsButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
             leftMargin = dp(5)
         })
-        val musicSpeedButton = label("1.0× SPEED", 10f, themeColor(226, 202, 255), true).apply {
+        val musicSpeedButton = label("1.0×", 10f, themeColor(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Change music playback speed"
             minHeight = dp(44)
@@ -1582,7 +1582,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(10), 0, dp(4))
         }
 
-        val minimizePlayerButton = label("↓  MINIMIZE PLAYER", 11f, Color.WHITE, true).apply {
+        val minimizePlayerButton = label("↓", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
             background = roundedBackground(themeColor(48, 31, 68), 15).apply {
@@ -1593,7 +1593,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showTab("search") }
         }
 
-        val songListButton = label("♫  SONG LIST", 11f, Color.WHITE, true).apply {
+        val songListButton = label("☷", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
             background = roundedBackground(themeColor(48, 31, 68), 15).apply {
@@ -1604,7 +1604,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showTab("library") }
         }
 
-        val equalizerButton = label("♫  EQUALIZER", 11f, Color.WHITE, true).apply {
+        val equalizerButton = label("≋", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
             background = roundedBackground(themeColor(48, 31, 68), 15).apply {
@@ -1616,7 +1616,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openEqualizer() }
         }
 
-        val bassBoostButton = label("♫  BASS BOOST", 11f, Color.WHITE, true).apply {
+        val bassBoostButton = label("♬", 11f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(12), dp(8), dp(12))
             background = roundedBackground(themeColor(48, 31, 68), 15).apply {
@@ -1854,9 +1854,9 @@ class MainActivity : AppCompatActivity() {
             background = roundedBackground(themeColor(25, 18, 37), 21).apply { setStroke(dp(1), themeColor(70, 50, 92)) }
         }
         listOf(
-            Triple("home", "⌂", "HOME"),
-            Triple("library", "♫", "LIBRARY"),
-            Triple("videos", "▣", "VIDEOS")
+            Triple("home", "⌂", "Home"),
+            Triple("library", "♫", "Library"),
+            Triple("videos", "▣", "Videos")
         ).forEach { (tab, symbol, title) ->
             val item = label("$symbol\n$title", 10f, themeColor(190, 175, 210), true).apply {
                 gravity = Gravity.CENTER
