@@ -5075,7 +5075,62 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(8), dp(10), dp(8), dp(8))
             background = roundedBackground(themeColor(20, 14, 31), 0).apply { setStroke(dp(1), themeColor(70, 49, 91)) }
         }
-        sidePanel.addView(label("VIDEOS", 11f, themeColor(211, 177, 255), true).apply { letterSpacing = 0.12f; setPadding(dp(4), dp(4), dp(4), dp(10)) })
+        val sideHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        sideHeader.addView(label("VIDEOS", 11f, themeColor(211, 177, 255), true).apply {
+            letterSpacing = 0.12f
+            setPadding(dp(4), dp(4), dp(4), dp(10))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        val videoSettingsButton = label("⚙", 19f, themeColor(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(36)
+            minHeight = dp(36)
+            contentDescription = "Video settings: playback speed, screen size and audio track"
+            isClickable = true
+            isFocusable = true
+        }
+        sideHeader.addView(videoSettingsButton)
+        sidePanel.addView(sideHeader)
+        videoSettingsButton.setOnClickListener {
+            val options = arrayOf("Playback speed", "Screen size", "Audio track")
+            AlertDialog.Builder(this@MainActivity).setTitle("Video settings").setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        val speeds = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f, 4.0f)
+                        val labels = speeds.map { if (it == 1.0f) "Normal (1×)" else it.toString() + "×" }.toTypedArray()
+                        val current = videoPlayer?.playbackParameters?.speed ?: 1.0f
+                        val selected = speeds.indices.minByOrNull { kotlin.math.abs(speeds[it] - current) } ?: 2
+                        AlertDialog.Builder(this@MainActivity).setTitle("Playback speed")
+                            .setSingleChoiceItems(labels, selected) { popup, index ->
+                                videoPlayer?.setPlaybackParameters(PlaybackParameters(speeds[index]))
+                                popup.dismiss()
+                            }.setNegativeButton("Close", null).show()
+                    }
+                    1 -> {
+                        val modes = intArrayOf(
+                            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT,
+                            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL,
+                            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        )
+                        val labels = arrayOf("Fit", "Stretch", "Zoom")
+                        val selected = modes.indexOf(videoPlayerView.resizeMode).coerceAtLeast(0)
+                        AlertDialog.Builder(this@MainActivity).setTitle("Screen size")
+                            .setSingleChoiceItems(labels, selected) { popup, index ->
+                                videoPlayerView.resizeMode = modes[index]
+                                popup.dismiss()
+                            }.setNegativeButton("Close", null).show()
+                    }
+                    2 -> {
+                        val activePlayer = videoPlayer
+                        val hasAudio = activePlayer?.currentTracks?.groups?.any { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 } == true
+                        if (activePlayer == null || !hasAudio) {
+                            Toast.makeText(this@MainActivity, "No alternate audio tracks are available.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            TrackSelectionDialogBuilder(this@MainActivity, "Audio track", activePlayer, C.TRACK_TYPE_AUDIO).build().show()
+                        }
+                    }
+                }
+            }.setNegativeButton("Close", null).show()
+        }
         val sideScroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
         val sideList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         sideScroll.addView(sideList, ScrollView.LayoutParams(-1, -2))
