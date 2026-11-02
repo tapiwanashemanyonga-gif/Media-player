@@ -2944,7 +2944,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Keep the iframe banner inside the scrolling song list, never over playback controls.
-            if ((songIndex + 1) % 4 == 0 && songIndex < visibleSongs.lastIndex) {
+            if ((songIndex + 1) % 4 == 0) {
                 songList.addView(
                     AdsterraSongListBanner.create(this),
                     LinearLayout.LayoutParams(-1, -2).apply {
@@ -3064,8 +3064,18 @@ class MainActivity : AppCompatActivity() {
 
         activeQueue = queue
 
-        // KIVORA_FIX_AUDIO_VIDEO_V1
-        videoPlayer?.pause()
+        // Enforce a single active playback source before starting music.
+        videoPlayer?.apply {
+            pause()
+            stop()
+            clearMediaItems()
+        }
+        selectedVideoUri = null
+        navigationVideoUri = null
+        if (::videoStatus.isInitialized) {
+            videoStatus.text = if (deviceVideos.isEmpty()) "No videos yet" else "Choose a video to play."
+            renderVideos(searchBox.text?.toString().orEmpty())
+        }
         p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
         p.prepare()
         p.play()
@@ -3869,6 +3879,13 @@ class MainActivity : AppCompatActivity() {
         videoList.removeAllViews()
 
         if (deviceVideos.isEmpty()) {
+            videoPlayer?.apply {
+                pause()
+                stop()
+                clearMediaItems()
+            }
+            selectedVideoUri = null
+            videoPlayerView.visibility = View.GONE
             videoStatus.text = "Your video library is ready when you are."
             videoList.addView(label("No videos yet", 18f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
@@ -3925,12 +3942,17 @@ class MainActivity : AppCompatActivity() {
         }
         selectedVideoUri = video.uri.toString()
         navigationVideoUri = video.uri.toString()
+        videoPlayerView.visibility = View.VISIBLE
         lastFailedVideoUri = null
         renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
-        // KIVORA_FIX_AUDIO_VIDEO_V1
-        player?.playWhenReady = false
-        player?.pause()
+        // Stop and clear the music service queue before video playback.
+        player?.apply {
+            playWhenReady = false
+            pause()
+            stop()
+            clearMediaItems()
+        }
         return try {
             videoPlayer?.apply {
                 setMediaItem(MediaItem.fromUri(video.uri))
