@@ -411,35 +411,33 @@ class MainActivity : AppCompatActivity() {
         )
 
         searchBox = EditText(this).apply {
-            hint = "⌕   Search songs, artists and albums"
             setSingleLine(true)
-            textSize = 15f
-            setTextColor(Color.rgb(250, 247, 255))
-            setHintTextColor(Color.rgb(171, 151, 196))
-            setPadding(dp(18), dp(8), dp(18), dp(8))
-            background = roundedBackground(Color.rgb(31, 21, 47), 19).apply {
-                setStroke(dp(1), Color.rgb(91, 66, 122))
-            }
-            contentDescription = "Search songs, artists and albums"
+            visibility = View.GONE
+            contentDescription = "Search query state"
         }
 
-        val searchRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        searchRow.addView(searchBox, LinearLayout.LayoutParams(0, dp(54), 1f))
         clearSearchButton = label("×", 25f, Color.rgb(232, 213, 255), true).apply {
-            gravity = Gravity.CENTER
-            minWidth = dp(48)
-            minHeight = dp(48)
             visibility = View.GONE
             contentDescription = "Clear search"
-            isClickable = true
-            isFocusable = true
             setOnClickListener { searchBox.text?.clear() }
         }
-        searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
-        root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
+
+        root.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1SearchField(
+                        query = searchBox.text?.toString().orEmpty(),
+                        onQueryChange = { value ->
+                            if (searchBox.text?.toString() != value) {
+                                searchBox.setText(value)
+                                searchBox.setSelection(searchBox.text?.length ?: 0)
+                            }
+                        }
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(-1, dp(60))
+        )
 
         libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
