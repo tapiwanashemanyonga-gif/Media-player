@@ -4,16 +4,39 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseStoreFile = System.getenv("A1_RELEASE_STORE_FILE")
+val releaseStorePassword = System.getenv("A1_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("A1_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("A1_RELEASE_KEY_PASSWORD")
+
 android {
     namespace = "com.kivora.music"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.kivora.music.preview"
+        applicationId = "com.a1family.media"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.5"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
 
     buildFeatures {
