@@ -3881,68 +3881,35 @@ class MainActivity : AppCompatActivity() {
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
         filteredVideos.forEach { video ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(10), dp(10), dp(10))
-                isClickable = true
-                isFocusable = true
-                background = roundedBackground(Color.rgb(30, 21, 43), 18).apply {
-                    setStroke(dp(1), if (video.uri.toString() == selectedVideoUri) Color.rgb(173, 115, 236) else Color.rgb(69, 48, 89))
-                }
-                isFocusable = true
-                contentDescription = "Play video ${video.title}"
-                if (video.uri.toString() == selectedVideoUri) {
-                    elevation = dp(2).toFloat()
-                }
-            }
-
-            val thumbnail = ImageView(this).apply {
-                setImageResource(android.R.drawable.ic_media_play)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = roundedBackground(Color.rgb(53, 35, 73), 12).apply {
-                    setStroke(dp(1), Color.rgb(104, 70, 137))
-                }
-                clipToOutline = true
-                contentDescription = "Thumbnail for ${video.title}"
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    thumbnail.setImageBitmap(
-                        contentResolver.loadThumbnail(
-                            video.uri,
-                            Size(dp(100), dp(70)),
-                            null
-                        )
-                    )
-                } catch (_: Exception) {
-                    // Keep the play icon if a thumbnail cannot be loaded.
-                }
-            }
-
-            row.addView(thumbnail, LinearLayout.LayoutParams(dp(100), dp(70)))
-
-            val details = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(13), 0, 0, 0)
-            }
-
-            details.addView(label(video.title, 15f, Color.WHITE, true).apply {
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            details.addView(
-                label(formatTime(video.durationMs), 12f, Color.rgb(190, 175, 210))
-            )
-            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-
-            row.setOnClickListener { playDeviceVideo(video) }
-
             videoList.addView(
-                row,
-                LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+                ComposeView(this).apply {
+                    setContent {
+                        A1VideoRow(
+                            title = video.title,
+                            duration = formatTime(video.durationMs),
+                            isSelected = video.uri.toString() == selectedVideoUri,
+                            onThumbnailReady = { imageView ->
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    try {
+                                        imageView.setImageBitmap(
+                                            contentResolver.loadThumbnail(
+                                                video.uri,
+                                                Size(dp(112), dp(76)),
+                                                null
+                                            )
+                                        )
+                                    } catch (_: Exception) {
+                                        // Retain the play placeholder if thumbnail decoding fails.
+                                    }
+                                }
+                            },
+                            onPlay = { playDeviceVideo(video) }
+                        )
+                    }
+                },
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = dp(8)
+                }
             )
         }
     }
