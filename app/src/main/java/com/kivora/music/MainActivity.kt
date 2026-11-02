@@ -27,6 +27,10 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -125,12 +129,13 @@ class MainActivity : AppCompatActivity() {
     private var videosLoaded = false
     private var selectedVideoUri: String? = null
     private var currentTab = "search"
+    private var selectedNavigationTab by mutableStateOf("home")
+    private var searchQuery by mutableStateOf("")
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
     private lateinit var miniPlayButton: TextView
     private val navigationButtons = linkedMapOf<String, TextView>()
-    private val libraryBrowseButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
     private var activeQueue: List<Song> = emptyList()
@@ -140,7 +145,7 @@ class MainActivity : AppCompatActivity() {
 
     private var showFavoritesOnly = false
     private var selectedPlaylist: String? = null
-    private var libraryBrowseMode = "songs"
+    private var libraryBrowseMode by mutableStateOf("songs")
     private var selectedAlbumKey: String? = null
     private var selectedArtistName: String? = null
     private var librarySortMode = "title"
@@ -407,35 +412,34 @@ class MainActivity : AppCompatActivity() {
         )
 
         searchBox = EditText(this).apply {
-            hint = "⌕   Search songs, artists and albums"
             setSingleLine(true)
-            textSize = 15f
-            setTextColor(Color.rgb(250, 247, 255))
-            setHintTextColor(Color.rgb(171, 151, 196))
-            setPadding(dp(18), dp(8), dp(18), dp(8))
-            background = roundedBackground(Color.rgb(31, 21, 47), 19).apply {
-                setStroke(dp(1), Color.rgb(91, 66, 122))
-            }
-            contentDescription = "Search songs, artists and albums"
+            visibility = View.GONE
+            contentDescription = "Search query state"
         }
 
-        val searchRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        searchRow.addView(searchBox, LinearLayout.LayoutParams(0, dp(54), 1f))
         clearSearchButton = label("×", 25f, Color.rgb(232, 213, 255), true).apply {
-            gravity = Gravity.CENTER
-            minWidth = dp(48)
-            minHeight = dp(48)
             visibility = View.GONE
             contentDescription = "Clear search"
-            isClickable = true
-            isFocusable = true
             setOnClickListener { searchBox.text?.clear() }
         }
-        searchRow.addView(clearSearchButton, LinearLayout.LayoutParams(dp(48), dp(54)))
-        root.addView(searchRow, LinearLayout.LayoutParams(-1, dp(54)))
+
+        root.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1SearchField(
+                        query = searchQuery,
+                        onQueryChange = { value ->
+                            searchQuery = value
+                            if (searchBox.text?.toString() != value) {
+                                searchBox.setText(value)
+                                searchBox.setSelection(searchBox.text?.length ?: 0)
+                            }
+                        }
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(-1, dp(60))
+        )
 
         libraryHeader = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -522,39 +526,24 @@ class MainActivity : AppCompatActivity() {
         })
         libraryHeader.addView(collectionActions)
 
-        val libraryBrowseBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = roundedBackground(Color.rgb(25, 17, 38), 18).apply {
-                setStroke(dp(1), Color.rgb(76, 53, 99))
-            }
-        }
-        listOf("songs" to "SONGS", "albums" to "ALBUMS", "artists" to "ARTISTS").forEach { (mode, title) ->
-            val button = label(title, 11f, Color.rgb(190, 175, 210), true).apply {
-                gravity = Gravity.CENTER
-                minHeight = dp(44)
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Browse library by ${title.lowercase(Locale.ROOT)}"
-                setOnClickListener {
-                    libraryBrowseMode = mode
-                    selectedAlbumKey = null
-                    selectedArtistName = null
-                    updateLibraryBrowseButtons()
-                    renderSongs(searchBox.text?.toString().orEmpty())
+        libraryHeader.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1LibraryBrowseBar(
+                        selectedMode = libraryBrowseMode,
+                        onModeSelected = { mode ->
+                            libraryBrowseMode = mode
+                            selectedAlbumKey = null
+                            selectedArtistName = null
+                            renderSongs(searchBox.text?.toString().orEmpty())
+                        }
+                    )
                 }
+            },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
             }
-            libraryBrowseButtons[mode] = button
-            libraryBrowseBar.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                leftMargin = dp(3)
-                rightMargin = dp(3)
-            })
-        }
-        libraryHeader.addView(libraryBrowseBar, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(12)
-        })
+        )
 
         sortButton = label("↕  SORT · TITLE A–Z", 10f, Color.rgb(224, 205, 245), true).apply {
             gravity = Gravity.CENTER
@@ -625,7 +614,7 @@ class MainActivity : AppCompatActivity() {
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
-            LinearLayout.LayoutParams(-1, dp(160))
+            LinearLayout.LayoutParams(-1, videoPreviewHeight())
         )
 
         videoStatus = label(
@@ -1192,37 +1181,18 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        val navBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = roundedBackground(Color.rgb(25, 18, 37), 21).apply { setStroke(dp(1), Color.rgb(70, 50, 92)) }
-        }
-        listOf(
-            Triple("home", "⌂", "HOME"),
-            Triple("search", "⌕", "SEARCH"),
-            Triple("library", "♫", "LIBRARY"),
-            Triple("videos", "▣", "VIDEOS")
-        ).forEach { (tab, symbol, title) ->
-            val item = label("$symbol\n$title", 10f, Color.rgb(190, 175, 210), true).apply {
-                gravity = Gravity.CENTER
-                setPadding(dp(4), dp(4), dp(4), dp(4))
-                isClickable = true
-                isFocusable = true
-                contentDescription = when (tab) {
-                    "home" -> "Open Home"
-                    "search" -> "Search music"
-                    "library" -> "Open music library and playlists"
-                    else -> "Browse videos"
-                }
-                setOnClickListener { showTab(tab) }
+        val composeNavigation = ComposeView(this).apply {
+            setContent {
+                A1NavigationBar(
+                    selectedTab = selectedNavigationTab,
+                    onTabSelected = { tab -> showTab(tab) }
+                )
             }
-            navigationButtons[tab] = item
-            navBar.addView(item, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                setMargins(dp(2), 0, dp(2), 0)
-            })
         }
-        root.addView(navBar, LinearLayout.LayoutParams(-1, dp(60)))
+        root.addView(
+            composeNavigation,
+            LinearLayout.LayoutParams(-1, dp(68))
+        )
         setContentView(root)
 
         searchBox.addTextChangedListener(
@@ -1240,6 +1210,7 @@ class MainActivity : AppCompatActivity() {
                     before: Int,
                     count: Int
                 ) {
+                    searchQuery = s?.toString().orEmpty()
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                     if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
@@ -1941,18 +1912,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateLibraryBrowseButtons() {
-        libraryBrowseButtons.forEach { (mode, button) ->
-            val selected = mode == libraryBrowseMode
-            button.setTextColor(
-                if (selected) Color.rgb(250, 239, 255) else Color.rgb(190, 175, 210)
-            )
-            button.background = roundedBackground(
-                if (selected) Color.rgb(91, 48, 132) else Color.TRANSPARENT,
-                14
-            ).apply {
-                if (selected) setStroke(dp(1), Color.rgb(172, 112, 224))
-            }
-        }
+        // Compose observes libraryBrowseMode and updates the selected segment automatically.
     }
 
     // ---------------- PLAYLIST MENUS ----------------
@@ -2367,55 +2327,25 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        homeContent.addView(label("HOME", 11f, Color.rgb(203, 162, 242), true).apply {
-            letterSpacing = 0.16f
-            setPadding(dp(2), dp(2), 0, dp(5))
-        })
-        homeContent.addView(label("Your music, ready", 27f, Color.rgb(252, 248, 255), true).apply {
-            setPadding(dp(2), 0, 0, dp(4))
-        })
-        homeContent.addView(label("Pick up where you left off.", 13f, Color.rgb(192, 173, 214)).apply {
-            setPadding(dp(2), 0, 0, dp(18))
-        })
-
-        homeContent.addView(label("QUICK ACCESS", 12f, Color.rgb(215, 194, 236), true).apply {
-            letterSpacing = 0.08f
-            setPadding(dp(2), dp(2), 0, dp(10))
-        })
-        val shortcuts = listOf(
-            Triple("♫", "Songs", "songs"),
-            Triple("▤", "Albums", "albums"),
-            Triple("♙", "Artists", "artists"),
-            Triple("☆", "Favourites", "favourites")
-        )
-        shortcuts.chunked(2).forEach { pair ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            pair.forEach { (symbol, title, destination) ->
-                val shortcut = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(13), dp(12), dp(10), dp(12))
-                    background = roundedBackground(Color.rgb(38, 25, 55), 17).apply {
-                        setStroke(dp(1), Color.rgb(91, 63, 119))
-                    }
-                    isClickable = true
-                    isFocusable = true
-                    contentDescription = "Browse $title"
-                    setOnClickListener { openHomeShortcut(destination) }
+        val albumCount = songs.map(::albumGroupKey).distinct().size
+        homeContent.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1HomeHeader(
+                        songCount = songs.size,
+                        albumCount = albumCount,
+                        playlistCount = playlists.size,
+                        onBrowse = { openHomeShortcut("songs") },
+                        onAlbums = { openHomeShortcut("albums") },
+                        onArtists = { openHomeShortcut("artists") },
+                        onFavourites = { openHomeShortcut("favourites") }
+                    )
                 }
-                shortcut.addView(label(symbol, 21f, Color.rgb(213, 165, 255), true))
-                shortcut.addView(label(title, 13f, Color.rgb(248, 242, 255), true).apply {
-                    setPadding(dp(9), 0, 0, 0)
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                })
-                row.addView(shortcut, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
-                    if (row.childCount == 0) rightMargin = dp(6) else leftMargin = dp(6)
-                    bottomMargin = dp(8)
-                })
+            },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(18)
             }
-            homeContent.addView(row)
-        }
+        )
 
         addHomeSection("Recently played", "YOUR RECENT LISTENS")
         val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
@@ -2989,136 +2919,40 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        visibleSongs.forEach { song ->
+        visibleSongs.forEachIndexed { songIndex, song ->
             val uri = song.uri.toString()
 
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(10), dp(10))
-                background = roundedBackground(Color.rgb(30, 21, 43), 19).apply {
-                    setStroke(dp(1), Color.rgb(65, 47, 84))
-                }
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Play ${song.title} by ${song.artist}, from ${song.album}"
-                elevation = dp(1).toFloat()
-                setOnClickListener { playSong(song) }
-            }
-
-            val cover = ImageView(this).apply {
-                setImageResource(R.drawable.ic_audio_placeholder)
-                background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
-                    setStroke(dp(1), Color.rgb(111, 75, 146))
-                }
-                clipToOutline = true
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = "Album artwork"
-            }
-            row.addView(cover, LinearLayout.LayoutParams(dp(58), dp(58)))
-            loadArtworkInto(cover, song)
-
-            val info = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), 0, dp(2), 0)
-            }
-
-            info.addView(
-                label(song.title, 15f, Color.WHITE, true).apply {
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                }
-            )
-
-            info.addView(
-                label(
-                    "${song.artist} · ${song.album}",
-                    12f,
-                    Color.rgb(190, 175, 210)
-                ).apply {
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(0, dp(3), 0, 0)
-                }
-            )
-
-            row.addView(
-                info,
-                LinearLayout.LayoutParams(0, -2, 1f)
-            )
-
-            val isFavorite = favoriteSongUris.contains(uri)
-
-            row.addView(
-                label(
-                    if (isFavorite) "★" else "☆",
-                    21f,
-                    if (isFavorite) {
-                        Color.rgb(250, 204, 21)
-                    } else {
-                        Color.rgb(174, 159, 194)
-                    }
-                ).apply {
-                    gravity = Gravity.CENTER
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    minWidth = dp(48)
-                    minHeight = dp(48)
-                    isClickable = true
-                    isFocusable = true
-                    contentDescription = if (isFavorite) "Remove ${song.title} from favourites" else "Add ${song.title} to favourites"
-                    setOnClickListener { toggleFavorite(song) }
-                }
-            )
-
-            if (selectedPlaylist == null) {
-                row.addView(
-                    label("+", 23f, Color.rgb(216, 180, 254), true).apply {
-                        gravity = Gravity.CENTER
-                        setPadding(dp(8), dp(6), dp(8), dp(6))
-                        minWidth = dp(44)
-                        minHeight = dp(44)
-                        isClickable = true
-                        isFocusable = true
-                        contentDescription = "Add ${song.title} to a playlist"
-                        setOnClickListener {
-                            showAddToPlaylistDialog(song)
-                        }
-                    }
-                )
-            } else {
-                row.addView(
-                    label("−", 23f, Color.rgb(248, 113, 113), true).apply {
-                        gravity = Gravity.CENTER
-                        setPadding(dp(8), dp(6), dp(8), dp(6))
-                        minWidth = dp(44)
-                        minHeight = dp(44)
-                        contentDescription = "Remove from playlist"
-                        setOnClickListener {
-                            removeFromPlaylist(song)
-                        }
-                    }
-                )
-            }
-
-            row.addView(label("⋮", 22f, Color.rgb(216, 180, 254), true).apply {
-                gravity = Gravity.CENTER
-                minWidth = dp(36)
-                minHeight = dp(44)
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Queue actions for ${song.title}"
-                setOnClickListener { showQueueActions(song) }
-            })
-
             songList.addView(
-                row,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
+                ComposeView(this).apply {
+                    setContent {
+                        A1SongRow(
+                            song = song,
+                            isFavorite = favoriteSongUris.contains(uri),
+                            isInPlaylist = selectedPlaylist != null,
+                            onArtworkReady = { imageView -> loadArtworkInto(imageView, song) },
+                            onPlay = { playSong(song) },
+                            onFavorite = { toggleFavorite(song) },
+                            onAddToPlaylist = { showAddToPlaylistDialog(song) },
+                            onRemoveFromPlaylist = { removeFromPlaylist(song) },
+                            onMore = { showQueueActions(song) }
+                        )
+                    }
+                },
+                LinearLayout.LayoutParams(-1, -2).apply {
                     bottomMargin = dp(8)
                 }
             )
+
+            // Keep the iframe banner inside the scrolling song list, never over playback controls.
+            if ((songIndex + 1) % 8 == 0 && songIndex < visibleSongs.lastIndex) {
+                songList.addView(
+                    AdsterraSongListBanner.create(this),
+                    LinearLayout.LayoutParams(-1, -2).apply {
+                        topMargin = dp(2)
+                        bottomMargin = dp(4)
+                    }
+                )
+            }
         }
     }
 
@@ -3174,52 +3008,23 @@ class MainActivity : AppCompatActivity() {
         description: String,
         onClick: () -> Unit
     ) {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(11), dp(14), dp(11))
-            background = roundedBackground(Color.rgb(34, 23, 49), 19).apply {
-                setStroke(dp(1), Color.rgb(90, 62, 117))
+        songList.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1CollectionRow(
+                        title = title,
+                        subtitle = subtitle,
+                        description = description,
+                        coverSong = coverSong,
+                        onArtworkReady = { imageView -> loadArtworkInto(imageView, coverSong) },
+                        onClick = onClick
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(9)
             }
-            isClickable = true
-            isFocusable = true
-            contentDescription = description
-            setOnClickListener { onClick() }
-        }
-        val cover = ImageView(this).apply {
-            setImageResource(R.drawable.ic_audio_placeholder)
-            background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
-                setStroke(dp(1), Color.rgb(145, 96, 190))
-            }
-            clipToOutline = true
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            contentDescription = "$title artwork"
-        }
-        row.addView(cover, LinearLayout.LayoutParams(dp(68), dp(68)))
-        loadArtworkInto(cover, coverSong)
-
-        val details = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, dp(8), 0)
-        }
-        details.addView(label(title, 16f, Color.rgb(251, 247, 255), true).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        details.addView(label(subtitle, 12f, Color.rgb(194, 174, 216)).apply {
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(4), 0, 0)
-        })
-        row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(label("›", 28f, Color.rgb(190, 145, 224), true).apply {
-            gravity = Gravity.CENTER
-            contentDescription = "Open $title"
-        })
-        songList.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(9)
-        })
+        )
     }
 
     private fun playSong(song: Song) {
@@ -4076,68 +3881,35 @@ class MainActivity : AppCompatActivity() {
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
         filteredVideos.forEach { video ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(10), dp(10), dp(10))
-                isClickable = true
-                isFocusable = true
-                background = roundedBackground(Color.rgb(30, 21, 43), 18).apply {
-                    setStroke(dp(1), if (video.uri.toString() == selectedVideoUri) Color.rgb(173, 115, 236) else Color.rgb(69, 48, 89))
-                }
-                isFocusable = true
-                contentDescription = "Play video ${video.title}"
-                if (video.uri.toString() == selectedVideoUri) {
-                    elevation = dp(2).toFloat()
-                }
-            }
-
-            val thumbnail = ImageView(this).apply {
-                setImageResource(android.R.drawable.ic_media_play)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = roundedBackground(Color.rgb(53, 35, 73), 12).apply {
-                    setStroke(dp(1), Color.rgb(104, 70, 137))
-                }
-                clipToOutline = true
-                contentDescription = "Thumbnail for ${video.title}"
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    thumbnail.setImageBitmap(
-                        contentResolver.loadThumbnail(
-                            video.uri,
-                            Size(dp(100), dp(70)),
-                            null
-                        )
-                    )
-                } catch (_: Exception) {
-                    // Keep the play icon if a thumbnail cannot be loaded.
-                }
-            }
-
-            row.addView(thumbnail, LinearLayout.LayoutParams(dp(100), dp(70)))
-
-            val details = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(13), 0, 0, 0)
-            }
-
-            details.addView(label(video.title, 15f, Color.WHITE, true).apply {
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            details.addView(
-                label(formatTime(video.durationMs), 12f, Color.rgb(190, 175, 210))
-            )
-            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-
-            row.setOnClickListener { playDeviceVideo(video) }
-
             videoList.addView(
-                row,
-                LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+                ComposeView(this).apply {
+                    setContent {
+                        A1VideoRow(
+                            title = video.title,
+                            duration = formatTime(video.durationMs),
+                            isSelected = video.uri.toString() == selectedVideoUri,
+                            onThumbnailReady = { imageView ->
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    try {
+                                        imageView.setImageBitmap(
+                                            contentResolver.loadThumbnail(
+                                                video.uri,
+                                                Size(dp(112), dp(76)),
+                                                null
+                                            )
+                                        )
+                                    } catch (_: Exception) {
+                                        // Retain the play placeholder if thumbnail decoding fails.
+                                    }
+                                }
+                            },
+                            onPlay = { playDeviceVideo(video) }
+                        )
+                    }
+                },
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = dp(8)
+                }
             )
         }
     }
@@ -4164,6 +3936,12 @@ class MainActivity : AppCompatActivity() {
             reportVideoPlaybackFailure(video.uri.toString())
             false
         }
+    }
+
+    /** Keep the inline player close to 16:9 while respecting phone and tablet widths. */
+    private fun videoPreviewHeight(): Int {
+        val screenWidth = resources.displayMetrics.widthPixels
+        return (screenWidth * 9f / 16f).toInt().coerceIn(dp(160), dp(240))
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
@@ -4215,7 +3993,21 @@ class MainActivity : AppCompatActivity() {
                     onClick()
                 }
             }
-        val exitButton = control("‹", "Exit fullscreen") { dialog.dismiss() }
+        val backButton = control("‹", "Back to video screen") { dialog.dismiss() }
+        val closeVideoButton = control("✕", "Close video completely") {
+            videoPlayer?.apply {
+                stop()
+                clearMediaItems()
+            }
+            selectedVideoUri = null
+            navigationVideoUri = null
+            videoStatus.text = "Video closed. Choose a video to play."
+            renderVideos(searchBox.text?.toString().orEmpty())
+            dialog.dismiss()
+        }.apply {
+            setTextColor(Color.rgb(255, 105, 105))
+            background = roundedBackground(Color.rgb(75, 25, 35), 14)
+        }
         val menuButton = label("☰", 18f, Color.rgb(245, 235, 255), true).apply {
             gravity = Gravity.CENTER
             minWidth = dp(48)
@@ -4228,9 +4020,10 @@ class MainActivity : AppCompatActivity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(12), 0, dp(8), 0)
         }
-        topControls.addView(exitButton)
+        topControls.addView(backButton)
         topControls.addView(currentTitle, LinearLayout.LayoutParams(0, -2, 1f))
         topControls.addView(menuButton)
+        topControls.addView(closeVideoButton)
         controls.addView(topControls)
 
         val menuPanel = LinearLayout(this).apply {
@@ -4494,13 +4287,14 @@ class MainActivity : AppCompatActivity() {
             videoPlaceholder.addView(
                 videoPlayerView,
                 0,
-                LinearLayout.LayoutParams(-1, dp(160))
+                LinearLayout.LayoutParams(-1, videoPreviewHeight())
             )
         }
     }
 
     private fun showTab(tab: String) {
         currentTab = tab
+        selectedNavigationTab = if (tab == "nowPlaying") "home" else tab
         if (tab == "home") renderHomeDashboard()
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE

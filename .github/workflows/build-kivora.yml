@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+      - feature/a1-adsterra-webview-song-list
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -66,7 +70,7 @@ jobs:
           echo "A1_RELEASE_KEY_ALIAS=$A1_RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
           echo "A1_RELEASE_KEY_PASSWORD=$A1_RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Verify release package identity
+      - name: Verify production package identity
         shell: bash
         run: |
           grep -q 'applicationId = "com.a1family.media"' app/build.gradle.kts
