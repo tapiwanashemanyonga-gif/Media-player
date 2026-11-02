@@ -973,7 +973,6 @@ class MainActivity : AppCompatActivity() {
         val settingsButton = label("", 22f, themeColor(232, 213, 255), true).apply {
             setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_settings, 0, 0, 0)
             compoundDrawableTintList = android.content.res.ColorStateList.valueOf(themeColor(232, 213, 255))
-            gravity = Gravity.CENTER
             minWidth = dp(44)
             minHeight = dp(44)
             contentDescription = "Settings"
