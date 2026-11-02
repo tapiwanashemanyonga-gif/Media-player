@@ -15,8 +15,8 @@
 <application
     android:name=".A1FamilyApplication"
     android:label="A1 FAMILY MEDIA"
-    android:icon="@drawable/ic_a1_family_media"
-    android:roundIcon="@drawable/ic_a1_family_media"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
     android:theme="@style/Theme.Kivora"
     android:usesCleartextTraffic="false">
 
