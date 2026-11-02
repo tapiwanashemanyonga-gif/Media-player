@@ -4,10 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val releaseStoreFile = System.getenv("A1_RELEASE_STORE_FILE")
-val releaseStorePassword = System.getenv("A1_RELEASE_STORE_PASSWORD")
-val releaseKeyAlias = System.getenv("A1_RELEASE_KEY_ALIAS")
-val releaseKeyPassword = System.getenv("A1_RELEASE_KEY_PASSWORD")
+val a1KeystoreFile = System.getenv("A1_KEYSTORE_FILE")
+val a1KeystorePassword = System.getenv("A1_KEYSTORE_PASSWORD")
+val a1KeyAlias = System.getenv("A1_KEY_ALIAS") ?: "a1family"
+val a1KeyPassword = System.getenv("A1_KEY_PASSWORD")
+val hasA1SigningSecrets =
+    !a1KeystoreFile.isNullOrBlank() &&
+    !a1KeystorePassword.isNullOrBlank() &&
+    !a1KeyPassword.isNullOrBlank()
 
 android {
     namespace = "com.kivora.music"
@@ -17,24 +21,26 @@ android {
         applicationId = "com.a1family.media"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
+        versionCode = 6
         versionName = "1.5"
     }
 
     signingConfigs {
-        create("release") {
-            if (!releaseStoreFile.isNullOrBlank()) {
-                storeFile = file(releaseStoreFile)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
+        if (hasA1SigningSecrets) {
+            create("release") {
+                storeFile = file(requireNotNull(a1KeystoreFile))
+                storePassword = requireNotNull(a1KeystorePassword)
+                keyAlias = a1KeyAlias
+                keyPassword = requireNotNull(a1KeyPassword)
             }
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasA1SigningSecrets) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
         }
     }
