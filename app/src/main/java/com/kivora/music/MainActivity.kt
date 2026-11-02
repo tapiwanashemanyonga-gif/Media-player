@@ -3066,21 +3066,21 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(18), dp(18), dp(18), dp(18))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(12, 15, 31), Color.rgb(42, 12, 66), Color.rgb(0, 69, 88))
+                intArrayOf(Color.rgb(17, 11, 31), Color.rgb(48, 23, 78), Color.rgb(25, 17, 48))
             ).apply {
                 cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), Color.rgb(0, 224, 245))
+                setStroke(dp(1), themeColor(117, 77, 159))
             }
             elevation = dp(3).toFloat()
         }
-        hero.addView(label("A1 FAMILY MEDIA  •  YOUR LOCAL LIBRARY", 10f, Color.rgb(66, 244, 255), true).apply {
-            letterSpacing = 0.08f
-            setPadding(0, 0, 0, dp(8))
+        hero.addView(label("YOUR MEDIA, ONE PLACE", 10f, themeColor(211, 177, 255), true).apply {
+            letterSpacing = 0.14f
+            setPadding(0, 0, 0, dp(9))
         })
-        hero.addView(label("Feel every frequency.", 27f, Color.WHITE, true).apply {
-            setPadding(0, 0, 0, dp(5))
+        hero.addView(label("Your library.\nYour rhythm.", 27f, Color.WHITE, true).apply {
+            setPadding(0, 0, 0, dp(7))
         })
-        hero.addView(label("Your library. Your rhythm. No limits.", 12f, Color.rgb(205, 224, 242)))
+        hero.addView(label("Music and videos, beautifully together.", 12f, themeColor(220, 207, 237)))
         homeContent.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
             bottomMargin = dp(10)
         })
@@ -5107,25 +5107,20 @@ class MainActivity : AppCompatActivity() {
             this,
             android.R.style.Theme_Black_NoTitleBar_Fullscreen
         )
-        val fullscreenRoot = android.widget.FrameLayout(this).apply {
+        val fullscreenRoot = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
         }
-        fullscreenRoot.addView(
-            videoPlayerView,
-            android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.CENTER
-            )
-        )
         val fullscreenSidePadding = if (resources.configuration.screenWidthDp >= 600) dp(28) else dp(14)
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(fullscreenSidePadding, dp(10), fullscreenSidePadding, dp(10))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(themeColor(25, 15, 37), Color.TRANSPARENT)
-            )
+                intArrayOf(themeColor(22, 15, 34), themeColor(17, 12, 27))
+            ).apply {
+                setStroke(dp(1), themeColor(76, 53, 98))
+            }
         }
         val topControls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -5180,9 +5175,11 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(fullscreenSidePadding, dp(10), fullscreenSidePadding, dp(12))
             background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
-                intArrayOf(themeColor(25, 15, 37), Color.TRANSPARENT)
-            )
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(themeColor(20, 14, 31), themeColor(13, 10, 22))
+            ).apply {
+                setStroke(dp(1), themeColor(76, 53, 98))
+            }
         }
         val transport = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -5236,8 +5233,11 @@ class MainActivity : AppCompatActivity() {
         seekRow.addView(seek, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(8); rightMargin = dp(8) })
         seekRow.addView(duration)
         bottomControls.addView(seekRow)
-        fullscreenRoot.addView(controls, android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-        fullscreenRoot.addView(bottomControls, android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        // Keep the video in its own central lane. The top and bottom control decks
+        // are opaque panels outside the picture, never translucent overlays on it.
+        fullscreenRoot.addView(controls, LinearLayout.LayoutParams(-1, -2))
+        fullscreenRoot.addView(videoPlayerView, LinearLayout.LayoutParams(-1, 0, 1f))
+        fullscreenRoot.addView(bottomControls, LinearLayout.LayoutParams(-1, -2))
 
         fun refreshMenu() {
             menuPanel.removeAllViews()
