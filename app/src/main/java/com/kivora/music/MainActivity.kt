@@ -3008,52 +3008,23 @@ class MainActivity : AppCompatActivity() {
         description: String,
         onClick: () -> Unit
     ) {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(11), dp(14), dp(11))
-            background = roundedBackground(Color.rgb(34, 23, 49), 19).apply {
-                setStroke(dp(1), Color.rgb(90, 62, 117))
+        songList.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1CollectionRow(
+                        title = title,
+                        subtitle = subtitle,
+                        description = description,
+                        coverSong = coverSong,
+                        onArtworkReady = { imageView -> loadArtworkInto(imageView, coverSong) },
+                        onClick = onClick
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(9)
             }
-            isClickable = true
-            isFocusable = true
-            contentDescription = description
-            setOnClickListener { onClick() }
-        }
-        val cover = ImageView(this).apply {
-            setImageResource(R.drawable.ic_audio_placeholder)
-            background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
-                setStroke(dp(1), Color.rgb(145, 96, 190))
-            }
-            clipToOutline = true
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            contentDescription = "$title artwork"
-        }
-        row.addView(cover, LinearLayout.LayoutParams(dp(68), dp(68)))
-        loadArtworkInto(cover, coverSong)
-
-        val details = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, dp(8), 0)
-        }
-        details.addView(label(title, 16f, Color.rgb(251, 247, 255), true).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        details.addView(label(subtitle, 12f, Color.rgb(194, 174, 216)).apply {
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(4), 0, 0)
-        })
-        row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(label("›", 28f, Color.rgb(190, 145, 224), true).apply {
-            gravity = Gravity.CENTER
-            contentDescription = "Open $title"
-        })
-        songList.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(9)
-        })
+        )
     }
 
     private fun playSong(song: Song) {
