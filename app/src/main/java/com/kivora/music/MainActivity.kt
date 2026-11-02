@@ -1779,8 +1779,6 @@ class MainActivity : AppCompatActivity() {
         playbackModes.addView(repeatButton, transportParams())
         playerCard.addView(playbackModes)
         // Use the actual available width; a forced 180dp minimum overflowed on narrow phones.
-        val availableCardWidth = (resources.configuration.screenWidthDp -
-            (if (compactLayout) 24 else 36)).coerceAtLeast(0)
         playerCard.addView(sessionActions, LinearLayout.LayoutParams(-1, -2))
         playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(-1, -2))
 
@@ -5279,7 +5277,6 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(18)
             marginEnd = dp(18)
         }
-        root.addView(listToggleButton, toggleParams)
         root.addView(
             sidePanel,
             android.widget.FrameLayout.LayoutParams(sideWidth, -1, Gravity.END or Gravity.CENTER_VERTICAL).apply {
@@ -5288,6 +5285,8 @@ class MainActivity : AppCompatActivity() {
                 marginEnd = dp(12)
             }
         )
+        // Keep the list toggle above the optional panel so it can always close the panel.
+        root.addView(listToggleButton, toggleParams)
         listToggleButton.setOnClickListener {
             val show = sidePanel.visibility != View.VISIBLE
             if (show) renderSideList()
