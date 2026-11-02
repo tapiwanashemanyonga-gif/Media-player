@@ -5118,9 +5118,10 @@ class MainActivity : AppCompatActivity() {
                 Gravity.CENTER
             )
         )
+        val fullscreenSidePadding = if (resources.configuration.screenWidthDp >= 600) dp(28) else dp(14)
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setPadding(fullscreenSidePadding, dp(10), fullscreenSidePadding, dp(10))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(themeColor(25, 15, 37), Color.TRANSPARENT)
@@ -5171,12 +5172,13 @@ class MainActivity : AppCompatActivity() {
         }
         val menuScroll = ScrollView(this)
         menuScroll.addView(menuPanel)
-        controls.addView(menuScroll, LinearLayout.LayoutParams(-1, dp(220)).apply { topMargin = dp(8) })
+        val menuHeight = minOf(dp(220), (resources.displayMetrics.heightPixels * 0.30f).toInt().coerceAtLeast(dp(120)))
+        controls.addView(menuScroll, LinearLayout.LayoutParams(-1, menuHeight).apply { topMargin = dp(8) })
 
         val bottomControls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(12), dp(16), dp(16))
+            setPadding(fullscreenSidePadding, dp(10), fullscreenSidePadding, dp(12))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
                 intArrayOf(themeColor(25, 15, 37), Color.TRANSPARENT)
