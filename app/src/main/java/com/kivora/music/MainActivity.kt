@@ -149,15 +149,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            // Video playback always opens directly in fullscreen; its list remains optional.
-            if (isPlaying) {
-                player?.pause()
-                handler.post {
-                    if (videoPlayer?.isPlaying == true && fullscreenVideoDialog?.isShowing != true) {
-                        showVideoFullscreen()
-                    }
-                }
-            }
+            // Keep playback in the inline player. Fullscreen is always a deliberate user action.
+            if (isPlaying) player?.pause()
             tryRunPendingPlaybackAfterAd()
         }
 
@@ -1242,41 +1235,25 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("OPEN VIDEO", 13f, Color.WHITE, true).apply {
-            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_video_library, 0, 0, 0)
-            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-            compoundDrawablePadding = dp(8)
+        val fullscreenButton = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_fullscreen)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            contentDescription = "Enter fullscreen"
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            minHeight = dp(50)
-            background = roundedBackground(themeColor(67, 42, 89), 15).apply {
-                setStroke(dp(1), themeColor(166, 120, 205))
+            scaleType = ImageView.ScaleType.CENTER
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            minimumWidth = dp(52)
+            minimumHeight = dp(48)
+            background = roundedBackground(themeColor(43, 30, 59), 12).apply {
+                setStroke(dp(1), themeColor(126, 88, 157))
             }
             isClickable = true
             isFocusable = true
-            contentDescription = "Open video in fullscreen; video list is optional"
-            setOnClickListener {
-                if (videosLoaded) {
-                    showVideoFullscreen()
-                } else {
-                    openFullscreenAfterVideoScan = true
-                    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        Manifest.permission.READ_MEDIA_VIDEO
-                    } else {
-                        Manifest.permission.READ_EXTERNAL_STORAGE
-                    }
-                    if (ContextCompat.checkSelfPermission(this@MainActivity, permission) == PackageManager.PERMISSION_GRANTED) {
-                        loadVideos()
-                    } else {
-                        videoPermissionLauncher.launch(permission)
-                    }
-                    Toast.makeText(this@MainActivity, "Preparing your fullscreen video list…", Toast.LENGTH_SHORT).show()
-                }
-            }
+            setOnClickListener { showVideoFullscreen() }
         }
         videoFullscreenButton = fullscreenButton
         fullscreenButton.visibility = View.GONE
-        videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+        videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(dp(52), dp(48)).apply { rightMargin = dp(4) })
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
