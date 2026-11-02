@@ -2989,7 +2989,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        visibleSongs.forEach { song ->
+        visibleSongs.forEachIndexed { songIndex, song ->
             val uri = song.uri.toString()
 
             val row = LinearLayout(this).apply {
@@ -3119,6 +3119,17 @@ class MainActivity : AppCompatActivity() {
                     bottomMargin = dp(8)
                 }
             )
+
+            // Keep the iframe banner inside the scrolling song list, never over playback controls.
+            if ((songIndex + 1) % 8 == 0 && songIndex < visibleSongs.lastIndex) {
+                songList.addView(
+                    AdsterraSongListBanner.create(this),
+                    LinearLayout.LayoutParams(-1, -2).apply {
+                        topMargin = dp(2)
+                        bottomMargin = dp(4)
+                    }
+                )
+            }
         }
     }
 
