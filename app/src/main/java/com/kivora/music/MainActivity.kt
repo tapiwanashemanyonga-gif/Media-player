@@ -130,6 +130,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedVideoUri: String? = null
     private var currentTab = "search"
     private var selectedNavigationTab by mutableStateOf("home")
+    private var searchQuery by mutableStateOf("")
     private lateinit var miniPlayer: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
@@ -426,8 +427,9 @@ class MainActivity : AppCompatActivity() {
             ComposeView(this).apply {
                 setContent {
                     A1SearchField(
-                        query = searchBox.text?.toString().orEmpty(),
+                        query = searchQuery,
                         onQueryChange = { value ->
+                            searchQuery = value
                             if (searchBox.text?.toString() != value) {
                                 searchBox.setText(value)
                                 searchBox.setSelection(searchBox.text?.length ?: 0)
@@ -1208,6 +1210,7 @@ class MainActivity : AppCompatActivity() {
                     before: Int,
                     count: Int
                 ) {
+                    searchQuery = s?.toString().orEmpty()
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                     if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
