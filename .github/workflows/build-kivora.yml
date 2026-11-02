@@ -74,10 +74,15 @@ jobs:
           test -s "$MAIN_ACTIVITY"
           grep -Fq 'private fun handleIncomingMediaIntent(incoming: Intent?)' "$MAIN_ACTIVITY"
           grep -Fq 'private fun showVideoFullscreen()' "$MAIN_ACTIVITY"
+          grep -Fq 'videoPlayerView.useController = true' "$MAIN_ACTIVITY"
+          grep -Fq 'private fun renderSideList()' "$MAIN_ACTIVITY"
+          grep -Fq 'val sideWidth = dp(if (resources.configuration.screenWidthDp >= 600) 216 else 132)' "$MAIN_ACTIVITY"
+          grep -Fq 'contentResolver.loadThumbnail(video.uri, Size(dp(320), dp(180)), null)' "$MAIN_ACTIVITY"
+          if grep -Eiq 'YOUR MEDIA, ONE PLACE|Your library\.\\nYour rhythm\.|MUSIC & VIDEO PLAYER|LOCAL LIBRARY' "$MAIN_ACTIVITY"; then
+            echo "Duplicate home branding/hero copy must remain removed."
+            exit 1
+          fi
           grep -Fq 'videoPlayerView.keepScreenOn = true' "$MAIN_ACTIVITY"
-          grep -Fq 'fullscreenSidePadding' "$MAIN_ACTIVITY"
-          grep -Fq 'fullscreenRoot.addView(videoPlayerView, LinearLayout.LayoutParams(-1, 0, 1f))' "$MAIN_ACTIVITY"
-          grep -Fq 'menuScroll.visibility = View.GONE' "$MAIN_ACTIVITY"
           if grep -Eiq 'attachExternalSubtitle|externalSubtitleLauncher|loadSubtitleRow|addTrackSelectionRow\("Subtitles"' "$MAIN_ACTIVITY"; then
             echo "English subtitle feature must remain removed."
             exit 1
