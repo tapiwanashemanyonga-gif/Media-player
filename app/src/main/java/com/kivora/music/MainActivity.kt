@@ -1239,21 +1239,29 @@ class MainActivity : AppCompatActivity() {
             setImageResource(R.drawable.ic_fullscreen)
             imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
             contentDescription = "Enter fullscreen"
+            tag = "inline_fullscreen_control"
             gravity = Gravity.CENTER
             scaleType = ImageView.ScaleType.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
             minimumWidth = dp(52)
             minimumHeight = dp(48)
-            background = roundedBackground(themeColor(43, 30, 59), 12).apply {
-                setStroke(dp(1), themeColor(126, 88, 157))
+            background = roundedBackground(themeColor(20, 14, 31), 12).apply {
+                setStroke(dp(1), themeColor(210, 190, 230))
             }
+            elevation = dp(8).toFloat()
             isClickable = true
             isFocusable = true
             setOnClickListener { showVideoFullscreen() }
         }
         videoFullscreenButton = fullscreenButton
-        fullscreenButton.visibility = View.GONE
-        videoPlayerActions.addView(fullscreenButton, LinearLayout.LayoutParams(dp(52), dp(48)).apply { rightMargin = dp(4) })
+        fullscreenButton.visibility = View.VISIBLE
+        videoPlayerView.addView(
+            fullscreenButton,
+            android.widget.FrameLayout.LayoutParams(dp(52), dp(48), Gravity.END or Gravity.BOTTOM).apply {
+                marginEnd = dp(12)
+                bottomMargin = dp(12)
+            }
+        )
         videoPlaceholder.addView(videoPlayerActions, LinearLayout.LayoutParams(-1, -2))
         videoPlaceholder.addView(
             videoPlayerView,
@@ -5084,6 +5092,8 @@ class MainActivity : AppCompatActivity() {
     private fun showVideoFullscreen() {
         if (fullscreenVideoDialog?.isShowing == true) return
         val parent = videoPlayerView.parent as? android.view.ViewGroup ?: return
+        val inlineFullscreenControl = videoPlayerView.findViewWithTag<View>("inline_fullscreen_control")
+        inlineFullscreenControl?.visibility = View.GONE
         val wasKeepingScreenOn = videoPlayerView.keepScreenOn
         val previousResizeMode = videoPlayerView.resizeMode
         videoPlayerView.keepScreenOn = true
@@ -5306,6 +5316,7 @@ class MainActivity : AppCompatActivity() {
             videoPlayerView.resizeMode = previousResizeMode
             videoPlayerView.useController = true
             restoreVideoPlayerView()
+            inlineFullscreenControl?.visibility = View.VISIBLE
             if (fullscreenVideoDialog === dialog) fullscreenVideoDialog = null
         }
         dialog.setContentView(root)
