@@ -80,7 +80,13 @@ jobs:
           grep -Fq 'tabHistory' "$MAIN_ACTIVITY"
           grep -Fq 'contentDescription = "Show video list"' "$MAIN_ACTIVITY"
           grep -Fq 'visibility = View.GONE' "$MAIN_ACTIVITY"
-          grep -Fq 'if (videoPlayer?.isPlaying == true && fullscreenVideoDialog?.isShowing != true)' "$MAIN_ACTIVITY"
+          grep -Fq 'Keep playback in the inline player. Fullscreen is always a deliberate user action.' "$MAIN_ACTIVITY"
+          grep -Fq 'contentDescription = "Enter fullscreen"' "$MAIN_ACTIVITY"
+          grep -Fq 'contentDescription = "Exit fullscreen"' "$MAIN_ACTIVITY"
+          grep -Fq 'contentDescription = "Show video list"' "$MAIN_ACTIVITY"
+          test -s app/src/main/res/drawable/ic_fullscreen.xml
+          test -s app/src/main/res/drawable/ic_close_red.xml
+          test -s app/src/main/res/drawable/ic_video_list.xml
           grep -Fq 'openFullscreenAfterVideoScan' "$MAIN_ACTIVITY"
           grep -Fq 'A1 FAMILY MEDIA logo' "$MAIN_ACTIVITY"
           grep -Fq '#9B36F4' app/src/main/res/drawable/ic_launcher_foreground.xml
