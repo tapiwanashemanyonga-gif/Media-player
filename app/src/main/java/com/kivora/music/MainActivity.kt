@@ -4226,7 +4226,21 @@ class MainActivity : AppCompatActivity() {
                     onClick()
                 }
             }
-        val exitButton = control("‹", "Exit fullscreen") { dialog.dismiss() }
+        val backButton = control("‹", "Back to video screen") { dialog.dismiss() }
+        val closeVideoButton = control("✕", "Close video completely") {
+            videoPlayer?.apply {
+                stop()
+                clearMediaItems()
+            }
+            selectedVideoUri = null
+            navigationVideoUri = null
+            videoStatus.text = "Video closed. Choose a video to play."
+            renderVideos(searchBox.text?.toString().orEmpty())
+            dialog.dismiss()
+        }.apply {
+            setTextColor(Color.rgb(255, 105, 105))
+            background = roundedBackground(Color.rgb(75, 25, 35), 14)
+        }
         val menuButton = label("☰", 18f, Color.rgb(245, 235, 255), true).apply {
             gravity = Gravity.CENTER
             minWidth = dp(48)
@@ -4239,9 +4253,10 @@ class MainActivity : AppCompatActivity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(12), 0, dp(8), 0)
         }
-        topControls.addView(exitButton)
+        topControls.addView(backButton)
         topControls.addView(currentTitle, LinearLayout.LayoutParams(0, -2, 1f))
         topControls.addView(menuButton)
+        topControls.addView(closeVideoButton)
         controls.addView(topControls)
 
         val menuPanel = LinearLayout(this).apply {
