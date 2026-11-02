@@ -3869,7 +3869,11 @@ class MainActivity : AppCompatActivity() {
         videoList.removeAllViews()
 
         if (deviceVideos.isEmpty()) {
-            videoStatus.text = "No videos found. Add videos to your device and retry."
+            videoStatus.text = "Your video library is ready when you are."
+            videoList.addView(label("No videos yet", 18f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(28), dp(20), dp(28))
+            }, LinearLayout.LayoutParams(-1, -2))
             return
         }
 
