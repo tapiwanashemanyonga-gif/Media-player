@@ -78,6 +78,7 @@ jobs:
           grep -Fq 'fun renderSideList()' "$MAIN_ACTIVITY"
           grep -Fq 'val sideWidth = dp(if (resources.configuration.screenWidthDp >= 600) 216 else 132)' "$MAIN_ACTIVITY"
           grep -Fq 'contentResolver.loadThumbnail(video.uri, Size(dp(320), dp(180)), null)' "$MAIN_ACTIVITY"
+          grep -Fq 'setTitle("Video settings")' "$MAIN_ACTIVITY"
           if grep -Eiq 'YOUR MEDIA, ONE PLACE|Your library\.\\nYour rhythm\.|MUSIC & VIDEO PLAYER|LOCAL LIBRARY' "$MAIN_ACTIVITY"; then
             echo "Duplicate home branding/hero copy must remain removed."
             exit 1
