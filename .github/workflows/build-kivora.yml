@@ -1,12 +1,8 @@
-
-name: Build Kivora Music Player
+name: Build A1 Family Media Release
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-  pull_request:
     branches:
       - main
 
@@ -14,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
 
     steps:
@@ -29,16 +25,12 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: ''
 
       - name: Accept Android SDK licenses
         shell: bash
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          for i in {1..20}; do
-            echo y
-          done | "$SDKMANAGER" --licenses
+          for i in {1..20}; do echo y; done | "$SDKMANAGER" --licenses
 
       - name: Install Android SDK packages
         shell: bash
@@ -53,12 +45,46 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Configure persistent release signing
+        shell: bash
+        env:
+          A1_RELEASE_KEYSTORE_BASE64: ${{ secrets.A1_RELEASE_KEYSTORE_BASE64 }}
+          A1_RELEASE_STORE_PASSWORD: ${{ secrets.A1_RELEASE_STORE_PASSWORD }}
+          A1_RELEASE_KEY_ALIAS: ${{ secrets.A1_RELEASE_KEY_ALIAS }}
+          A1_RELEASE_KEY_PASSWORD: ${{ secrets.A1_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in A1_RELEASE_KEYSTORE_BASE64 A1_RELEASE_STORE_PASSWORD A1_RELEASE_KEY_ALIAS A1_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          echo "$A1_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/a1-release.jks"
+          echo "A1_RELEASE_STORE_FILE=$RUNNER_TEMP/a1-release.jks" >> "$GITHUB_ENV"
+          echo "A1_RELEASE_STORE_PASSWORD=$A1_RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "A1_RELEASE_KEY_ALIAS=$A1_RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "A1_RELEASE_KEY_PASSWORD=$A1_RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Upload APK
+      - name: Verify release package identity
+        shell: bash
+        run: |
+          grep -q 'applicationId = "com.a1family.media"' app/build.gradle.kts
+          echo "Confirmed package ID: com.a1family.media"
+
+      - name: Build signed release APK
+        run: gradle --no-daemon --stacktrace --warning-mode all assembleRelease
+
+      - name: Verify APK exists
+        shell: bash
+        run: |
+          test -s app/build/outputs/apk/release/app-release.apk
+          ls -lh app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kivora-Music-Player-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: A1-Family-Media-1.5-release
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 30
