@@ -3929,6 +3929,7 @@ class MainActivity : AppCompatActivity() {
         renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
         // KIVORA_FIX_AUDIO_VIDEO_V1
+        player?.playWhenReady = false
         player?.pause()
         return try {
             videoPlayer?.apply {
