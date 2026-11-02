@@ -2922,130 +2922,23 @@ class MainActivity : AppCompatActivity() {
         visibleSongs.forEachIndexed { songIndex, song ->
             val uri = song.uri.toString()
 
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(10), dp(10))
-                background = roundedBackground(Color.rgb(30, 21, 43), 19).apply {
-                    setStroke(dp(1), Color.rgb(65, 47, 84))
-                }
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Play ${song.title} by ${song.artist}, from ${song.album}"
-                elevation = dp(1).toFloat()
-                setOnClickListener { playSong(song) }
-            }
-
-            val cover = ImageView(this).apply {
-                setImageResource(R.drawable.ic_audio_placeholder)
-                background = roundedBackground(Color.rgb(57, 37, 78), 14).apply {
-                    setStroke(dp(1), Color.rgb(111, 75, 146))
-                }
-                clipToOutline = true
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = "Album artwork"
-            }
-            row.addView(cover, LinearLayout.LayoutParams(dp(58), dp(58)))
-            loadArtworkInto(cover, song)
-
-            val info = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), 0, dp(2), 0)
-            }
-
-            info.addView(
-                label(song.title, 15f, Color.WHITE, true).apply {
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                }
-            )
-
-            info.addView(
-                label(
-                    "${song.artist} · ${song.album}",
-                    12f,
-                    Color.rgb(190, 175, 210)
-                ).apply {
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(0, dp(3), 0, 0)
-                }
-            )
-
-            row.addView(
-                info,
-                LinearLayout.LayoutParams(0, -2, 1f)
-            )
-
-            val isFavorite = favoriteSongUris.contains(uri)
-
-            row.addView(
-                label(
-                    if (isFavorite) "★" else "☆",
-                    21f,
-                    if (isFavorite) {
-                        Color.rgb(250, 204, 21)
-                    } else {
-                        Color.rgb(174, 159, 194)
-                    }
-                ).apply {
-                    gravity = Gravity.CENTER
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    minWidth = dp(48)
-                    minHeight = dp(48)
-                    isClickable = true
-                    isFocusable = true
-                    contentDescription = if (isFavorite) "Remove ${song.title} from favourites" else "Add ${song.title} to favourites"
-                    setOnClickListener { toggleFavorite(song) }
-                }
-            )
-
-            if (selectedPlaylist == null) {
-                row.addView(
-                    label("+", 23f, Color.rgb(216, 180, 254), true).apply {
-                        gravity = Gravity.CENTER
-                        setPadding(dp(8), dp(6), dp(8), dp(6))
-                        minWidth = dp(44)
-                        minHeight = dp(44)
-                        isClickable = true
-                        isFocusable = true
-                        contentDescription = "Add ${song.title} to a playlist"
-                        setOnClickListener {
-                            showAddToPlaylistDialog(song)
-                        }
-                    }
-                )
-            } else {
-                row.addView(
-                    label("−", 23f, Color.rgb(248, 113, 113), true).apply {
-                        gravity = Gravity.CENTER
-                        setPadding(dp(8), dp(6), dp(8), dp(6))
-                        minWidth = dp(44)
-                        minHeight = dp(44)
-                        contentDescription = "Remove from playlist"
-                        setOnClickListener {
-                            removeFromPlaylist(song)
-                        }
-                    }
-                )
-            }
-
-            row.addView(label("⋮", 22f, Color.rgb(216, 180, 254), true).apply {
-                gravity = Gravity.CENTER
-                minWidth = dp(36)
-                minHeight = dp(44)
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Queue actions for ${song.title}"
-                setOnClickListener { showQueueActions(song) }
-            })
-
             songList.addView(
-                row,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
+                ComposeView(this).apply {
+                    setContent {
+                        A1SongRow(
+                            song = song,
+                            isFavorite = favoriteSongUris.contains(uri),
+                            isInPlaylist = selectedPlaylist != null,
+                            onArtworkReady = { imageView -> loadArtworkInto(imageView, song) },
+                            onPlay = { playSong(song) },
+                            onFavorite = { toggleFavorite(song) },
+                            onAddToPlaylist = { showAddToPlaylistDialog(song) },
+                            onRemoveFromPlaylist = { removeFromPlaylist(song) },
+                            onMore = { showQueueActions(song) }
+                        )
+                    }
+                },
+                LinearLayout.LayoutParams(-1, -2).apply {
                     bottomMargin = dp(8)
                 }
             )
