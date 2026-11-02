@@ -135,7 +135,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var miniArtist: TextView
     private lateinit var miniPlayButton: TextView
     private val navigationButtons = linkedMapOf<String, TextView>()
-    private val libraryBrowseButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
     private var activeQueue: List<Song> = emptyList()
@@ -145,7 +144,7 @@ class MainActivity : AppCompatActivity() {
 
     private var showFavoritesOnly = false
     private var selectedPlaylist: String? = null
-    private var libraryBrowseMode = "songs"
+    private var libraryBrowseMode by mutableStateOf("songs")
     private var selectedAlbumKey: String? = null
     private var selectedArtistName: String? = null
     private var librarySortMode = "title"
@@ -527,39 +526,24 @@ class MainActivity : AppCompatActivity() {
         })
         libraryHeader.addView(collectionActions)
 
-        val libraryBrowseBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = roundedBackground(Color.rgb(25, 17, 38), 18).apply {
-                setStroke(dp(1), Color.rgb(76, 53, 99))
-            }
-        }
-        listOf("songs" to "SONGS", "albums" to "ALBUMS", "artists" to "ARTISTS").forEach { (mode, title) ->
-            val button = label(title, 11f, Color.rgb(190, 175, 210), true).apply {
-                gravity = Gravity.CENTER
-                minHeight = dp(44)
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Browse library by ${title.lowercase(Locale.ROOT)}"
-                setOnClickListener {
-                    libraryBrowseMode = mode
-                    selectedAlbumKey = null
-                    selectedArtistName = null
-                    updateLibraryBrowseButtons()
-                    renderSongs(searchBox.text?.toString().orEmpty())
+        libraryHeader.addView(
+            ComposeView(this).apply {
+                setContent {
+                    A1LibraryBrowseBar(
+                        selectedMode = libraryBrowseMode,
+                        onModeSelected = { mode ->
+                            libraryBrowseMode = mode
+                            selectedAlbumKey = null
+                            selectedArtistName = null
+                            renderSongs(searchBox.text?.toString().orEmpty())
+                        }
+                    )
                 }
+            },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
             }
-            libraryBrowseButtons[mode] = button
-            libraryBrowseBar.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                leftMargin = dp(3)
-                rightMargin = dp(3)
-            })
-        }
-        libraryHeader.addView(libraryBrowseBar, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(12)
-        })
+        )
 
         sortButton = label("↕  SORT · TITLE A–Z", 10f, Color.rgb(224, 205, 245), true).apply {
             gravity = Gravity.CENTER
@@ -1927,18 +1911,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateLibraryBrowseButtons() {
-        libraryBrowseButtons.forEach { (mode, button) ->
-            val selected = mode == libraryBrowseMode
-            button.setTextColor(
-                if (selected) Color.rgb(250, 239, 255) else Color.rgb(190, 175, 210)
-            )
-            button.background = roundedBackground(
-                if (selected) Color.rgb(91, 48, 132) else Color.TRANSPARENT,
-                14
-            ).apply {
-                if (selected) setStroke(dp(1), Color.rgb(172, 112, 224))
-            }
-        }
+        // Compose observes libraryBrowseMode and updates the selected segment automatically.
     }
 
     // ---------------- PLAYLIST MENUS ----------------
