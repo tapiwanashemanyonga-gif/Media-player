@@ -20,6 +20,7 @@ import android.widget.TextView
 internal object AdsterraSongListBanner {
     private const val AD_KEY = "ff28c7116d6569c8812a7c433e1a3c3f"
     private const val AD_HOST = "bancadeltempoidea.org"
+    private const val SCRIPT_URL = "https://bancadeltempoidea.org/22/ff28c7116d6569c8812a7c433e1a3c3f"
 
     @SuppressLint("SetJavaScriptEnabled")
     fun create(context: Context): View {
@@ -100,7 +101,7 @@ internal object AdsterraSongListBanner {
                   'params': {}
                 };
               </script>
-              <script src="https://$AD_HOST/22/$AD_KEY"></script>
+              <script src="$SCRIPT_URL"></script>
             </body>
             </html>
         """.trimIndent()
