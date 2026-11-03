@@ -151,6 +151,5 @@ jobs:
             - Performance and responsive layout improvements
             - Separate song-list and Home dashboard Adsterra banner placements
           files: app/build/outputs/apk/release/app-release.apk
-          asset_name: A1-Family-Media.apk
           overwrite_files: true
           make_latest: true
