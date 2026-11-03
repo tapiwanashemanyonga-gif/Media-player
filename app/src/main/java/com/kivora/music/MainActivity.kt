@@ -171,6 +171,20 @@ class MainActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    // Keep large MediaStore scans and video thumbnail decoding off the UI thread.
+    private val musicScanExecutor = Executors.newSingleThreadExecutor()
+    private val videoScanExecutor = Executors.newSingleThreadExecutor()
+    private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
+    private var musicScanRequestId = 0
+    private var videoScanRequestId = 0
+    private val videoThumbnailCache = object : LruCache<String, android.graphics.Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024L / 16L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    ) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
+            (value.byteCount / 1024).coerceAtLeast(1)
+    }
+    private val videoThumbnailTargets = HashMap<String, MutableList<ImageView>>()
+
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
     private var artworkRequestId = 0
@@ -2607,117 +2621,78 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadSongs() {
-        songs.clear()
-        normalizedSearchText.clear()
-
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID
-        )
-
-        try {
-            val cursor: Cursor? = contentResolver.query(
-                collection,
-                projection,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                null,
-                "${MediaStore.Audio.Media.TITLE} ASC"
+        val requestId = ++musicScanRequestId
+        musicScanExecutor.execute {
+            val scannedSongs = mutableListOf<Song>()
+            var scanError: String? = null
+            val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.ALBUM_ID
             )
-
-            cursor?.use {
-                val idColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media._ID
-                )
-                val titleColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.TITLE
-                )
-                val displayNameColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.DISPLAY_NAME
-                )
-                val artistColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ARTIST
-                )
-                val albumNameColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ALBUM
-                )
-                val albumColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ALBUM_ID
-                )
-
-                while (it.moveToNext()) {
-                    val id = it.getLong(idColumn)
-
-                    val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
-                    val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
-                    val fileTitle = displayName
-                        .substringBeforeLast('.', displayName)
-                        .replace(Regex("[._-]+"), " ")
-                        .trim()
-                        .ifBlank { "Unknown title" }
-
-                    val title = if (
-                        rawTitle.isBlank() ||
-                        rawTitle.equals("unknown", ignoreCase = true) ||
-                        rawTitle.equals("unknown title", ignoreCase = true)
-                    ) fileTitle else rawTitle
-
-                    val artistValue = it.getString(artistColumn)
-
-                    val artist = artistValue?.takeIf { value ->
-                        value.isNotBlank() &&
-                            !value.equals("<unknown>", ignoreCase = true) &&
-                            !value.equals("unknown", ignoreCase = true)
-                    } ?: "Unknown artist"
-
-                    val albumId = it.getLong(albumColumn)
-                    val rawAlbum = it.getString(albumNameColumn)?.trim().orEmpty()
-                    val album = rawAlbum.takeIf { value ->
-                        value.isNotBlank() &&
-                            !value.equals("<unknown>", ignoreCase = true) &&
-                            !value.equals("unknown", ignoreCase = true)
-                    } ?: "Unknown album"
-
-                    val artUri = if (albumId > 0L) {
-                        ContentUris.withAppendedId(
-                            Uri.parse(
-                                "content://media/external/audio/albumart"
-                            ),
-                            albumId
-                        )
-                    } else {
-                        null
+            try {
+                val cursor = contentResolver.query(
+                    collection, projection,
+                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                    null, "${MediaStore.Audio.Media.TITLE} ASC"
+                ) ?: throw IllegalStateException("MediaStore returned no music cursor")
+                cursor.use {
+                    val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val displayNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val albumNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val albumColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
+                        val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
+                        val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
+                        val fileTitle = displayName.substringBeforeLast('.', displayName)
+                            .replace(Regex("[._-]+"), " ").trim().ifBlank { "Unknown title" }
+                        val title = if (rawTitle.isBlank() ||
+                            rawTitle.equals("unknown", true) ||
+                            rawTitle.equals("unknown title", true)) fileTitle else rawTitle
+                        val artist = it.getString(artistColumn)?.takeIf { value ->
+                            value.isNotBlank() && !value.equals("<unknown>", true) &&
+                                !value.equals("unknown", true)
+                        } ?: "Unknown artist"
+                        val albumId = it.getLong(albumColumn)
+                        val album = it.getString(albumNameColumn)?.trim()?.takeIf { value ->
+                            value.isNotBlank() && !value.equals("<unknown>", true) &&
+                                !value.equals("unknown", true)
+                        } ?: "Unknown album"
+                        val artUri = if (albumId > 0L) ContentUris.withAppendedId(
+                            Uri.parse("content://media/external/audio/albumart"), albumId
+                        ) else null
+                        scannedSongs.add(Song(
+                            title, artist, album, albumId,
+                            ContentUris.withAppendedId(collection, id), artUri
+                        ))
                     }
-
-                    songs.add(
-                        Song(
-                            title,
-                            artist,
-                            album,
-                            albumId,
-                            ContentUris.withAppendedId(collection, id),
-                            artUri
-                        )
-                    )
                 }
+            } catch (error: Exception) {
+                scanError = error.message?.takeIf { it.isNotBlank() }
+                    ?: error.javaClass.simpleName
             }
-        } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Couldn't scan music: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
+            handler.post {
+                if (requestId != musicScanRequestId || isFinishing || isDestroyed) return@post
+                if (scanError != null) {
+                    Toast.makeText(this, "Couldn't refresh music. Your existing library was kept.", Toast.LENGTH_LONG).show()
+                    return@post
+                }
+                songs.clear()
+                songs.addAll(scannedSongs)
+                normalizedSearchText.clear()
+                syncPlaylistToPlayer()
+                recordRecentlyPlayed(player?.currentMediaItem)
+                renderHomeDashboard()
+                renderSongs(searchBox.text?.toString().orEmpty())
+            }
         }
-
-        syncPlaylistToPlayer()
-        recordRecentlyPlayed(player?.currentMediaItem)
-        renderHomeDashboard()
-        renderSongs(searchBox.text?.toString().orEmpty())
     }
 
     private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
@@ -3861,6 +3836,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        musicScanRequestId++
+        videoScanRequestId++
+        musicScanExecutor.shutdownNow()
+        videoScanExecutor.shutdownNow()
+        videoThumbnailExecutor.shutdownNow()
+        artworkExecutor.shutdownNow()
+
         handler.removeCallbacks(progressUpdater)
         stopSleepTimerPolling()
         sleepTimerDialog?.dismiss()
@@ -3898,51 +3880,93 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
     private fun loadVideos() {
+        val requestId = ++videoScanRequestId
+        videoStatus.visibility = View.VISIBLE
         videoStatus.text = "Scanning videos on this device..."
         videoStatus.setOnClickListener(null)
-        deviceVideos.clear()
-        videoList.removeAllViews()
+        videoScanExecutor.execute {
+            val scannedVideos = mutableListOf<DeviceVideo>()
+            var scanError: String? = null
+            val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.TITLE,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.DURATION
+            )
+            try {
+                val cursor = contentResolver.query(
+                    collection, projection, null, null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                ) ?: throw IllegalStateException("MediaStore returned no video cursor")
+                cursor.use {
+                    val idColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                    val nameColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                    val durationColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
+                        val title = it.getString(titleColumn)?.takeIf { value -> value.isNotBlank() }
+                            ?: it.getString(nameColumn)?.takeIf { value -> value.isNotBlank() }
+                            ?: "Untitled video"
+                        scannedVideos.add(DeviceVideo(
+                            id, title, ContentUris.withAppendedId(collection, id),
+                            it.getLong(durationColumn)
+                        ))
+                    }
+                }
+            } catch (error: Exception) {
+                scanError = error.message?.takeIf { it.isNotBlank() }
+                    ?: error.javaClass.simpleName
+            }
+            handler.post {
+                if (requestId != videoScanRequestId || isFinishing || isDestroyed) return@post
+                if (scanError != null) {
+                    videoStatus.text = "Couldn't refresh videos. Your previous list was kept. Tap to retry."
+                    videoStatus.setOnClickListener { loadVideos() }
+                    Toast.makeText(this, "Video library couldn't be refreshed.", Toast.LENGTH_LONG).show()
+                    return@post
+                }
+                deviceVideos.clear()
+                deviceVideos.addAll(scannedVideos)
+                videosLoaded = true
+                renderVideos()
+            }
+        }
+    }
 
-        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.TITLE,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DURATION
-        )
-
-        try {
-            contentResolver.query(
-                collection, projection, null, null,
-                "${MediaStore.Video.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
-                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
-
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }
-                        ?: cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
-                        ?: "Untitled video"
-
-                    deviceVideos.add(
-                        DeviceVideo(
-                            id,
-                            title,
-                            ContentUris.withAppendedId(collection, id),
-                            cursor.getLong(durationColumn)
-                        )
-                    )
+    private fun loadVideoThumbnail(video: DeviceVideo, imageView: ImageView) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val key = video.uri.toString()
+        imageView.tag = key
+        val cached = videoThumbnailCache.get(key)
+        if (cached != null) {
+            imageView.setImageBitmap(cached)
+            return
+        }
+        val shouldDecode = synchronized(videoThumbnailTargets) {
+            val targets = videoThumbnailTargets.getOrPut(key) { mutableListOf() }
+            targets.add(imageView)
+            targets.size == 1
+        }
+        if (!shouldDecode) return
+        val width = dp(112).coerceAtLeast(1)
+        val height = dp(76).coerceAtLeast(1)
+        videoThumbnailExecutor.execute {
+            val bitmap = try {
+                contentResolver.loadThumbnail(video.uri, Size(width, height), null)
+            } catch (_: Exception) { null }
+            handler.post {
+                if (bitmap != null && !isFinishing && !isDestroyed) videoThumbnailCache.put(key, bitmap)
+                val targets = synchronized(videoThumbnailTargets) {
+                    videoThumbnailTargets.remove(key).orEmpty()
+                }
+                if (bitmap != null && !isFinishing && !isDestroyed) {
+                    targets.forEach { target ->
+                        if (target.tag == key) target.setImageBitmap(bitmap)
+                    }
                 }
             }
-            videosLoaded = true
-            renderVideos()
-        } catch (error: Exception) {
-            videoStatus.text = "Couldn't read videos. Tap here to retry."
-            videoStatus.setOnClickListener { loadVideos() }
-            Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -3988,19 +4012,7 @@ class MainActivity : AppCompatActivity() {
                             duration = formatTime(video.durationMs),
                             isSelected = video.uri.toString() == selectedVideoUri,
                             onThumbnailReady = { imageView ->
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                    try {
-                                        imageView.setImageBitmap(
-                                            contentResolver.loadThumbnail(
-                                                video.uri,
-                                                Size(dp(112), dp(76)),
-                                                null
-                                            )
-                                        )
-                                    } catch (_: Exception) {
-                                        // Retain the play placeholder if thumbnail decoding fails.
-                                    }
-                                }
+                                loadVideoThumbnail(video, imageView)
                             },
                             onPlay = { playDeviceVideo(video) }
                         )
