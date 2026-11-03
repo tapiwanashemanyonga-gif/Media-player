@@ -959,13 +959,13 @@ class MainActivity : AppCompatActivity() {
         sessionActions.addView(upNextButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
             leftMargin = dp(5)
         })
-        val lyricsButton = label("♫", 10f, themeColor(226, 202, 255), true).apply {
+        val lyricsButton = label("♫", 10f, Color.rgb(226, 202, 255), true).apply {
             gravity = Gravity.CENTER
             contentDescription = "Write or view lyrics for the current song"
             minHeight = dp(44)
             setPadding(dp(10), dp(6), dp(10), dp(6))
-            background = roundedBackground(themeColor(48, 31, 68), 14).apply {
-                setStroke(dp(1), themeColor(192, 132, 252))
+            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
+                setStroke(dp(1), Color.rgb(192, 132, 252))
             }
             isClickable = true
             isFocusable = true
@@ -4026,35 +4026,35 @@ class MainActivity : AppCompatActivity() {
             maxLines = 22
             gravity = Gravity.TOP or Gravity.START
             textSize = 15f
-            setTextColor(themeColor(245, 238, 255))
-            setHintTextColor(themeColor(151, 132, 174))
+            setTextColor(Color.rgb(245, 238, 255))
+            setHintTextColor(Color.rgb(151, 132, 174))
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setLineSpacing(dp(3).toFloat(), 1.0f)
             setPadding(dp(15), dp(14), dp(15), dp(14))
-            background = roundedBackground(themeColor(24, 16, 36), 16).apply {
-                setStroke(dp(1), themeColor(103, 70, 132))
+            background = roundedBackground(Color.rgb(24, 16, 36), 16).apply {
+                setStroke(dp(1), Color.rgb(103, 70, 132))
             }
             contentDescription = "Lyrics editor. Type or paste lyrics you have permission to use."
         }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(10), dp(18), dp(6))
-            addView(label("NOW EDITING", 10f, themeColor(66, 224, 255), true).apply {
+            addView(label("NOW EDITING", 10f, Color.rgb(66, 224, 255), true).apply {
                 letterSpacing = 0.12f
                 setPadding(0, 0, 0, dp(7))
             })
-            addView(label(song.title, 18f, themeColor(245, 238, 255), true))
-            addView(label(song.artist.ifBlank { "Unknown artist" }, 12f, themeColor(192, 173, 214)).apply {
+            addView(label(song.title, 18f, Color.rgb(245, 238, 255), true))
+            addView(label(song.artist.ifBlank { "Unknown artist" }, 12f, Color.rgb(192, 173, 214)).apply {
                 setPadding(0, dp(4), 0, dp(14))
             })
-            addView(label("YOUR LYRICS", 10f, themeColor(194, 165, 224), true).apply {
+            addView(label("YOUR LYRICS", 10f, Color.rgb(194, 165, 224), true).apply {
                 letterSpacing = 0.1f
                 setPadding(0, 0, 0, dp(7))
             })
             addView(lyrics, LinearLayout.LayoutParams(-1, dp(320)))
-            addView(label("Lyrics are saved on this device for this track.", 11f, themeColor(160, 143, 181)).apply {
+            addView(label("Lyrics are saved on this device for this track.", 11f, Color.rgb(160, 143, 181)).apply {
                 setPadding(dp(2), dp(9), dp(2), 0)
             })
         }
