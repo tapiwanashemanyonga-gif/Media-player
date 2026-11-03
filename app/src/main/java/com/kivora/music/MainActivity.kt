@@ -590,6 +590,7 @@ class MainActivity : AppCompatActivity() {
                 text = if (libraryControlsVisible) "Hide your library" else "Show your library"
             }
         }
+        libraryVisibilityToggle.visibility = View.GONE
         root.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(4)
             bottomMargin = dp(6)
