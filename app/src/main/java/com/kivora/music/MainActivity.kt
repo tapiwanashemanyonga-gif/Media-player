@@ -3,6 +3,7 @@ package com.kivora.music
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.content.ContentUris
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -74,6 +75,7 @@ data class DeviceVideo(
 class MainActivity : AppCompatActivity() {
 
     private var player: MediaController? = null
+    private var pendingExternalMediaIntent: Intent? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
     private lateinit var songList: LinearLayout
@@ -112,6 +114,11 @@ class MainActivity : AppCompatActivity() {
     private val videoPlayerErrorListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             reportVideoPlaybackFailure()
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // If video starts after a delayed music request, stop only the competing music.
+            if (isPlaying) player?.pause()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -170,6 +177,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Keep large MediaStore scans and video thumbnail decoding off the UI thread.
+    private val musicScanExecutor = Executors.newSingleThreadExecutor()
+    private var songRenderLimit = 80
+    private var videoRenderLimit = 60
+    private val videoScanExecutor = Executors.newSingleThreadExecutor()
+    private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
+    private var musicScanRequestId = 0
+    private var videoScanRequestId = 0
+    private val videoThumbnailCache = object : LruCache<String, android.graphics.Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024L / 16L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    ) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
+            (value.byteCount / 1024).coerceAtLeast(1)
+    }
+    private val videoThumbnailTargets = HashMap<String, MutableList<ImageView>>()
 
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
@@ -238,6 +261,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // A delayed music start must not overlap a video that began during the request.
+            if (isPlaying) {
+                videoPlayer?.let { video ->
+                    video.playWhenReady = false
+                    video.pause()
+                }
+            }
             updatePlayButton()
         }
 
@@ -299,6 +329,70 @@ class MainActivity : AppCompatActivity() {
         } else {
             permissionLauncher.launch(permission)
         }
+        if (savedInstanceState == null) handleIncomingMediaIntent(intent)
+    }
+
+    private fun handleIncomingMediaIntent(incoming: Intent?) {
+        if (incoming?.action != Intent.ACTION_VIEW) return
+        val uri = incoming.data ?: return
+        if (uri.scheme != "content" && uri.scheme != "file") return
+        if (player == null) {
+            pendingExternalMediaIntent = incoming
+            return
+        }
+
+        val mimeType = incoming.type
+            ?: runCatching { contentResolver.getType(uri) }.getOrNull()
+            ?: ""
+        val name = runCatching {
+            contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (column >= 0) cursor.getString(column) else null
+                } else null
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Selected media"
+
+        val normalizedMime = mimeType.lowercase(Locale.ROOT)
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val isVideo = normalizedMime.startsWith("video/") ||
+            extension in setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "m4v", "ts")
+        val isAudio = normalizedMime.startsWith("audio/") ||
+            extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "mid", "midi")
+
+        when {
+            isVideo -> {
+                val video = DeviceVideo(uri.toString().hashCode().toLong(), name, uri, 0L)
+                if (deviceVideos.none { it.uri == uri }) deviceVideos.add(0, video)
+                playDeviceVideo(video)
+            }
+            isAudio -> {
+                showFavoritesOnly = false
+                selectedPlaylist = null
+                val song = Song(name, "Unknown artist", "Unknown album", 0L, uri, null)
+                songs.removeAll { it.uri == uri }
+                songs.add(0, song)
+                normalizedSearchText[uri.toString()] =
+                    (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
+                renderSongs(searchBox.text?.toString().orEmpty())
+                playSong(song)
+            }
+            else -> Toast.makeText(this, "This file type isn't supported by A1 FAMILY MEDIA.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingMediaIntent(intent)
     }
 
     private fun connectToPlaybackService() {
@@ -322,6 +416,10 @@ class MainActivity : AppCompatActivity() {
 
                     player = connected
                     connected.addListener(playerListener)
+                    pendingExternalMediaIntent?.let { pending ->
+                        pendingExternalMediaIntent = null
+                        handleIncomingMediaIntent(pending)
+                    }
 
                     syncPlaylistToPlayer()
                     recordRecentlyPlayed(connected.currentMediaItem)
@@ -358,6 +456,23 @@ class MainActivity : AppCompatActivity() {
         if (bold) setTypeface(typeface, Typeface.BOLD)
     }
 
+    private fun applyButtonFeedback(view: View) {
+        if (view.isClickable || view.isFocusable) {
+            val mask = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(16).toFloat()
+            }
+            view.foreground = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(72, 205, 160, 255)),
+                null,
+                mask
+            )
+        }
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) applyButtonFeedback(view.getChildAt(index))
+        }
+    }
+
     private fun roundedBackground(
         color: Int,
         radiusDp: Int
@@ -369,9 +484,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildScreen() {
+        val screenWidthDp = resources.configuration.screenWidthDp
+        val compactLayout = screenWidthDp < 420
+        val narrowPhoneLayout = screenWidthDp < 360
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(10))
+            setPadding(dp(if (compactLayout) 12 else 18), dp(if (compactLayout) 10 else 14), dp(if (compactLayout) 12 else 18), dp(8))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(13, 8, 23), Color.rgb(24, 13, 39), Color.rgb(12, 10, 22))
@@ -402,13 +520,15 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(2), 0, 0)
         })
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("●  LOCAL LIBRARY", 9f, Color.rgb(210, 190, 232), true).apply {
-            letterSpacing = 0.06f
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(Color.rgb(39, 24, 58), 18).apply {
-                setStroke(dp(1), Color.rgb(83, 56, 115))
-            }
-        })
+        if (!narrowPhoneLayout) {
+            header.addView(label("●  LOCAL LIBRARY", 9f, Color.rgb(210, 190, 232), true).apply {
+                letterSpacing = 0.06f
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedBackground(Color.rgb(39, 24, 58), 18).apply {
+                    setStroke(dp(1), Color.rgb(83, 56, 115))
+                }
+            })
+        }
 
         root.addView(header)
 
@@ -463,10 +583,14 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        titleRow.addView(
-            label("Your library", 24f, Color.rgb(250, 247, 255), true),
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
+        val libraryTitle = label("Your library", if (narrowPhoneLayout) 22f else 24f, Color.rgb(250, 247, 255), true)
+        if (narrowPhoneLayout) {
+            titleRow.orientation = LinearLayout.VERTICAL
+            titleRow.gravity = Gravity.START
+            titleRow.addView(libraryTitle, LinearLayout.LayoutParams(-1, -2))
+        } else {
+            titleRow.addView(libraryTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        }
 
         libraryCount = label(
             "0 tracks in your collection",
@@ -475,7 +599,8 @@ class MainActivity : AppCompatActivity() {
             // KIVORA_ROUND17_LIBRARY_COUNT_BADGE
         ).apply { setPadding(dp(10), dp(6), dp(10), dp(6)); background = roundedBackground(Color.rgb(55, 27, 79), 14).apply { setStroke(dp(1), Color.rgb(192, 132, 252)) } }
 
-        libraryCount.gravity = Gravity.CENTER
+        libraryCount.gravity = if (narrowPhoneLayout) Gravity.START else Gravity.CENTER
+        if (narrowPhoneLayout) libraryCount.setPadding(0, dp(5), 0, dp(2))
         titleRow.addView(libraryCount)
         libraryHeader.addView(titleRow)
 
@@ -729,7 +854,12 @@ class MainActivity : AppCompatActivity() {
         playerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(20), dp(20), dp(18))
+            setPadding(
+                dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20),
+                dp(if (compactLayout) 14 else 20),
+                dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20),
+                dp(18)
+            )
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(
@@ -767,7 +897,11 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
         }
 
-        val artworkSize = (resources.configuration.screenWidthDp - 86).coerceIn(160, 460)
+        val artworkSize = if (compactLayout) {
+            (screenWidthDp - if (narrowPhoneLayout) 76 else 104).coerceIn(if (narrowPhoneLayout) 132 else 148, 228)
+        } else {
+            (screenWidthDp - 86).coerceIn(160, 460)
+        }
         val artworkFrame = android.widget.FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
             background = android.graphics.drawable.GradientDrawable(
@@ -796,7 +930,7 @@ class MainActivity : AppCompatActivity() {
 
         nowTitle = label(
             "Choose a song",
-            if (resources.configuration.screenWidthDp >= 600) 32f else 28f,
+            if (screenWidthDp >= 600) 32f else if (compactLayout) 24f else 28f,
             Color.rgb(255, 252, 255),
             true
         ).apply {
@@ -817,7 +951,7 @@ class MainActivity : AppCompatActivity() {
 
         nowArtist = label(
             "Your library is ready",
-            if (resources.configuration.screenWidthDp >= 600) 17f else 16f,
+            if (screenWidthDp >= 600) 17f else if (compactLayout) 14f else 16f,
             Color.rgb(211, 190, 235)
         ).apply {
             gravity = Gravity.CENTER
@@ -1130,9 +1264,9 @@ class MainActivity : AppCompatActivity() {
         playbackModes.addView(shuffleButton, transportParams())
         playbackModes.addView(repeatButton, transportParams())
         playerCard.addView(playbackModes)
-        val availableCardWidth = (resources.configuration.screenWidthDp - 76).coerceAtLeast(180)
-        playerCard.addView(sessionActions, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(480)), -2))
-        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(600)), -2))
+        // Use measured card width so compact phones, split-screen and display scaling fit.
+        playerCard.addView(sessionActions, LinearLayout.LayoutParams(-1, -2))
+        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(-1, -2))
 
         playerScroll = ScrollView(this).apply {
             clipToPadding = false
@@ -1263,6 +1397,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(68))
         )
         setContentView(root)
+        applyButtonFeedback(root)
 
         searchBox.addTextChangedListener(
             object : android.text.TextWatcher {
@@ -1280,6 +1415,8 @@ class MainActivity : AppCompatActivity() {
                     count: Int
                 ) {
                     searchQuery = s?.toString().orEmpty()
+                    songRenderLimit = 80
+                    videoRenderLimit = 60
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                     if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
@@ -1873,12 +2010,25 @@ class MainActivity : AppCompatActivity() {
         )
 
         // KIVORA_ROUND18_FAVOURITES_BORDER
-        favoriteFilterButton.background = roundedBackground(
-            if (showFavoritesOnly) Color.rgb(55, 40, 65) else Color.rgb(56, 34, 78),
-            18
-        ).apply {
-            setStroke(dp(2), if (showFavoritesOnly) Color.rgb(250, 204, 21) else Color.rgb(192, 132, 252))
+        favoriteFilterButton.background = if (showFavoritesOnly) {
+            android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(91, 65, 12), Color.rgb(56, 42, 15), Color.rgb(39, 29, 13))
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(2), Color.rgb(250, 204, 21))
+            }
+        } else {
+            android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(62, 37, 91), Color.rgb(37, 24, 55))
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.rgb(160, 112, 205))
+            }
         }
+        favoriteFilterButton.elevation = dp(if (showFavoritesOnly) 5 else 2).toFloat()
+        favoriteFilterButton.alpha = 1f
     }
 
     private fun toggleFavorite(song: Song) {
@@ -2607,117 +2757,78 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadSongs() {
-        songs.clear()
-        normalizedSearchText.clear()
-
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID
-        )
-
-        try {
-            val cursor: Cursor? = contentResolver.query(
-                collection,
-                projection,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-                null,
-                "${MediaStore.Audio.Media.TITLE} ASC"
+        val requestId = ++musicScanRequestId
+        musicScanExecutor.execute {
+            val scannedSongs = mutableListOf<Song>()
+            var scanError: String? = null
+            val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.ALBUM_ID
             )
-
-            cursor?.use {
-                val idColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media._ID
-                )
-                val titleColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.TITLE
-                )
-                val displayNameColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.DISPLAY_NAME
-                )
-                val artistColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ARTIST
-                )
-                val albumNameColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ALBUM
-                )
-                val albumColumn = it.getColumnIndexOrThrow(
-                    MediaStore.Audio.Media.ALBUM_ID
-                )
-
-                while (it.moveToNext()) {
-                    val id = it.getLong(idColumn)
-
-                    val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
-                    val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
-                    val fileTitle = displayName
-                        .substringBeforeLast('.', displayName)
-                        .replace(Regex("[._-]+"), " ")
-                        .trim()
-                        .ifBlank { "Unknown title" }
-
-                    val title = if (
-                        rawTitle.isBlank() ||
-                        rawTitle.equals("unknown", ignoreCase = true) ||
-                        rawTitle.equals("unknown title", ignoreCase = true)
-                    ) fileTitle else rawTitle
-
-                    val artistValue = it.getString(artistColumn)
-
-                    val artist = artistValue?.takeIf { value ->
-                        value.isNotBlank() &&
-                            !value.equals("<unknown>", ignoreCase = true) &&
-                            !value.equals("unknown", ignoreCase = true)
-                    } ?: "Unknown artist"
-
-                    val albumId = it.getLong(albumColumn)
-                    val rawAlbum = it.getString(albumNameColumn)?.trim().orEmpty()
-                    val album = rawAlbum.takeIf { value ->
-                        value.isNotBlank() &&
-                            !value.equals("<unknown>", ignoreCase = true) &&
-                            !value.equals("unknown", ignoreCase = true)
-                    } ?: "Unknown album"
-
-                    val artUri = if (albumId > 0L) {
-                        ContentUris.withAppendedId(
-                            Uri.parse(
-                                "content://media/external/audio/albumart"
-                            ),
-                            albumId
-                        )
-                    } else {
-                        null
+            try {
+                val cursor = contentResolver.query(
+                    collection, projection,
+                    "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                    null, "${MediaStore.Audio.Media.TITLE} ASC"
+                ) ?: throw IllegalStateException("MediaStore returned no music cursor")
+                cursor.use {
+                    val idColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val displayNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val albumNameColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val albumColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
+                        val rawTitle = it.getString(titleColumn)?.trim().orEmpty()
+                        val displayName = it.getString(displayNameColumn)?.trim().orEmpty()
+                        val fileTitle = displayName.substringBeforeLast('.', displayName)
+                            .replace(Regex("[._-]+"), " ").trim().ifBlank { "Unknown title" }
+                        val title = if (rawTitle.isBlank() ||
+                            rawTitle.equals("unknown", true) ||
+                            rawTitle.equals("unknown title", true)) fileTitle else rawTitle
+                        val artist = it.getString(artistColumn)?.takeIf { value ->
+                            value.isNotBlank() && !value.equals("<unknown>", true) &&
+                                !value.equals("unknown", true)
+                        } ?: "Unknown artist"
+                        val albumId = it.getLong(albumColumn)
+                        val album = it.getString(albumNameColumn)?.trim()?.takeIf { value ->
+                            value.isNotBlank() && !value.equals("<unknown>", true) &&
+                                !value.equals("unknown", true)
+                        } ?: "Unknown album"
+                        val artUri = if (albumId > 0L) ContentUris.withAppendedId(
+                            Uri.parse("content://media/external/audio/albumart"), albumId
+                        ) else null
+                        scannedSongs.add(Song(
+                            title, artist, album, albumId,
+                            ContentUris.withAppendedId(collection, id), artUri
+                        ))
                     }
-
-                    songs.add(
-                        Song(
-                            title,
-                            artist,
-                            album,
-                            albumId,
-                            ContentUris.withAppendedId(collection, id),
-                            artUri
-                        )
-                    )
                 }
+            } catch (error: Exception) {
+                scanError = error.message?.takeIf { it.isNotBlank() }
+                    ?: error.javaClass.simpleName
             }
-        } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Couldn't scan music: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
+            handler.post {
+                if (requestId != musicScanRequestId || isFinishing || isDestroyed) return@post
+                if (scanError != null) {
+                    Toast.makeText(this, "Couldn't refresh music. Your existing library was kept.", Toast.LENGTH_LONG).show()
+                    return@post
+                }
+                songs.clear()
+                songs.addAll(scannedSongs)
+                normalizedSearchText.clear()
+                syncPlaylistToPlayer()
+                recordRecentlyPlayed(player?.currentMediaItem)
+                renderHomeDashboard()
+                renderSongs(searchBox.text?.toString().orEmpty())
+            }
         }
-
-        syncPlaylistToPlayer()
-        recordRecentlyPlayed(player?.currentMediaItem)
-        renderHomeDashboard()
-        renderSongs(searchBox.text?.toString().orEmpty())
     }
 
     private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
@@ -2988,7 +3099,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        visibleSongs.forEachIndexed { songIndex, song ->
+        visibleSongs.take(songRenderLimit).forEachIndexed { songIndex, song ->
             val uri = song.uri.toString()
 
             songList.addView(
@@ -3012,18 +3123,23 @@ class MainActivity : AppCompatActivity() {
                 }
             )
 
-            // Keep the iframe banner inside the scrolling song list, never over playback controls.
-            val afterFirstFour = songIndex == 3
-            val beforeLastFour = visibleSongs.size > 50 && songIndex == visibleSongs.size - 5
-            if (afterFirstFour || beforeLastFour) {
-                songList.addView(
-                    AdsterraSongListBanner.create(this),
-                    LinearLayout.LayoutParams(-1, -2).apply {
-                        topMargin = dp(2)
-                        bottomMargin = dp(4)
-                    }
-                )
-            }
+            // Library remains ad-free; no sponsored rows interrupt browsing.
+        }
+        if (visibleSongs.size > songRenderLimit) {
+            val remaining = visibleSongs.size - songRenderLimit
+            songList.addView(label("LOAD MORE SONGS  ·  $remaining REMAINING", 12f, Color.rgb(231, 210, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(18), dp(15), dp(18), dp(15))
+                background = roundedBackground(Color.rgb(54, 33, 76), 16).apply {
+                    setStroke(dp(1), Color.rgb(169, 118, 216))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    songRenderLimit += 80
+                    renderSongs(searchBox.text?.toString().orEmpty())
+                }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
         }
     }
 
@@ -3861,6 +3977,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        musicScanRequestId++
+        videoScanRequestId++
+        musicScanExecutor.shutdownNow()
+        videoScanExecutor.shutdownNow()
+        videoThumbnailExecutor.shutdownNow()
+        artworkExecutor.shutdownNow()
+
         handler.removeCallbacks(progressUpdater)
         stopSleepTimerPolling()
         sleepTimerDialog?.dismiss()
@@ -3898,51 +4021,93 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
     private fun loadVideos() {
+        val requestId = ++videoScanRequestId
+        videoStatus.visibility = View.VISIBLE
         videoStatus.text = "Scanning videos on this device..."
         videoStatus.setOnClickListener(null)
-        deviceVideos.clear()
-        videoList.removeAllViews()
+        videoScanExecutor.execute {
+            val scannedVideos = mutableListOf<DeviceVideo>()
+            var scanError: String? = null
+            val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.TITLE,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.DURATION
+            )
+            try {
+                val cursor = contentResolver.query(
+                    collection, projection, null, null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                ) ?: throw IllegalStateException("MediaStore returned no video cursor")
+                cursor.use {
+                    val idColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val titleColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                    val nameColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                    val durationColumn = it.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                    while (it.moveToNext()) {
+                        val id = it.getLong(idColumn)
+                        val title = it.getString(titleColumn)?.takeIf { value -> value.isNotBlank() }
+                            ?: it.getString(nameColumn)?.takeIf { value -> value.isNotBlank() }
+                            ?: "Untitled video"
+                        scannedVideos.add(DeviceVideo(
+                            id, title, ContentUris.withAppendedId(collection, id),
+                            it.getLong(durationColumn)
+                        ))
+                    }
+                }
+            } catch (error: Exception) {
+                scanError = error.message?.takeIf { it.isNotBlank() }
+                    ?: error.javaClass.simpleName
+            }
+            handler.post {
+                if (requestId != videoScanRequestId || isFinishing || isDestroyed) return@post
+                if (scanError != null) {
+                    videoStatus.text = "Couldn't refresh videos. Your previous list was kept. Tap to retry."
+                    videoStatus.setOnClickListener { loadVideos() }
+                    Toast.makeText(this, "Video library couldn't be refreshed.", Toast.LENGTH_LONG).show()
+                    return@post
+                }
+                deviceVideos.clear()
+                deviceVideos.addAll(scannedVideos)
+                videosLoaded = true
+                renderVideos()
+            }
+        }
+    }
 
-        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.TITLE,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DURATION
-        )
-
-        try {
-            contentResolver.query(
-                collection, projection, null, null,
-                "${MediaStore.Video.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
-                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
-
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }
-                        ?: cursor.getString(nameColumn)?.takeIf { it.isNotBlank() }
-                        ?: "Untitled video"
-
-                    deviceVideos.add(
-                        DeviceVideo(
-                            id,
-                            title,
-                            ContentUris.withAppendedId(collection, id),
-                            cursor.getLong(durationColumn)
-                        )
-                    )
+    private fun loadVideoThumbnail(video: DeviceVideo, imageView: ImageView) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val key = video.uri.toString()
+        imageView.tag = key
+        val cached = videoThumbnailCache.get(key)
+        if (cached != null) {
+            imageView.setImageBitmap(cached)
+            return
+        }
+        val shouldDecode = synchronized(videoThumbnailTargets) {
+            val targets = videoThumbnailTargets.getOrPut(key) { mutableListOf() }
+            targets.add(imageView)
+            targets.size == 1
+        }
+        if (!shouldDecode) return
+        val width = dp(112).coerceAtLeast(1)
+        val height = dp(76).coerceAtLeast(1)
+        videoThumbnailExecutor.execute {
+            val bitmap = try {
+                contentResolver.loadThumbnail(video.uri, Size(width, height), null)
+            } catch (_: Exception) { null }
+            handler.post {
+                if (bitmap != null && !isFinishing && !isDestroyed) videoThumbnailCache.put(key, bitmap)
+                val targets = synchronized(videoThumbnailTargets) {
+                    videoThumbnailTargets.remove(key).orEmpty()
+                }
+                if (bitmap != null && !isFinishing && !isDestroyed) {
+                    targets.forEach { target ->
+                        if (target.tag == key) target.setImageBitmap(bitmap)
+                    }
                 }
             }
-            videosLoaded = true
-            renderVideos()
-        } catch (error: Exception) {
-            videoStatus.text = "Couldn't read videos. Tap here to retry."
-            videoStatus.setOnClickListener { loadVideos() }
-            Toast.makeText(this, "Video library error", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -3979,7 +4144,7 @@ class MainActivity : AppCompatActivity() {
         if (currentTab == "videos") homeScroll.visibility = View.GONE
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
-        filteredVideos.forEach { video ->
+        filteredVideos.take(videoRenderLimit).forEach { video ->
             videoList.addView(
                 ComposeView(this).apply {
                     setContent {
@@ -3988,19 +4153,7 @@ class MainActivity : AppCompatActivity() {
                             duration = formatTime(video.durationMs),
                             isSelected = video.uri.toString() == selectedVideoUri,
                             onThumbnailReady = { imageView ->
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                    try {
-                                        imageView.setImageBitmap(
-                                            contentResolver.loadThumbnail(
-                                                video.uri,
-                                                Size(dp(112), dp(76)),
-                                                null
-                                            )
-                                        )
-                                    } catch (_: Exception) {
-                                        // Retain the play placeholder if thumbnail decoding fails.
-                                    }
-                                }
+                                loadVideoThumbnail(video, imageView)
                             },
                             onPlay = { playDeviceVideo(video) }
                         )
@@ -4010,6 +4163,22 @@ class MainActivity : AppCompatActivity() {
                     bottomMargin = dp(8)
                 }
             )
+        }
+        if (filteredVideos.size > videoRenderLimit) {
+            val remaining = filteredVideos.size - videoRenderLimit
+            videoList.addView(label("LOAD MORE VIDEOS  ·  $remaining REMAINING", 12f, Color.rgb(231, 210, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(18), dp(15), dp(18), dp(15))
+                background = roundedBackground(Color.rgb(54, 33, 76), 16).apply {
+                    setStroke(dp(1), Color.rgb(169, 118, 216))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    videoRenderLimit += 60
+                    renderVideos(query)
+                }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
         }
     }
 
