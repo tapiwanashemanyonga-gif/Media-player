@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/a1-adsterra-webview-song-list
+      - perf/a1-family-all-device-stability
   pull_request:
     branches:
       - main
