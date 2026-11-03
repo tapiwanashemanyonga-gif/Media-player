@@ -315,6 +315,7 @@ class MainActivity : AppCompatActivity() {
         buildScreen()
         connectToPlaybackService()
         handler.post(progressUpdater)
+        checkForAppUpdates()
 
         val permission = if (Build.VERSION.SDK_INT >= 33) {
             Manifest.permission.READ_MEDIA_AUDIO
@@ -331,6 +332,54 @@ class MainActivity : AppCompatActivity() {
             permissionLauncher.launch(permission)
         }
         if (savedInstanceState == null) handleIncomingMediaIntent(intent)
+    }
+
+
+    /** Checks the official website's public version manifest without blocking playback or UI. */
+    private fun checkForAppUpdates() {
+        Thread {
+            val update = runCatching {
+                val connection = (java.net.URL("https://a1-family-media-site.onrender.com/version.json")
+                    .openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 7000
+                    readTimeout = 7000
+                    requestMethod = "GET"
+                    setRequestProperty("Accept", "application/json")
+                }
+                try {
+                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    org.json.JSONObject(body)
+                } finally {
+                    connection.disconnect()
+                }
+            }.getOrNull() ?: return@Thread
+
+            val latestCode = update.optInt("versionCode", 0)
+            val latestName = update.optString("versionName", "")
+            val downloadUrl = update.optString(
+                "downloadUrl",
+                "https://a1-family-media-site.onrender.com/#download"
+            )
+            val notes = update.optString("releaseNotes", "A newer version is available.")
+            if (latestCode <= BuildConfig.VERSION_CODE || latestName.isBlank()) return@Thread
+
+            handler.post {
+                if (isFinishing || isDestroyed) return@post
+                AlertDialog.Builder(this)
+                    .setTitle("A1 FAMILY MEDIA update available")
+                    .setMessage("Version $latestName is ready.\n\n$notes\n\nWould you like to download the update now?")
+                    .setPositiveButton("Download update") { _, _ ->
+                        runCatching {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
+                        }.onFailure {
+                            Toast.makeText(this, "Couldn't open the download page.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .setNegativeButton("Later", null)
+                    .setCancelable(true)
+                    .show()
+            }
+        }.start()
     }
 
     private fun handleIncomingMediaIntent(incoming: Intent?) {
