@@ -3969,9 +3969,12 @@ class MainActivity : AppCompatActivity() {
 
         val filteredVideos = deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }
         if (filteredVideos.isEmpty()) {
+            videoStatus.visibility = View.VISIBLE
             videoStatus.text = "No videos match your search."
             return
         }
+        // With no active selection, let the thumbnail list occupy the full video panel.
+        videoStatus.visibility = if (selectedVideoUri == null) View.GONE else View.VISIBLE
         videoPlaceholder.visibility = if (currentTab == "videos") View.VISIBLE else View.GONE
         if (currentTab == "videos") homeScroll.visibility = View.GONE
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
