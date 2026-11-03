@@ -1,0 +1,29 @@
+name: Complaint or bug report
+description: Report a problem or something that is not working correctly.
+title: "[BUG] "
+labels: ["bug report"]
+body:
+  - type: markdown
+    attributes:
+      value: Describe the problem clearly. Do not include passwords, phone numbers or private files.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What went wrong?
+      placeholder: Describe what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open the app...\n2. Tap...\n3. The problem appears..."
+    validations:
+      required: false
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: e.g. Samsung Galaxy, Android 14
+    validations:
+      required: false
