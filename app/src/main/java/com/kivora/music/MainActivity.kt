@@ -91,6 +91,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var favoriteFilterButton: TextView
     private lateinit var playlistButton: TextView
     private lateinit var libraryHeader: LinearLayout
+    private lateinit var libraryVisibilityToggle: TextView
+    private var libraryControlsVisible = true
     private lateinit var sortContainer: LinearLayout
     private lateinit var sortButton: TextView
     private lateinit var songScroll: ScrollView
@@ -252,6 +254,8 @@ class MainActivity : AppCompatActivity() {
             "kivora_preferences",
             MODE_PRIVATE
         )
+
+        libraryControlsVisible = !preferences.getBoolean("hide_songs_albums_shortcuts", false)
 
         favoriteSongUris.addAll(
             preferences.getStringSet(
@@ -564,6 +568,32 @@ class MainActivity : AppCompatActivity() {
         }
         libraryHeader.addView(sortContainer)
 
+        libraryVisibilityToggle = label(
+            if (libraryControlsVisible) "Hide your library" else "Show your library",
+            11f,
+            Color.rgb(232, 213, 255),
+            true
+        ).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBackground(Color.rgb(42, 25, 64), 14).apply {
+                setStroke(dp(1), Color.rgb(119, 78, 159))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Hide or show library controls while keeping the song list visible"
+            setOnClickListener {
+                libraryControlsVisible = !libraryControlsVisible
+                getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
+                    .putBoolean("hide_songs_albums_shortcuts", !libraryControlsVisible).apply()
+                libraryHeader.visibility = if (libraryControlsVisible && currentTab == "library") View.VISIBLE else View.GONE
+                text = if (libraryControlsVisible) "Hide your library" else "Show your library"
+            }
+        }
+        root.addView(libraryVisibilityToggle, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(4)
+            bottomMargin = dp(6)
+        })
         root.addView(libraryHeader)
 
         songScroll = ScrollView(this)
@@ -1014,8 +1044,14 @@ class MainActivity : AppCompatActivity() {
             } else if (p.isPlaying) {
                 p.pause()
             } else {
-                // KIVORA_FIX_AUDIO_VIDEO_V2
-                videoPlayer?.pause()
+                // Stop video before resuming the retained last-played song.
+                videoPlayer?.apply {
+                    pause()
+                    stop()
+                    clearMediaItems()
+                }
+                selectedVideoUri = null
+                navigationVideoUri = null
                 p.play()
             }
 
@@ -1159,8 +1195,14 @@ class MainActivity : AppCompatActivity() {
                     if (p.isPlaying) {
                         p.pause()
                     } else {
-                        // KIVORA_FIX_AUDIO_VIDEO_V2
-                        videoPlayer?.pause()
+                        // Stop video before resuming the retained last-played song.
+                        videoPlayer?.apply {
+                            pause()
+                            stop()
+                            clearMediaItems()
+                        }
+                        selectedVideoUri = null
+                        navigationVideoUri = null
                         p.play()
                     }
                     updatePlayButton()
@@ -2944,7 +2986,9 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Keep the iframe banner inside the scrolling song list, never over playback controls.
-            if ((songIndex + 1) % 4 == 0) {
+            val afterFirstFour = songIndex == 3
+            val beforeLastFour = visibleSongs.size > 50 && songIndex == visibleSongs.size - 5
+            if (afterFirstFour || beforeLastFour) {
                 songList.addView(
                     AdsterraSongListBanner.create(this),
                     LinearLayout.LayoutParams(-1, -2).apply {
@@ -3885,7 +3929,9 @@ class MainActivity : AppCompatActivity() {
                 clearMediaItems()
             }
             selectedVideoUri = null
+            videoPlaceholder.visibility = View.GONE
             videoPlayerView.visibility = View.GONE
+            if (currentTab == "videos") homeScroll.visibility = View.VISIBLE
             videoStatus.text = "Your video library is ready when you are."
             videoList.addView(label("No videos yet", 18f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
@@ -3899,6 +3945,8 @@ class MainActivity : AppCompatActivity() {
             videoStatus.text = "No videos match your search."
             return
         }
+        videoPlaceholder.visibility = if (currentTab == "videos") View.VISIBLE else View.GONE
+        if (currentTab == "videos") homeScroll.visibility = View.GONE
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
         filteredVideos.forEach { video ->
@@ -3946,13 +3994,10 @@ class MainActivity : AppCompatActivity() {
         lastFailedVideoUri = null
         renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
-        // Stop and clear the music service queue before video playback.
-        player?.apply {
-            playWhenReady = false
-            pause()
-            stop()
-            clearMediaItems()
-        }
+        // Pause music but retain its current item and queue for the mini player.
+        player?.pause()
+        updateNowPlaying()
+        updatePlayButton()
         return try {
             videoPlayer?.apply {
                 setMediaItem(MediaItem.fromUri(video.uri))
@@ -4329,8 +4374,15 @@ class MainActivity : AppCompatActivity() {
             if (tab == "library") View.VISIBLE else View.GONE
         songScroll.visibility =
             if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
-        videoPlaceholder.visibility =
-            if (tab == "videos") View.VISIBLE else View.GONE
+        val showVideoLibrary = tab == "videos" && deviceVideos.isNotEmpty()
+        videoPlaceholder.visibility = if (showVideoLibrary) View.VISIBLE else View.GONE
+        if (::libraryVisibilityToggle.isInitialized) {
+            libraryVisibilityToggle.visibility = if (tab == "library") View.VISIBLE else View.GONE
+        }
+        if (tab == "videos" && deviceVideos.isEmpty()) {
+            searchBox.visibility = View.GONE
+            homeScroll.visibility = View.VISIBLE
+        }
         if (tab == "videos" && !videosLoaded) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 Manifest.permission.READ_MEDIA_VIDEO
@@ -4343,7 +4395,7 @@ class MainActivity : AppCompatActivity() {
                 videoPermissionLauncher.launch(permission)
             }
         }
-        homeScroll.visibility = if (tab == "home") View.VISIBLE else View.GONE
+        homeScroll.visibility = if (tab == "home" || (tab == "videos" && deviceVideos.isEmpty())) View.VISIBLE else View.GONE
         playerScroll.visibility = if (tab == "nowPlaying") View.VISIBLE else View.GONE
         miniPlayer.visibility = if (tab == "nowPlaying") View.GONE else View.VISIBLE
 
