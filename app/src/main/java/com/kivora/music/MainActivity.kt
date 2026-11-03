@@ -384,18 +384,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(2), dp(3), dp(2), dp(2))
         }
 
-        val brandMark = TextView(this).apply {
-            text = "A1"
-            textSize = 17f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
-            gravity = Gravity.CENTER
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(174, 98, 255), Color.rgb(104, 48, 190))
-            ).apply { cornerRadius = dp(16).toFloat() }
-            elevation = dp(5).toFloat()
-            contentDescription = "A1 Family Media Player"
+        val brandMark = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher_foreground)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "A1 Family Media logo"
         }
         header.addView(brandMark, LinearLayout.LayoutParams(dp(42), dp(42)))
 
