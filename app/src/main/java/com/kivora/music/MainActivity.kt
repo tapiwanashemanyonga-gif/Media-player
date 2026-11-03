@@ -3120,7 +3120,16 @@ class MainActivity : AppCompatActivity() {
                 }
             )
 
-            // Library remains ad-free; no sponsored rows interrupt browsing.
+            // Native banner stays inside the scrolling song list, away from playback controls.
+            if ((songIndex + 1) % 4 == 0 && songIndex < visibleSongs.lastIndex) {
+                songList.addView(
+                    AdsterraSongListBanner.create(this),
+                    LinearLayout.LayoutParams(-1, -2).apply {
+                        topMargin = dp(2)
+                        bottomMargin = dp(4)
+                    }
+                )
+            }
         }
         if (visibleSongs.size > songRenderLimit) {
             val remaining = visibleSongs.size - songRenderLimit
