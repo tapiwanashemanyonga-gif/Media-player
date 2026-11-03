@@ -747,7 +747,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val fullscreenButton = label("⛶  FULLSCREEN", 12f, Color.rgb(232, 213, 255), true).apply {
+        val fullscreenButton = label("⛶ FULL", 12f, Color.rgb(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(10), dp(14), dp(10))
             minHeight = dp(48)
@@ -791,7 +791,7 @@ class MainActivity : AppCompatActivity() {
             videoScroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
         )
-        val minimizeVideoButton = label("↓  MINIMIZE VIDEO", 11f, Color.rgb(232, 213, 255), true).apply {
+        val minimizeVideoButton = label("↓ HIDE", 11f, Color.rgb(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             minHeight = dp(48)
@@ -805,13 +805,13 @@ class MainActivity : AppCompatActivity() {
             val shouldMinimize = videoPlayerView.visibility == View.VISIBLE
             videoPlayerView.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
             fullscreenButton.visibility = if (shouldMinimize) View.GONE else View.VISIBLE
-            minimizeVideoButton.text = if (shouldMinimize) "↑  SHOW VIDEO" else "↓  MINIMIZE VIDEO"
+            minimizeVideoButton.text = if (shouldMinimize) "↑ SHOW" else "↓ HIDE"
             minimizeVideoButton.contentDescription =
                 if (shouldMinimize) "Restore video player" else "Minimize video player"
         }
         videoPlayerActions.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
 
-        val videoListButton = label("▤  VIDEO LIST", 11f, Color.rgb(232, 213, 255), true).apply {
+        val videoListButton = label("▤ LIST", 11f, Color.rgb(232, 213, 255), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
             minHeight = dp(48)
@@ -827,7 +827,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         videoPlayerActions.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
-        val stopInlineVideoButton = label("■  STOP VIDEO", 11f, Color.rgb(255, 190, 190), true).apply {
+        val stopInlineVideoButton = label("■ STOP", 11f, Color.rgb(255, 190, 190), true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(10), dp(8), dp(10))
             minHeight = dp(48)
@@ -2007,7 +2007,7 @@ class MainActivity : AppCompatActivity() {
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(91, 65, 12), Color.rgb(56, 42, 15), Color.rgb(39, 29, 13))
             ).apply {
-                cornerRadius = dp(18).toFloat()
+                cornerRadius = dp(14).toFloat()
                 setStroke(dp(2), Color.rgb(250, 204, 21))
             }
         } else {
@@ -2015,7 +2015,7 @@ class MainActivity : AppCompatActivity() {
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(62, 37, 91), Color.rgb(37, 24, 55))
             ).apply {
-                cornerRadius = dp(18).toFloat()
+                cornerRadius = dp(14).toFloat()
                 setStroke(dp(1), Color.rgb(160, 112, 205))
             }
         }
