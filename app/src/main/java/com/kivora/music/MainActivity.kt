@@ -116,6 +116,11 @@ class MainActivity : AppCompatActivity() {
             reportVideoPlaybackFailure()
         }
 
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // If video starts after a delayed music request, stop only the competing music.
+            if (isPlaying) player?.pause()
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState != Player.STATE_ENDED) return
             val finishedUri = selectedVideoUri ?: return
@@ -256,6 +261,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // A delayed music start must not overlap a video that began during the request.
+            if (isPlaying) {
+                videoPlayer?.let { video ->
+                    video.playWhenReady = false
+                    video.pause()
+                }
+            }
             updatePlayButton()
         }
 
