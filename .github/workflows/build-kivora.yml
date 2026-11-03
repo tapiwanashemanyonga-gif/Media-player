@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - feature/a1-adsterra-webview-song-list
       - perf/a1-family-all-device-stability
   pull_request:
     branches:
@@ -21,6 +20,33 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+
+      - name: Verify media safety, performance and ad-free safeguards
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_ACTIVITY="app/src/main/java/com/kivora/music/MainActivity.kt"
+          MANIFEST="app/src/main/AndroidManifest.xml"
+          GRADLE_FILE="app/build.gradle.kts"
+          test -s "$MAIN_ACTIVITY"
+          test -s "$MANIFEST"
+          grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
+          grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
+          grep -Fq 'videoThumbnailCache' "$MAIN_ACTIVITY"
+          grep -Fq 'videoThumbnailExecutor.execute {' "$MAIN_ACTIVITY"
+          grep -Fq 'songRenderLimit' "$MAIN_ACTIVITY"
+          grep -Fq 'videoRenderLimit' "$MAIN_ACTIVITY"
+          grep -Fq 'MediaStore returned no music cursor' "$MAIN_ACTIVITY"
+          grep -Fq 'Keep the last good library intact' "$MAIN_ACTIVITY"
+          grep -Fq 'handleIncomingMediaIntent' "$MAIN_ACTIVITY"
+          grep -Fq 'android:mimeType="audio/*"' "$MANIFEST"
+          grep -Fq 'android:mimeType="video/*"' "$MANIFEST"
+          grep -Fq 'android:name=".KivoraPlaybackService"' "$MANIFEST"
+          if grep -Eiq 'com\\.startapp|StartAppSDK|AdsterraSongListBanner|asiafilm\\.org/4/|bancadeltempoidea\\.org' "$GRADLE_FILE" app/src/main; then
+            echo "Unexpected in-app advertising code or SDK found."
+            exit 1
+          fi
+          echo "Media performance, file handling and ad-free checks passed."
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
