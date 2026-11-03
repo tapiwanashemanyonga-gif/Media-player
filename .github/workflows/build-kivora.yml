@@ -133,7 +133,7 @@ jobs:
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: A1-Family-Media-1.5-release
+          name: A1-Family-Media-1.6-release
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -142,10 +142,10 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.5
-          name: A1 FAMILY MEDIA 1.5
+          tag_name: v1.6
+          name: A1 FAMILY MEDIA 1.6
           body: |
-            Official A1 FAMILY MEDIA Android release 1.5.
+            Official A1 FAMILY MEDIA Android release 1.6.
 
             - Local music and video playback
             - Performance and responsive layout improvements
