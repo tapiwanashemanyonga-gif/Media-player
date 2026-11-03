@@ -2631,6 +2631,15 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(15), 0, dp(3))
         })
+
+        // Separate Adsterra native-banner placement at the end of the Home dashboard.
+        homeContent.addView(
+            AdsterraHomeNativeBanner.create(this),
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(10)
+                bottomMargin = dp(8)
+            }
+        )
     }
 
     private fun openHomeShortcut(destination: String) {
@@ -3120,8 +3129,8 @@ class MainActivity : AppCompatActivity() {
                 }
             )
 
-            // Native banner stays inside the scrolling song list, away from playback controls.
-            if ((songIndex + 1) % 4 == 0 && songIndex < visibleSongs.lastIndex) {
+            // Original 320x50 banner: one placement after song 4, only for libraries over 50 songs.
+            if (visibleSongs.size > 50 && songIndex == 3 && visibleSongs.size > 8) {
                 songList.addView(
                     AdsterraSongListBanner.create(this),
                     LinearLayout.LayoutParams(-1, -2).apply {
