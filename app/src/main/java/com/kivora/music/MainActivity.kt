@@ -75,6 +75,7 @@ data class DeviceVideo(
 class MainActivity : AppCompatActivity() {
 
     private var player: MediaController? = null
+    private var pendingExternalMediaIntent: Intent? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
     private lateinit var songList: LinearLayout
@@ -321,6 +322,10 @@ class MainActivity : AppCompatActivity() {
         if (incoming?.action != Intent.ACTION_VIEW) return
         val uri = incoming.data ?: return
         if (uri.scheme != "content" && uri.scheme != "file") return
+        if (player == null) {
+            pendingExternalMediaIntent = incoming
+            return
+        }
 
         val mimeType = incoming.type
             ?: runCatching { contentResolver.getType(uri) }.getOrNull()
@@ -350,8 +355,22 @@ class MainActivity : AppCompatActivity() {
             extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "mid", "midi")
 
         when {
-            isVideo -> continueUserPlayback(PendingPlayback("play_video", uri = uri.toString(), title = name))
-            isAudio -> continueUserPlayback(PendingPlayback("play_queue_item", uri = uri.toString(), title = name))
+            isVideo -> {
+                val video = DeviceVideo(uri.toString().hashCode().toLong(), name, uri, 0L)
+                if (deviceVideos.none { it.uri == uri }) deviceVideos.add(0, video)
+                playDeviceVideo(video)
+            }
+            isAudio -> {
+                showFavoritesOnly = false
+                selectedPlaylist = null
+                val song = Song(name, "Unknown artist", "Unknown album", 0L, uri, null)
+                songs.removeAll { it.uri == uri }
+                songs.add(0, song)
+                normalizedSearchText[uri.toString()] =
+                    (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
+                renderSongs(searchBox.text?.toString().orEmpty())
+                playSong(song)
+            }
             else -> Toast.makeText(this, "This file type isn't supported by A1 FAMILY MEDIA.", Toast.LENGTH_LONG).show()
         }
     }
@@ -383,6 +402,10 @@ class MainActivity : AppCompatActivity() {
 
                     player = connected
                     connected.addListener(playerListener)
+                    pendingExternalMediaIntent?.let { pending ->
+                        pendingExternalMediaIntent = null
+                        handleIncomingMediaIntent(pending)
+                    }
 
                     syncPlaylistToPlayer()
                     recordRecentlyPlayed(connected.currentMediaItem)
