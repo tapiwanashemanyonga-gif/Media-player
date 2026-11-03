@@ -175,6 +175,8 @@ class MainActivity : AppCompatActivity() {
 
     // Keep large MediaStore scans and video thumbnail decoding off the UI thread.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
+    private var songRenderLimit = 80
+    private var videoRenderLimit = 60
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
     private var musicScanRequestId = 0
@@ -3078,7 +3080,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        visibleSongs.forEachIndexed { songIndex, song ->
+        visibleSongs.take(songRenderLimit).forEachIndexed { songIndex, song ->
             val uri = song.uri.toString()
 
             songList.addView(
@@ -3103,6 +3105,22 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Library remains ad-free; no sponsored rows interrupt browsing.
+        }
+        if (visibleSongs.size > songRenderLimit) {
+            val remaining = visibleSongs.size - songRenderLimit
+            songList.addView(label("LOAD MORE SONGS  ·  $remaining REMAINING", 12f, Color.rgb(231, 210, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(18), dp(15), dp(18), dp(15))
+                background = roundedBackground(Color.rgb(54, 33, 76), 16).apply {
+                    setStroke(dp(1), Color.rgb(169, 118, 216))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    songRenderLimit += 80
+                    renderSongs(searchBox.text?.toString().orEmpty())
+                }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
         }
     }
 
@@ -4107,7 +4125,7 @@ class MainActivity : AppCompatActivity() {
         if (currentTab == "videos") homeScroll.visibility = View.GONE
         videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
 
-        filteredVideos.forEach { video ->
+        filteredVideos.take(videoRenderLimit).forEach { video ->
             videoList.addView(
                 ComposeView(this).apply {
                     setContent {
@@ -4126,6 +4144,22 @@ class MainActivity : AppCompatActivity() {
                     bottomMargin = dp(8)
                 }
             )
+        }
+        if (filteredVideos.size > videoRenderLimit) {
+            val remaining = filteredVideos.size - videoRenderLimit
+            videoList.addView(label("LOAD MORE VIDEOS  ·  $remaining REMAINING", 12f, Color.rgb(231, 210, 255), true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(18), dp(15), dp(18), dp(15))
+                background = roundedBackground(Color.rgb(54, 33, 76), 16).apply {
+                    setStroke(dp(1), Color.rgb(169, 118, 216))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    videoRenderLimit += 60
+                    renderVideos(query)
+                }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
         }
     }
 
