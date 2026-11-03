@@ -37,7 +37,7 @@ jobs:
           grep -Fq 'songRenderLimit' "$MAIN_ACTIVITY"
           grep -Fq 'videoRenderLimit' "$MAIN_ACTIVITY"
           grep -Fq 'MediaStore returned no music cursor' "$MAIN_ACTIVITY"
-          grep -Fq 'Keep the last good library intact' "$MAIN_ACTIVITY"
+          grep -Fq 'Your existing library was kept' "$MAIN_ACTIVITY"
           grep -Fq 'handleIncomingMediaIntent' "$MAIN_ACTIVITY"
           grep -Fq 'android:mimeType="audio/*"' "$MANIFEST"
           grep -Fq 'android:mimeType="video/*"' "$MANIFEST"
