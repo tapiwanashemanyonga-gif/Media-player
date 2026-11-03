@@ -1,0 +1,22 @@
+name: Upgrade idea
+description: Suggest a new feature for A1 FAMILY MEDIA.
+title: "[IDEA] "
+labels: ["upgrade idea"]
+body:
+  - type: markdown
+    attributes:
+      value: Share one clear feature idea. Please do not include private information.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like A1 FAMILY MEDIA to do?
+      description: Explain the feature and how it would help.
+      placeholder: I would like the app to...
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: Why would this be useful?
+    validations:
+      required: false
