@@ -372,6 +372,23 @@ class MainActivity : AppCompatActivity() {
         if (bold) setTypeface(typeface, Typeface.BOLD)
     }
 
+    private fun applyButtonFeedback(view: View) {
+        if (view.isClickable || view.isFocusable) {
+            val mask = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(16).toFloat()
+            }
+            view.foreground = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(72, 205, 160, 255)),
+                null,
+                mask
+            )
+        }
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) applyButtonFeedback(view.getChildAt(index))
+        }
+    }
+
     private fun roundedBackground(
         color: Int,
         radiusDp: Int
@@ -383,9 +400,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildScreen() {
+        val screenWidthDp = resources.configuration.screenWidthDp
+        val compactLayout = screenWidthDp < 420
+        val narrowPhoneLayout = screenWidthDp < 360
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(10))
+            setPadding(dp(if (compactLayout) 12 else 18), dp(if (compactLayout) 10 else 14), dp(if (compactLayout) 12 else 18), dp(8))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(13, 8, 23), Color.rgb(24, 13, 39), Color.rgb(12, 10, 22))
@@ -416,13 +436,15 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(2), 0, 0)
         })
         header.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("●  LOCAL LIBRARY", 9f, Color.rgb(210, 190, 232), true).apply {
-            letterSpacing = 0.06f
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(Color.rgb(39, 24, 58), 18).apply {
-                setStroke(dp(1), Color.rgb(83, 56, 115))
-            }
-        })
+        if (!narrowPhoneLayout) {
+            header.addView(label("●  LOCAL LIBRARY", 9f, Color.rgb(210, 190, 232), true).apply {
+                letterSpacing = 0.06f
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedBackground(Color.rgb(39, 24, 58), 18).apply {
+                    setStroke(dp(1), Color.rgb(83, 56, 115))
+                }
+            })
+        }
 
         root.addView(header)
 
@@ -477,10 +499,14 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        titleRow.addView(
-            label("Your library", 24f, Color.rgb(250, 247, 255), true),
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
+        val libraryTitle = label("Your library", if (narrowPhoneLayout) 22f else 24f, Color.rgb(250, 247, 255), true)
+        if (narrowPhoneLayout) {
+            titleRow.orientation = LinearLayout.VERTICAL
+            titleRow.gravity = Gravity.START
+            titleRow.addView(libraryTitle, LinearLayout.LayoutParams(-1, -2))
+        } else {
+            titleRow.addView(libraryTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        }
 
         libraryCount = label(
             "0 tracks in your collection",
@@ -489,7 +515,8 @@ class MainActivity : AppCompatActivity() {
             // KIVORA_ROUND17_LIBRARY_COUNT_BADGE
         ).apply { setPadding(dp(10), dp(6), dp(10), dp(6)); background = roundedBackground(Color.rgb(55, 27, 79), 14).apply { setStroke(dp(1), Color.rgb(192, 132, 252)) } }
 
-        libraryCount.gravity = Gravity.CENTER
+        libraryCount.gravity = if (narrowPhoneLayout) Gravity.START else Gravity.CENTER
+        if (narrowPhoneLayout) libraryCount.setPadding(0, dp(5), 0, dp(2))
         titleRow.addView(libraryCount)
         libraryHeader.addView(titleRow)
 
@@ -781,7 +808,11 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
         }
 
-        val artworkSize = (resources.configuration.screenWidthDp - 86).coerceIn(160, 460)
+        val artworkSize = if (compactLayout) {
+            (screenWidthDp - if (narrowPhoneLayout) 76 else 104).coerceIn(if (narrowPhoneLayout) 132 else 148, 228)
+        } else {
+            (screenWidthDp - 86).coerceIn(160, 460)
+        }
         val artworkFrame = android.widget.FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
             background = android.graphics.drawable.GradientDrawable(
@@ -810,7 +841,7 @@ class MainActivity : AppCompatActivity() {
 
         nowTitle = label(
             "Choose a song",
-            if (resources.configuration.screenWidthDp >= 600) 32f else 28f,
+            if (screenWidthDp >= 600) 32f else if (compactLayout) 24f else 28f,
             Color.rgb(255, 252, 255),
             true
         ).apply {
@@ -831,7 +862,7 @@ class MainActivity : AppCompatActivity() {
 
         nowArtist = label(
             "Your library is ready",
-            if (resources.configuration.screenWidthDp >= 600) 17f else 16f,
+            if (screenWidthDp >= 600) 17f else if (compactLayout) 14f else 16f,
             Color.rgb(211, 190, 235)
         ).apply {
             gravity = Gravity.CENTER
@@ -1144,9 +1175,9 @@ class MainActivity : AppCompatActivity() {
         playbackModes.addView(shuffleButton, transportParams())
         playbackModes.addView(repeatButton, transportParams())
         playerCard.addView(playbackModes)
-        val availableCardWidth = (resources.configuration.screenWidthDp - 76).coerceAtLeast(180)
-        playerCard.addView(sessionActions, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(480)), -2))
-        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(dp(availableCardWidth.coerceAtMost(600)), -2))
+        // Use measured card width so compact phones, split-screen and display scaling fit.
+        playerCard.addView(sessionActions, LinearLayout.LayoutParams(-1, -2))
+        playerCard.addView(playerShortcuts, LinearLayout.LayoutParams(-1, -2))
 
         playerScroll = ScrollView(this).apply {
             clipToPadding = false
@@ -1277,6 +1308,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(68))
         )
         setContentView(root)
+        applyButtonFeedback(root)
 
         searchBox.addTextChangedListener(
             object : android.text.TextWatcher {
@@ -1887,12 +1919,25 @@ class MainActivity : AppCompatActivity() {
         )
 
         // KIVORA_ROUND18_FAVOURITES_BORDER
-        favoriteFilterButton.background = roundedBackground(
-            if (showFavoritesOnly) Color.rgb(55, 40, 65) else Color.rgb(56, 34, 78),
-            18
-        ).apply {
-            setStroke(dp(2), if (showFavoritesOnly) Color.rgb(250, 204, 21) else Color.rgb(192, 132, 252))
+        favoriteFilterButton.background = if (showFavoritesOnly) {
+            android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(91, 65, 12), Color.rgb(56, 42, 15), Color.rgb(39, 29, 13))
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(2), Color.rgb(250, 204, 21))
+            }
+        } else {
+            android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(62, 37, 91), Color.rgb(37, 24, 55))
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.rgb(160, 112, 205))
+            }
         }
+        favoriteFilterButton.elevation = dp(if (showFavoritesOnly) 5 else 2).toFloat()
+        favoriteFilterButton.alpha = 1f
     }
 
     private fun toggleFavorite(song: Song) {
@@ -2987,18 +3032,7 @@ class MainActivity : AppCompatActivity() {
                 }
             )
 
-            // Keep the iframe banner inside the scrolling song list, never over playback controls.
-            val afterFirstFour = songIndex == 3
-            val beforeLastFour = visibleSongs.size > 50 && songIndex == visibleSongs.size - 5
-            if (afterFirstFour || beforeLastFour) {
-                songList.addView(
-                    AdsterraSongListBanner.create(this),
-                    LinearLayout.LayoutParams(-1, -2).apply {
-                        topMargin = dp(2)
-                        bottomMargin = dp(4)
-                    }
-                )
-            }
+            // Library remains ad-free; no sponsored rows interrupt browsing.
         }
     }
 
