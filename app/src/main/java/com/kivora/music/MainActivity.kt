@@ -1398,6 +1398,8 @@ class MainActivity : AppCompatActivity() {
                     count: Int
                 ) {
                     searchQuery = s?.toString().orEmpty()
+                    songRenderLimit = 80
+                    videoRenderLimit = 60
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                     if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
