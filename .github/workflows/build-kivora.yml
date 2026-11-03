@@ -21,15 +21,17 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Verify media safety, performance and ad-free safeguards
+      - name: Verify media safety, performance and Native Banner integration
         shell: bash
         run: |
           set -euo pipefail
           MAIN_ACTIVITY="app/src/main/java/com/kivora/music/MainActivity.kt"
           MANIFEST="app/src/main/AndroidManifest.xml"
           GRADLE_FILE="app/build.gradle.kts"
+          AD_FILE="app/src/main/java/com/kivora/music/AdsterraSongListBanner.kt"
           test -s "$MAIN_ACTIVITY"
           test -s "$MANIFEST"
+          test -s "$AD_FILE"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoThumbnailCache' "$MAIN_ACTIVITY"
@@ -42,11 +44,14 @@ jobs:
           grep -Fq 'android:mimeType="audio/*"' "$MANIFEST"
           grep -Fq 'android:mimeType="video/*"' "$MANIFEST"
           grep -Fq 'android:name=".KivoraPlaybackService"' "$MANIFEST"
-          if grep -Eiq 'com\\.startapp|StartAppSDK|AdsterraSongListBanner|asiafilm\\.org/4/|bancadeltempoidea\\.org' "$GRADLE_FILE" app/src/main; then
-            echo "Unexpected in-app advertising code or SDK found."
+          grep -Fq 'https://bancadeltempoidea.org/21/0304c09311629f5e78df4f92df9e242b' "$AD_FILE"
+          grep -Fq 'container-0304c09311629f5e78df4f92df9e242b' "$AD_FILE"
+          grep -Fq 'AdsterraSongListBanner.create(this)' "$MAIN_ACTIVITY"
+          if grep -Eiq 'com\\.startapp|StartAppSDK|asiafilm\\.org/4/' "$GRADLE_FILE" app/src/main; then
+            echo "Unexpected legacy advertising SDK or Smartlink found."
             exit 1
           fi
-          echo "Media performance, file handling and ad-free checks passed."
+          echo "Media performance, file handling and Native Banner checks passed."
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
