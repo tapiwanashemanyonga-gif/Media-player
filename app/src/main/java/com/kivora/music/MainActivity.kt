@@ -94,6 +94,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var libraryCount: TextView
     private lateinit var favoriteFilterButton: TextView
     private lateinit var playlistButton: TextView
+    private lateinit var allSongsButton: TextView
     private lateinit var libraryHeader: LinearLayout
     private lateinit var libraryVisibilityToggle: TextView
     private var libraryControlsVisible = true
@@ -604,63 +605,46 @@ class MainActivity : AppCompatActivity() {
         titleRow.addView(libraryCount)
         libraryHeader.addView(titleRow)
 
-        playlistButton = label(
-            "♫   ALL SONGS  ·  PLAYLISTS",
-            13f,
-            Color.rgb(216, 180, 254),
-            true
-        ).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            // KIVORA_ROUND19_PLAYLIST_BUTTON
-            background = roundedBackground(Color.rgb(42, 25, 64), 16).apply { setStroke(dp(1), Color.rgb(119, 78, 159)) }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                showPlaylistMenu()
-            }
-        }
-
-        favoriteFilterButton = label(
-            "☆  SHOW FAVOURITES ONLY",
-            13f,
-            Color.rgb(216, 180, 254),
-            true
-        ).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = roundedBackground(Color.rgb(28, 20, 40), 16).apply { setStroke(dp(1), Color.rgb(74, 54, 96)) }
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                showFavoritesOnly = !showFavoritesOnly
-
-                if (showFavoritesOnly) {
-                    selectedPlaylist = null
-                    updatePlaylistButton()
+        fun collectionButton(text: String, description: String, onClick: () -> Unit) =
+            label(text, if (narrowPhoneLayout) 9f else 10f, Color.rgb(232, 213, 255), true).apply {
+                gravity = Gravity.CENTER
+                minHeight = dp(48)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(4), dp(10), dp(4), dp(10))
+                background = android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.rgb(62, 39, 88), Color.rgb(35, 23, 52))
+                ).apply {
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(1), Color.rgb(151, 105, 190))
                 }
-
-                updateFavoriteFilterButton()
-                renderSongs(searchBox.text?.toString().orEmpty())
+                isClickable = true
+                isFocusable = true
+                contentDescription = description
+                setOnClickListener { onClick() }
             }
+
+        allSongsButton = collectionButton("♫  ALL SONGS", "Show all songs", ::showAllSongs)
+        playlistButton = collectionButton("▤  PLAYLISTS", "Open playlists", ::showPlaylistMenu)
+        favoriteFilterButton = collectionButton("☆  FAVOURITES", "Toggle favourite songs") {
+            showFavoritesOnly = !showFavoritesOnly
+            if (showFavoritesOnly) {
+                selectedPlaylist = null
+                updatePlaylistButton()
+            }
+            updateFavoriteFilterButton()
+            renderSongs(searchBox.text?.toString().orEmpty())
         }
 
         val collectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(14), 0, 0)
+            setPadding(0, dp(12), 0, 0)
         }
-        playlistButton.textSize = 11f
-        playlistButton.setPadding(dp(7), dp(13), dp(7), dp(13))
-        favoriteFilterButton.textSize = 11f
-        favoriteFilterButton.setPadding(dp(7), dp(13), dp(7), dp(13))
-        collectionActions.addView(playlistButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
-            rightMargin = dp(5)
-        })
-        collectionActions.addView(favoriteFilterButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
-            leftMargin = dp(5)
-        })
+        collectionActions.addView(allSongsButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { rightMargin = dp(4) })
+        collectionActions.addView(playlistButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(2); rightMargin = dp(2) })
+        collectionActions.addView(favoriteFilterButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(4) })
         libraryHeader.addView(collectionActions)
 
         libraryHeader.addView(
@@ -843,6 +827,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
         videoPlayerActions.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+        val stopInlineVideoButton = label("■  STOP VIDEO", 11f, Color.rgb(255, 190, 190), true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(10), dp(8), dp(10))
+            minHeight = dp(48)
+            background = roundedBackground(Color.rgb(75, 27, 39), 15).apply {
+                setStroke(dp(1), Color.rgb(180, 75, 94))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Stop and close the current video"
+            setOnClickListener { stopInlineVideo() }
+        }
+        videoPlayerActions.addView(stopInlineVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
 
         // Keep the video list last so its weight fills the space below the player and controls.
         videoPlaceholder.removeView(videoPlayerActions)
@@ -1994,12 +1991,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateFavoriteFilterButton() {
         if (!::favoriteFilterButton.isInitialized) return
 
-        favoriteFilterButton.text =
-            if (showFavoritesOnly) {
-                "★  SHOWING FAVOURITES — TAP TO SHOW ALL"
-            } else {
-                "☆  SHOW FAVOURITES ONLY"
-            }
+        favoriteFilterButton.text = if (showFavoritesOnly) "★  FAVOURITES ON" else "☆  FAVOURITES"
 
         favoriteFilterButton.setTextColor(
             if (showFavoritesOnly) {
@@ -2029,6 +2021,7 @@ class MainActivity : AppCompatActivity() {
         }
         favoriteFilterButton.elevation = dp(if (showFavoritesOnly) 5 else 2).toFloat()
         favoriteFilterButton.alpha = 1f
+        favoriteFilterButton.minHeight = dp(48)
     }
 
     private fun toggleFavorite(song: Song) {
@@ -2114,19 +2107,23 @@ class MainActivity : AppCompatActivity() {
         return playlists[name].orEmpty().mapNotNull { songsByUri[it] }
     }
 
+    private fun showAllSongs() {
+        selectedPlaylist = null
+        showFavoritesOnly = false
+        selectedAlbumKey = null
+        selectedArtistName = null
+        libraryBrowseMode = "songs"
+        updateFavoriteFilterButton()
+        updatePlaylistButton()
+        updateLibraryBrowseButtons()
+        renderSongs(searchBox.text?.toString().orEmpty())
+    }
+
     private fun updatePlaylistButton() {
         if (!::playlistButton.isInitialized) return
-
-        playlistButton.text = selectedPlaylist?.let { name ->
-            "♫  $name  ·  TAP TO CHANGE PLAYLIST"
-        } ?: "♫  ALL SONGS  ·  PLAYLISTS"
-
+        playlistButton.text = if (selectedPlaylist != null) "▤  PLAYLIST: " + selectedPlaylist else "▤  PLAYLISTS"
         playlistButton.setTextColor(
-            if (selectedPlaylist != null) {
-                Color.rgb(250, 204, 21)
-            } else {
-                Color.rgb(216, 180, 254)
-            }
+            if (selectedPlaylist != null) Color.rgb(250, 204, 21) else Color.rgb(232, 213, 255)
         )
     }
 
@@ -4314,6 +4311,24 @@ class MainActivity : AppCompatActivity() {
         } finally {
             document.close()
         }
+    }
+
+    private fun stopInlineVideo() {
+        videoPlayer?.apply {
+            playWhenReady = false
+            pause()
+            stop()
+            clearMediaItems()
+        }
+        selectedVideoUri = null
+        navigationVideoUri = null
+        lastFailedVideoUri = null
+        videoPlayerView.visibility = View.GONE
+        videoPlaceholder.findViewWithTag<View>("video_player_actions")?.visibility = View.GONE
+        videoStatus.text = "Video stopped. Choose another video to play."
+        videoStatus.visibility = View.VISIBLE
+        renderVideos(searchBox.text?.toString().orEmpty())
+        Toast.makeText(this, "Video stopped.", Toast.LENGTH_SHORT).show()
     }
 
     private fun playDeviceVideo(video: DeviceVideo): Boolean {
