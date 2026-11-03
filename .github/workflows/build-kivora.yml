@@ -11,7 +11,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
@@ -137,3 +137,20 @@ jobs:
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish public GitHub release for the website
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.5
+          name: A1 FAMILY MEDIA 1.5
+          body: |
+            Official A1 FAMILY MEDIA Android release 1.5.
+
+            - Local music and video playback
+            - Performance and responsive layout improvements
+            - Separate song-list and Home dashboard Adsterra banner placements
+          files: app/build/outputs/apk/release/app-release.apk
+          asset_name: A1-Family-Media.apk
+          overwrite_files: true
+          make_latest: true
