@@ -854,7 +854,12 @@ class MainActivity : AppCompatActivity() {
         playerCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(20), dp(20), dp(18))
+            setPadding(
+                dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20),
+                dp(if (compactLayout) 14 else 20),
+                dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20),
+                dp(18)
+            )
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(
