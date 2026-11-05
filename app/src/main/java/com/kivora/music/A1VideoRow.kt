@@ -2,9 +2,12 @@ package com.kivora.music
 
 import android.widget.ImageView
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,32 +40,44 @@ fun A1VideoRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClickLabel = "Play video $title", onClick = onPlay),
-        color = Color(0xFF1E152B),
-        shape = RoundedCornerShape(18.dp),
+        color = if (isSelected) Color(0xFF30203F) else Color(0xFF21172F),
+        shape = RoundedCornerShape(17.dp),
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) Color(0xFFAD73EC) else Color(0xFF453059)
+            color = if (isSelected) Color(0xFFD0A2FF) else Color(0xFF49345F)
         ),
-        tonalElevation = if (isSelected) 3.dp else 1.dp
+        tonalElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(9.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(11.dp)
         ) {
-            AndroidView(
-                factory = { context ->
-                    ImageView(context).apply {
-                        setImageResource(android.R.drawable.ic_media_play)
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                        clipToOutline = true
-                        onThumbnailReady(this)
-                    }
-                },
+            Box(
                 modifier = Modifier
-                    .size(width = 104.dp, height = 72.dp)
+                    .size(width = 100.dp, height = 70.dp)
                     .clip(RoundedCornerShape(12.dp))
-            )
+                    .background(Color(0xFF39264B)),
+                contentAlignment = Alignment.Center
+            ) {
+                AndroidView(
+                    factory = { context ->
+                        ImageView(context).apply {
+                            setImageResource(android.R.drawable.ic_media_play)
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            clipToOutline = true
+                            onThumbnailReady(this)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                Icon(
+                    imageVector = Icons.Filled.PlayCircle,
+                    contentDescription = null,
+                    tint = Color(0xFFEBD9FF),
+                    modifier = Modifier.size(30.dp)
+                )
+            }
 
             androidx.compose.foundation.layout.Column(
                 modifier = Modifier.weight(1f)
@@ -70,25 +85,18 @@ fun A1VideoRow(
                 Text(
                     text = title,
                     color = Color(0xFFFAF7FF),
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = duration,
-                    color = Color(0xFFBEAFD2),
-                    fontSize = 12.sp,
+                    color = Color(0xFFC5B4D7),
+                    fontSize = 11.sp,
                     modifier = Modifier.padding(top = 5.dp)
                 )
             }
-
-            Icon(
-                imageVector = Icons.Filled.PlayCircle,
-                contentDescription = "Play $title",
-                tint = Color(0xFFD8B4FE),
-                modifier = Modifier.size(34.dp)
-            )
         }
     }
 }
