@@ -293,6 +293,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        InstallAnalytics.recordFirstLaunch(this)
 
         window.statusBarColor = Color.rgb(13, 8, 23)
         window.navigationBarColor = Color.rgb(13, 8, 23)
