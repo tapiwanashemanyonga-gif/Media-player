@@ -45,8 +45,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
@@ -4446,6 +4448,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
+    @OptIn(UnstableApi::class)
     private fun showVideoFullscreen() {
         if (videoPlayer?.currentMediaItem == null) return
         if (fullscreenVideoDialog?.isShowing == true) return
@@ -4521,8 +4524,24 @@ class MainActivity : AppCompatActivity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(12), 0, dp(8), 0)
         }
+        val subtitlesButton = control("CC", "Choose embedded subtitle track") {
+            val activePlayer = videoPlayer
+            if (activePlayer == null) {
+                Toast.makeText(this, "Video player is unavailable.", Toast.LENGTH_SHORT).show()
+            } else if (activePlayer.currentTracks.groups.none { it.type == C.TRACK_TYPE_TEXT }) {
+                Toast.makeText(this, "This video has no embedded subtitles.", Toast.LENGTH_SHORT).show()
+            } else {
+                TrackSelectionDialogBuilder(
+                    this,
+                    "Subtitles",
+                    activePlayer,
+                    C.TRACK_TYPE_TEXT
+                ).setShowDisableOption(true).build().show()
+            }
+        }
         topControls.addView(backButton)
         topControls.addView(currentTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        topControls.addView(subtitlesButton)
         topControls.addView(menuButton)
         topControls.addView(closeVideoButton)
         controls.addView(topControls)
