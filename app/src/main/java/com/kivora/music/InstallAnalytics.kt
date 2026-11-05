@@ -51,7 +51,13 @@ object InstallAnalytics {
                 }
                 val status = connection.responseCode
                 if (status in 200..299) {
-                    preferences.edit().putBoolean(SENT, true).apply()
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    val accepted = JSONObject(response).optBoolean("ok", false)
+                    if (accepted) {
+                        preferences.edit().putBoolean(SENT, true).apply()
+                    } else {
+                        Log.w(TAG, "Analytics endpoint did not accept the installation event")
+                    }
                 } else {
                     Log.w(TAG, "Analytics endpoint returned HTTP $status")
                 }
