@@ -115,6 +115,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoStatus: TextView
     private lateinit var videoPlayerView: PlayerView
     private lateinit var customizationStore: A1CustomizationStore
+    private var pendingTrackMemorySong: Song? = null
+    private val trackMemoryPhotoPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val song = pendingTrackMemorySong
+        pendingTrackMemorySong = null
+        if (uri != null && song != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val key = song.uri.toString()
+            val existing = customizationStore.loadTrackMemory(key)
+            customizationStore.saveTrackMemory(key, existing.copy(photoUri = uri.toString()))
+            Toast.makeText(this, "Photo attached to this song's memory.", Toast.LENGTH_SHORT).show()
+            openTrackMemoryDialog(song)
+        }
+    }
     private var customization by mutableStateOf(A1CustomizationSettings())
     private var appRoot: LinearLayout? = null
     private var videoPlayer: ExoPlayer? = null
@@ -4048,7 +4063,15 @@ class MainActivity : AppCompatActivity() {
         content.addView(label("MOOD", 10f, Color.rgb(190, 160, 220), true))
         content.addView(moodInput, LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(10) })
         content.addView(label("PERSONAL NOTE", 10f, Color.rgb(190, 160, 220), true))
-        content.addView(noteInput, LinearLayout.LayoutParams(-1, dp(116)))
+        content.addView(noteInput, LinearLayout.LayoutParams(-1, dp(116)).apply { bottomMargin = dp(8) })
+        content.addView(
+            label(
+                if (saved.photoUri != null) "PHOTO ATTACHED · STORED ON THIS DEVICE" else "OPTIONAL PHOTO · STORED ON THIS DEVICE",
+                10f,
+                Color.rgb(190, 160, 220),
+                true
+            )
+        )
         AlertDialog.Builder(this)
             .setTitle("Your memory · ${song.title}")
             .setView(content)
@@ -4057,16 +4080,28 @@ class MainActivity : AppCompatActivity() {
                     key,
                     A1TrackMemory(
                         note = noteInput.text?.toString().orEmpty().trim(),
-                        mood = moodInput.text?.toString().orEmpty().trim()
+                        mood = moodInput.text?.toString().orEmpty().trim(),
+                        photoUri = saved.photoUri
                     )
                 )
                 Toast.makeText(this, "Track memory saved on this device.", Toast.LENGTH_SHORT).show()
             }
-            .setNeutralButton("Clear") { _, _ ->
+            .setNeutralButton(if (saved.photoUri != null) "Change photo" else "Attach photo") { _, _ ->
+                customizationStore.saveTrackMemory(
+                    key,
+                    A1TrackMemory(
+                        note = noteInput.text?.toString().orEmpty().trim(),
+                        mood = moodInput.text?.toString().orEmpty().trim(),
+                        photoUri = saved.photoUri
+                    )
+                )
+                pendingTrackMemorySong = song
+                trackMemoryPhotoPicker.launch(arrayOf("image/*"))
+            }
+            .setNegativeButton("Clear") { _, _ ->
                 customizationStore.saveTrackMemory(key, A1TrackMemory())
                 Toast.makeText(this, "Track memory cleared.", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancel", null)
             .show()
     }
 
