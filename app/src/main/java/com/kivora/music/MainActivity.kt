@@ -1482,6 +1482,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(68))
         )
         setContentView(root)
+        applyCustomizationWallpaper()
         applyButtonFeedback(root)
 
         searchBox.addTextChangedListener(
@@ -2801,6 +2802,7 @@ class MainActivity : AppCompatActivity() {
                 minWidth = dp(48)
                 minHeight = dp(48)
                 setOnClickListener {
+                    hexInput.setText(String.format("#%06X", 0xFFFFFF and color))
                     persistCustomization(customization.copy(accentArgb = color))
                 }
             }, LinearLayout.LayoutParams(0, dp(48), 1f))
@@ -4194,6 +4196,10 @@ class MainActivity : AppCompatActivity() {
             miniPlayButton.contentDescription = if (player?.isPlaying == true) "Pause playback" else "Start playback"
         }
         playButton.setTextColor(Color.WHITE)
+        playButton.background = roundedBackground(customization.accentArgb, 18)
+        if (::miniPlayButton.isInitialized) {
+            miniPlayButton.background = roundedBackground(customization.accentArgb, 16)
+        }
     }
 
     private fun updateShuffleButton() {
@@ -4201,7 +4207,7 @@ class MainActivity : AppCompatActivity() {
 
         shuffleButton.setTextColor(
             if (player?.shuffleModeEnabled == true) {
-                Color.rgb(196, 145, 255)
+                customization.accentArgb
             } else {
                 Color.rgb(174, 159, 194)
             }
