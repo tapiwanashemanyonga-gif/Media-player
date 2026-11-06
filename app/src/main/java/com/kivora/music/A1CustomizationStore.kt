@@ -24,6 +24,13 @@ data class A1CustomizationSettings(
     }
 }
 
+data class A1ThemeProfile(
+    val name: String,
+    val accentArgb: Int,
+    val secondaryAccentArgb: Int,
+    val wallpaperUri: String? = null
+)
+
 data class A1TrackMemory(
     val note: String = "",
     val mood: String = "",
@@ -84,6 +91,41 @@ class A1CustomizationStore(context: Context) {
             .putString(KEY_SKIN, safeSkin)
             .putString(KEY_PINS, JSONArray(settings.pinnedShortcuts.distinct().take(MAX_PINS)).toString())
             .apply()
+    }
+
+    fun saveThemeProfile(profile: A1ThemeProfile) {
+        val name = profile.name.trim().take(40)
+        require(name.isNotBlank()) { "Give this theme a name." }
+        val profiles = readObject(KEY_THEME_PROFILES)
+        profiles.put(name, JSONObject().apply {
+            put("accent", profile.accentArgb)
+            put("secondary", profile.secondaryAccentArgb)
+            put("wallpaperUri", profile.wallpaperUri)
+        })
+        preferences.edit().putString(KEY_THEME_PROFILES, profiles.toString()).apply()
+    }
+
+    fun loadThemeProfiles(): List<A1ThemeProfile> {
+        val profiles = readObject(KEY_THEME_PROFILES)
+        val keys = profiles.keys()
+        val result = mutableListOf<A1ThemeProfile>()
+        while (keys.hasNext()) {
+            val name = keys.next()
+            val item = profiles.optJSONObject(name) ?: continue
+            result += A1ThemeProfile(
+                name = name,
+                accentArgb = item.optInt("accent", 0xFFD0A2FF.toInt()),
+                secondaryAccentArgb = item.optInt("secondary", 0xFF765397.toInt()),
+                wallpaperUri = item.optString("wallpaperUri").takeIf { it.isNotBlank() && it != "null" }
+            )
+        }
+        return result.sortedBy { it.name.lowercase() }
+    }
+
+    fun deleteThemeProfile(name: String) {
+        val profiles = readObject(KEY_THEME_PROFILES)
+        profiles.remove(name)
+        preferences.edit().putString(KEY_THEME_PROFILES, profiles.toString()).apply()
     }
 
     fun saveTrackMemory(uri: String, memory: A1TrackMemory) {
@@ -164,6 +206,7 @@ class A1CustomizationStore(context: Context) {
         private const val KEY_SKIN = "visualizer_skin"
         private const val KEY_PINS = "pinned_shortcuts"
         private const val KEY_TRACK_MEMORIES = "track_memories"
+        private const val KEY_THEME_PROFILES = "theme_profiles"
         private const val KEY_EQ_PROFILES = "equalizer_profiles"
         private const val KEY_FOLDER_TAGS = "folder_tags"
         private const val MAX_PINS = 12
