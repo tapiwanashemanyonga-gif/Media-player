@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -20,12 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val A1Background = Color(0xFF171020)
-private val A1Purple = Color(0xFFC084FC)
+private val A1Purple = Color(0xFFD0A2FF)
 private val A1Muted = Color(0xFFB8A7C9)
 
 @Composable
@@ -36,7 +38,7 @@ fun A1NavigationBar(
     val scheme = darkColorScheme(
         primary = A1Purple,
         onPrimary = Color.White,
-        secondary = Color(0xFFD6B7FF),
+        secondary = Color(0xFFE2C7FF),
         background = A1Background,
         surface = Color(0xFF21182D),
         onSurface = Color.White
@@ -48,7 +50,11 @@ fun A1NavigationBar(
                 contentAlignment = Alignment.Center
             ) {
                 NavigationBar(
-                    modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth().height(68.dp),
+                    modifier = Modifier
+                        .widthIn(max = 760.dp)
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .clip(RoundedCornerShape(topStart = 21.dp, topEnd = 21.dp)),
                     containerColor = Color(0xFF21182D),
                     contentColor = Color.White,
                     tonalElevation = 0.dp
@@ -73,7 +79,7 @@ fun A1NavigationBar(
                             label = {
                                 Text(
                                     text = label,
-                                    fontSize = 11.sp
+                                    fontSize = 10.sp
                                 )
                             },
                             alwaysShowLabel = true,

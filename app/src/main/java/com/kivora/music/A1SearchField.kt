@@ -1,6 +1,7 @@
 package com.kivora.music
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,11 +17,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -32,19 +33,22 @@ fun A1SearchField(
     query: String,
     onQueryChange: (String) -> Unit
 ) {
+    val shape = RoundedCornerShape(17.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .background(Color(0xFF1F152F), RoundedCornerShape(18.dp))
-            .padding(horizontal = 16.dp),
+            .height(54.dp)
+            .clip(shape)
+            .background(Color(0xFF21172F))
+            .border(1.dp, Color(0xFF49345F), shape)
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(11.dp)
     ) {
         Icon(
             imageVector = Icons.Filled.Search,
             contentDescription = "Search",
-            tint = Color(0xFFC4A5E8)
+            tint = Color(0xFFD0A2FF)
         )
 
         Box(modifier = Modifier.weight(1f)) {
@@ -55,7 +59,7 @@ fun A1SearchField(
                 singleLine = true,
                 textStyle = TextStyle(
                     color = Color(0xFFFAF7FF),
-                    fontSize = 15.sp
+                    fontSize = 14.sp
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {}),
@@ -64,8 +68,8 @@ fun A1SearchField(
                         if (query.isEmpty()) {
                             Text(
                                 text = "Search songs, artists and albums",
-                                color = Color(0xFFAB97C4),
-                                fontSize = 14.sp
+                                color = Color(0xFFB7A5CA),
+                                fontSize = 13.sp
                             )
                         }
                         innerTextField()

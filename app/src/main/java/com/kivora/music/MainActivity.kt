@@ -45,8 +45,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
@@ -535,8 +537,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildScreen() {
         val screenWidthDp = resources.configuration.screenWidthDp
+        val screenHeightDp = resources.configuration.screenHeightDp
         val compactLayout = screenWidthDp < 420
         val narrowPhoneLayout = screenWidthDp < 360
+        // Short screens (including landscape phones and split-screen) need a denser player.
+        val compactPlayerLayout = screenHeightDp < 700
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(if (compactLayout) 12 else 18), dp(if (compactLayout) 10 else 14), dp(if (compactLayout) 12 else 18), dp(8))
@@ -902,9 +907,9 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(
                 dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20),
-                dp(if (compactLayout) 14 else 20),
+                dp(if (compactPlayerLayout) 10 else if (compactLayout) 14 else 20),
                 dp(if (narrowPhoneLayout) 12 else if (compactLayout) 16 else 20),
-                dp(18)
+                dp(if (compactPlayerLayout) 10 else 18)
             )
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
@@ -943,11 +948,16 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
         }
 
-        val artworkSize = if (compactLayout) {
+        val widthBasedArtworkSize = if (compactLayout) {
             (screenWidthDp - if (narrowPhoneLayout) 76 else 104).coerceIn(if (narrowPhoneLayout) 132 else 148, 228)
         } else {
             (screenWidthDp - 86).coerceIn(160, 460)
         }
+        // Preserve a generous cover while ensuring the transport controls remain reachable
+        // without excessive scrolling on short displays.
+        val artworkSize = if (compactPlayerLayout) {
+            minOf(widthBasedArtworkSize, (screenHeightDp - 410).coerceIn(112, 210))
+        } else widthBasedArtworkSize
         val artworkFrame = android.widget.FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
             background = android.graphics.drawable.GradientDrawable(
@@ -970,7 +980,7 @@ class MainActivity : AppCompatActivity() {
             artworkFrame,
             LinearLayout.LayoutParams(dp(artworkSize + 10), dp(artworkSize + 10)).apply {
                 gravity = Gravity.CENTER
-                bottomMargin = dp(24)
+                bottomMargin = dp(if (compactPlayerLayout) 12 else 24)
             }
         )
 
@@ -1016,7 +1026,7 @@ class MainActivity : AppCompatActivity() {
 
         progress = SeekBar(this).apply {
             max = 1000
-            minHeight = dp(42)
+            minHeight = dp(if (compactPlayerLayout) 34 else 42)
             setPadding(dp(2), 0, dp(2), 0)
 
             progressTintList =
@@ -1075,7 +1085,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         playerCard.addView(progress, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(14)
+            topMargin = dp(if (compactPlayerLayout) 6 else 14)
         })
 
         val times = LinearLayout(this).apply {
@@ -1215,7 +1225,7 @@ class MainActivity : AppCompatActivity() {
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(14), 0, dp(4))
+            setPadding(0, dp(if (compactPlayerLayout) 7 else 14), 0, dp(4))
         }
 
         shuffleButton = control("⤨") {
@@ -4426,13 +4436,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Keep the inline player close to 16:9 while respecting phone and tablet widths. */
+    /** Keep the inline player close to 16:9 and scale it for phones, tablets and split-screen. */
     private fun videoPreviewHeight(): Int {
-        val screenWidth = resources.displayMetrics.widthPixels
-        return (screenWidth * 9f / 16f).toInt().coerceIn(dp(160), dp(240))
+        val configuration = resources.configuration
+        val screenWidthDp = configuration.screenWidthDp.coerceAtLeast(1)
+        val screenHeightDp = configuration.screenHeightDp.coerceAtLeast(1)
+        // Give tablets a larger preview, but never let video consume the whole short phone screen.
+        val maxHeightDp = (screenHeightDp * 0.42f).toInt().coerceIn(160, 380)
+        val desiredHeightDp = (screenWidthDp * 9f / 16f).toInt()
+        return dp(desiredHeightDp.coerceIn(140, maxHeightDp))
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
+    @OptIn(UnstableApi::class)
     private fun showVideoFullscreen() {
         if (videoPlayer?.currentMediaItem == null) return
         if (fullscreenVideoDialog?.isShowing == true) return
@@ -4508,8 +4524,24 @@ class MainActivity : AppCompatActivity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(12), 0, dp(8), 0)
         }
+        val subtitlesButton = control("CC", "Choose embedded subtitle track") {
+            val activePlayer = videoPlayer
+            if (activePlayer == null) {
+                Toast.makeText(this, "Video player is unavailable.", Toast.LENGTH_SHORT).show()
+            } else if (activePlayer.currentTracks.groups.none { it.type == C.TRACK_TYPE_TEXT }) {
+                Toast.makeText(this, "This video has no embedded subtitles.", Toast.LENGTH_SHORT).show()
+            } else {
+                TrackSelectionDialogBuilder(
+                    this,
+                    "Subtitles",
+                    activePlayer,
+                    C.TRACK_TYPE_TEXT
+                ).setShowDisableOption(true).build().show()
+            }
+        }
         topControls.addView(backButton)
         topControls.addView(currentTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        topControls.addView(subtitlesButton)
         topControls.addView(menuButton)
         topControls.addView(closeVideoButton)
         controls.addView(topControls)
