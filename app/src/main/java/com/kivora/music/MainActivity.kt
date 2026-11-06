@@ -1762,7 +1762,7 @@ class MainActivity : AppCompatActivity() {
                         KivoraPlaybackService.COMMAND_SET_ENABLED,
                         Bundle().apply { putBoolean(KivoraPlaybackService.KEY_ENABLED, profile.enabled) }
                     ) { updated ->
-                        applyState(updated)
+                        updateDialogState?.invoke(updated)
                         fun applyProfileBand(index: Int) {
                             if (index >= profile.levelsMillibels.size) {
                                 Toast.makeText(this@MainActivity, "${profile.name} applied.", Toast.LENGTH_SHORT).show()
@@ -1776,7 +1776,7 @@ class MainActivity : AppCompatActivity() {
                                     putInt(KivoraPlaybackService.KEY_LEVEL, level)
                                 }
                             ) { nextState ->
-                                applyState(nextState)
+                                updateDialogState?.invoke(nextState)
                                 applyProfileBand(index + 1)
                             }
                         }
