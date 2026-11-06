@@ -84,6 +84,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nowTitle: TextView
     private lateinit var nowArtist: TextView
     private lateinit var artwork: ImageView
+    private lateinit var artworkFrame: android.widget.FrameLayout
     private lateinit var miniArtwork: ImageView
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
@@ -986,7 +987,7 @@ class MainActivity : AppCompatActivity() {
         val artworkSize = if (compactPlayerLayout) {
             minOf(widthBasedArtworkSize, (screenHeightDp - 410).coerceIn(112, 210))
         } else widthBasedArtworkSize
-        val artworkFrame = android.widget.FrameLayout(this).apply {
+        artworkFrame = android.widget.FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
@@ -1011,6 +1012,7 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(if (compactPlayerLayout) 12 else 24)
             }
         )
+        applyNowPlayingSkin()
 
         nowTitle = label(
             "Choose a song",
@@ -2741,10 +2743,46 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun applyNowPlayingSkin() {
+        if (!::artworkFrame.isInitialized || !::artwork.isInitialized) return
+        val skin = customization.visualizerSkin
+        val frameShape = android.graphics.drawable.GradientDrawable().apply {
+            shape = if (skin == "vinyl") android.graphics.drawable.GradientDrawable.OVAL
+                else android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(if (skin == "cassette") 12 else 36).toFloat()
+            colors = when (skin) {
+                "vinyl" -> intArrayOf(Color.rgb(24, 22, 30), Color.rgb(79, 62, 94), Color.rgb(20, 18, 26))
+                "cassette" -> intArrayOf(Color.rgb(91, 66, 105), Color.rgb(36, 29, 47))
+                else -> intArrayOf(customization.accentArgb, customization.secondaryAccentArgb, Color.rgb(67, 43, 91))
+            }
+            orientation = android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+            setStroke(dp(if (skin == "vinyl") 3 else 2), customization.accentArgb)
+        }
+        val artworkShape = android.graphics.drawable.GradientDrawable().apply {
+            shape = if (skin == "vinyl") android.graphics.drawable.GradientDrawable.OVAL
+                else android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(if (skin == "cassette") 7 else 26).toFloat()
+            setColor(Color.rgb(52, 32, 75))
+            setStroke(dp(1), customization.secondaryAccentArgb)
+        }
+        artworkFrame.background = frameShape
+        artwork.background = artworkShape
+        artwork.clipToOutline = true
+        artworkFrame.clipToOutline = true
+        artworkFrame.setPadding(dp(if (skin == "cassette") 8 else 5), dp(if (skin == "cassette") 8 else 5),
+            dp(if (skin == "cassette") 8 else 5), dp(if (skin == "cassette") 8 else 5))
+        artworkFrame.contentDescription = when (skin) {
+            "vinyl" -> "Vinyl-style album artwork frame"
+            "cassette" -> "Cassette-style album artwork frame"
+            else -> "Wave-style album artwork frame"
+        }
+    }
+
     private fun persistCustomization(updated: A1CustomizationSettings) {
         customization = updated
         customizationStore.save(updated)
         if (::homeContent.isInitialized) renderHomeDashboard()
+        applyNowPlayingSkin()
     }
 
     private fun applyCustomizationWallpaper() {
@@ -3051,6 +3089,30 @@ class MainActivity : AppCompatActivity() {
                 val value = listOf("rounded", "soft", "square").getOrNull(position) ?: "rounded"
                 if (customization.homeCardShape != value) {
                     persistCustomization(customization.copy(homeCardShape = value))
+                }
+            }
+        }
+
+        content.addView(label("NOW PLAYING ARTWORK STYLE", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        content.addView(label("Change the frame around your current album artwork.", 11f, Color.LTGRAY))
+        val skinSpinner = android.widget.Spinner(this)
+        val skinLabels = listOf("Wave", "Vinyl", "Cassette")
+        val skinValues = listOf("wave", "vinyl", "cassette")
+        skinSpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, skinLabels
+        )
+        skinSpinner.setSelection(skinValues.indexOf(customization.visualizerSkin).coerceAtLeast(0))
+        content.addView(skinSpinner, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(4)
+        })
+        skinSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val value = skinValues.getOrNull(position) ?: "wave"
+                if (customization.visualizerSkin != value) {
+                    persistCustomization(customization.copy(visualizerSkin = value))
                 }
             }
         }
