@@ -134,7 +134,7 @@ jobs:
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: A1-Family-Media-1.8-release
+          name: A1-Family-Media-1.8-hotfix
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -146,7 +146,7 @@ jobs:
           tag_name: v1.8
           name: A1 FAMILY MEDIA 1.8
           body: |
-            Official A1 FAMILY MEDIA Android release 1.8. This release adds richer personalisation and song memories while retaining the existing local media experience.
+            A1 FAMILY MEDIA 1.8 playback hotfix. This rebuild fixes song-list advert viewport isolation so the advert cannot overlap the next song row. No app version change; existing release history is preserved.
 
             - Local music and video playback
             - Performance and responsive layout improvements
@@ -155,4 +155,5 @@ jobs:
             - First-open installation tracking through the A1 Family Cloud API
             - Existing music and video playback, file opening and background playback retained
           files: app/build/outputs/apk/release/app-release.apk
+          overwrite_files: true
           make_latest: true
