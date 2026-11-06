@@ -5207,7 +5207,7 @@ class MainActivity : AppCompatActivity() {
                     val options = arrayOf("0.5×", "0.75×", "1.0×", "1.25×", "1.5×", "1.75×", "2.0×")
                     val values = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
                     val selected = values.indexOfFirst { kotlin.math.abs(it - savedVideoSpeed()) < 0.01f }.coerceAtLeast(0)
-                    AlertDialog.Builder(this)
+                    AlertDialog.Builder(this@MainActivity)
                         .setTitle("Playback speed")
                         .setSingleChoiceItems(options, selected) { dialog, which ->
                             val chosen = values[which]
