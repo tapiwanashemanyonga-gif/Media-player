@@ -74,7 +74,7 @@ fun A1HomeHeader(
                 letterSpacing = 1.15.sp
             )
             Text(
-                "Your media.\nYour moment.",
+                "Your media.\\nYour moment.",
                 color = Color(0xFFFFFAFF),
                 fontSize = 29.sp,
                 lineHeight = 33.sp,
@@ -100,10 +100,10 @@ fun A1HomeHeader(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            HomeShortcut("Songs", "Listen", Icons.Filled.MusicNote, onBrowse, Modifier.weight(1f))
-            HomeShortcut("Albums", "Browse", Icons.Filled.Album, onAlbums, Modifier.weight(1f))
-            HomeShortcut("Artists", "Explore", Icons.Filled.Person, onArtists, Modifier.weight(1f))
-            HomeShortcut("Saved", "Favourites", Icons.Filled.Favorite, onFavourites, Modifier.weight(1f))
+            HomeShortcut("Songs", "Listen", Icons.Filled.MusicNote, onBrowse, Modifier.weight(1f), accent)
+            HomeShortcut("Albums", "Browse", Icons.Filled.Album, onAlbums, Modifier.weight(1f), accent)
+            HomeShortcut("Artists", "Explore", Icons.Filled.Person, onArtists, Modifier.weight(1f), accent)
+            HomeShortcut("Saved", "Favourites", Icons.Filled.Favorite, onFavourites, Modifier.weight(1f), accent)
         }
     }
 }
@@ -128,7 +128,8 @@ private fun HomeShortcut(
     detail: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accent: Color = Color(0xFFD0A2FF)
 ) {
     Card(
         modifier = modifier.clickable(onClick = onClick),
