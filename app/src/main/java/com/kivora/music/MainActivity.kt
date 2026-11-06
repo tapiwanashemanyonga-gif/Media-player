@@ -16,6 +16,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.LruCache
 import android.util.Size
+import android.util.TypedValue
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -43,6 +44,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -825,6 +827,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Video player"
             visibility = View.GONE
         }
+        applyCinemaSubtitleSize()
         val videoPlayerActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -4982,12 +4985,25 @@ class MainActivity : AppCompatActivity() {
         return try {
             videoPlayer?.apply {
                 setMediaItem(MediaItem.fromUri(video.uri))
+                setPlaybackParameters(PlaybackParameters(savedVideoSpeed()))
                 prepare()
                 playWhenReady = true
             } != null
         } catch (_: RuntimeException) {
             reportVideoPlaybackFailure(video.uri.toString())
             false
+        }
+    }
+
+    private fun cinemaPreferences() = getSharedPreferences("a1_cinema_preferences", MODE_PRIVATE)
+
+    private fun savedVideoSpeed(): Float = cinemaPreferences().getFloat("video_speed", 1f).coerceIn(0.5f, 2f)
+
+    private fun savedSubtitleTextSize(): Int = cinemaPreferences().getInt("subtitle_text_size_sp", 22).coerceIn(16, 36)
+
+    private fun applyCinemaSubtitleSize() {
+        if (::videoPlayerView.isInitialized) {
+            videoPlayerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, savedSubtitleTextSize().toFloat())
         }
     }
 
@@ -5175,6 +5191,90 @@ class MainActivity : AppCompatActivity() {
 
         fun refreshMenu() {
             menuPanel.removeAllViews()
+            val speed = savedVideoSpeed()
+            val speedRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            speedRow.addView(label("PLAYBACK SPEED", 12f, Color.rgb(190, 160, 220), true), LinearLayout.LayoutParams(0, dp(48), 1f))
+            speedRow.addView(label("${speed}×  CHANGE", 13f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBackground(Color.rgb(67, 42, 89), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    val options = arrayOf("0.5×", "0.75×", "1.0×", "1.25×", "1.5×", "1.75×", "2.0×")
+                    val values = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+                    val selected = values.indexOfFirst { kotlin.math.abs(it - savedVideoSpeed()) < 0.01f }.coerceAtLeast(0)
+                    AlertDialog.Builder(this)
+                        .setTitle("Playback speed")
+                        .setSingleChoiceItems(options, selected) { dialog, which ->
+                            val chosen = values[which]
+                            cinemaPreferences().edit().putFloat("video_speed", chosen).apply()
+                            videoPlayer?.setPlaybackParameters(PlaybackParameters(chosen))
+                            dialog.dismiss()
+                            refreshMenu()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            })
+            menuPanel.addView(speedRow)
+            menuPanel.addView(label("SUBTITLE APPEARANCE", 12f, Color.rgb(190, 160, 220), true).apply {
+                setPadding(dp(4), dp(8), dp(4), dp(4))
+            })
+            val subtitleRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            subtitleRow.addView(label("Adjust subtitle size", 13f, Color.WHITE), LinearLayout.LayoutParams(0, dp(44), 1f))
+            subtitleRow.addView(label("Aa  ADJUST", 13f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(9), dp(12), dp(9))
+                background = roundedBackground(Color.rgb(67, 42, 89), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    val currentSize = savedSubtitleTextSize()
+                    val sizeBar = SeekBar(this@MainActivity).apply {
+                        max = 20
+                        progress = currentSize - 16
+                    }
+                    val preview = label("Subtitle preview · ${currentSize}sp", currentSize.toFloat(), Color.WHITE, true).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(dp(8), dp(12), dp(8), dp(12))
+                        background = roundedBackground(Color.rgb(24, 20, 30), 10)
+                    }
+                    val panel = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(20), dp(8), dp(20), dp(4))
+                        addView(preview)
+                        addView(sizeBar)
+                    }
+                    sizeBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                        override fun onStopTrackingTouch(bar: SeekBar) = Unit
+                        override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                            preview.textSize = (value + 16).toFloat()
+                            preview.text = "Subtitle preview · ${value + 16}sp"
+                        }
+                    })
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Subtitle text size")
+                        .setView(panel)
+                        .setPositiveButton("Save") { _, _ ->
+                            cinemaPreferences().edit().putInt("subtitle_text_size_sp", sizeBar.progress + 16).apply()
+                            applyCinemaSubtitleSize()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            })
+            menuPanel.addView(subtitleRow)
+            menuPanel.addView(label("YOUR VIDEOS", 12f, Color.rgb(190, 160, 220), true).apply {
+                setPadding(dp(4), dp(10), dp(4), dp(4))
+            })
             if (deviceVideos.isEmpty()) {
                 menuPanel.addView(label("No videos available", 14f, Color.rgb(190, 175, 210)))
                 return
