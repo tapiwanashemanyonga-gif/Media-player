@@ -140,7 +140,7 @@ jobs:
           retention-days: 30
 
       - name: Publish public GitHub release for the website
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PUBLISH_A1_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.7
