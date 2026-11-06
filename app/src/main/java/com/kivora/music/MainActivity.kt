@@ -3007,6 +3007,54 @@ class MainActivity : AppCompatActivity() {
             }
         }
         refreshSectionOptions()
+
+        content.addView(label("HOME CARD LAYOUT", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        content.addView(label("Choose how much space your home cards use.", 11f, Color.LTGRAY))
+        val densitySpinner = android.widget.Spinner(this)
+        val densityValues = listOf("Compact", "Comfortable", "Spacious")
+        densitySpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, densityValues
+        )
+        densitySpinner.setSelection(
+            listOf("compact", "comfortable", "spacious").indexOf(customization.homeDensity).coerceAtLeast(0)
+        )
+        content.addView(densitySpinner, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(4)
+        })
+        densitySpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val value = listOf("compact", "comfortable", "spacious").getOrNull(position) ?: "comfortable"
+                if (customization.homeDensity != value) {
+                    persistCustomization(customization.copy(homeDensity = value))
+                }
+            }
+        }
+
+        content.addView(label("CARD CORNERS", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(10), 0, dp(6))
+        })
+        val shapeSpinner = android.widget.Spinner(this)
+        val shapeValues = listOf("Rounded", "Soft", "Square")
+        shapeSpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, shapeValues
+        )
+        shapeSpinner.setSelection(
+            listOf("rounded", "soft", "square").indexOf(customization.homeCardShape).coerceAtLeast(0)
+        )
+        content.addView(shapeSpinner, LinearLayout.LayoutParams(-1, dp(48)))
+        shapeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val value = listOf("rounded", "soft", "square").getOrNull(position) ?: "rounded"
+                if (customization.homeCardShape != value) {
+                    persistCustomization(customization.copy(homeCardShape = value))
+                }
+            }
+        }
+
         content.addView(label("HOME WALLPAPER", 11f, Color.rgb(190, 160, 220), true).apply {
             setPadding(0, dp(14), 0, dp(8))
         })
@@ -3090,15 +3138,47 @@ class MainActivity : AppCompatActivity() {
             addView(row, android.widget.FrameLayout.LayoutParams(-2, -2))
         }
 
-    private fun homeCardParams() = LinearLayout.LayoutParams(
-        dp((resources.configuration.screenWidthDp - 64).coerceIn(150, 210)), -2
-    ).apply { rightMargin = dp(10) }
+    private fun homeCardWidthDp(): Int {
+        val screenWidth = resources.configuration.screenWidthDp
+        return when (customization.homeDensity) {
+            "compact" -> (screenWidth - 76).coerceIn(132, 170)
+            "spacious" -> (screenWidth - 48).coerceIn(176, 240)
+            else -> (screenWidth - 64).coerceIn(150, 210)
+        }
+    }
+
+    private fun homeArtworkHeightDp(): Int = when (customization.homeDensity) {
+        "compact" -> (homeCardWidthDp() - 22).coerceAtLeast(108)
+        "spacious" -> (homeCardWidthDp() - 12).coerceAtLeast(150)
+        else -> (homeCardWidthDp() - 20).coerceAtLeast(128)
+    }
+
+    private fun homeCardPaddingDp(): Int = when (customization.homeDensity) {
+        "compact" -> 7
+        "spacious" -> 13
+        else -> 10
+    }
+
+    private fun homeCardCornerDp(): Int = when (customization.homeCardShape) {
+        "square" -> 5
+        "soft" -> 12
+        else -> 18
+    }
+
+    private fun homeArtworkCornerDp(): Int = when (customization.homeCardShape) {
+        "square" -> 3
+        "soft" -> 9
+        else -> 14
+    }
+
+    private fun homeCardParams() = LinearLayout.LayoutParams(dp(homeCardWidthDp()), -2)
+        .apply { rightMargin = dp(10) }
 
     private fun homeSongCard(song: Song, title: String, subtitle: String, onClick: () -> Unit): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(11))
-            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
+            setPadding(dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp() + 1))
+            background = roundedBackground(Color.rgb(37, 25, 53), homeCardCornerDp()).apply {
                 setStroke(dp(1), customization.secondaryAccentArgb)
             }
             isClickable = true
@@ -3109,13 +3189,13 @@ class MainActivity : AppCompatActivity() {
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
+            background = roundedBackground(Color.rgb(55, 34, 75), homeArtworkCornerDp()).apply {
                 setStroke(dp(1), customization.accentArgb)
             }
             clipToOutline = true
             contentDescription = "Artwork for ${song.title}"
         }
-        card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
+        card.addView(cover, LinearLayout.LayoutParams(-1, dp(homeArtworkHeightDp())))
         loadArtworkInto(cover, song)
         card.addView(label(title, 14f, Color.rgb(250, 246, 255), true).apply {
             maxLines = 1
@@ -3133,8 +3213,8 @@ class MainActivity : AppCompatActivity() {
     private fun homePlaylistCard(name: String, count: Int, representative: Song?, onClick: () -> Unit): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(11))
-            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
+            setPadding(dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp() + 1))
+            background = roundedBackground(Color.rgb(37, 25, 53), homeCardCornerDp()).apply {
                 setStroke(dp(1), customization.secondaryAccentArgb)
             }
             isClickable = true
@@ -3145,13 +3225,13 @@ class MainActivity : AppCompatActivity() {
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
+            background = roundedBackground(Color.rgb(55, 34, 75), homeArtworkCornerDp()).apply {
                 setStroke(dp(1), customization.accentArgb)
             }
             clipToOutline = true
             contentDescription = "Playlist artwork for $name"
         }
-        card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
+        card.addView(cover, LinearLayout.LayoutParams(-1, dp(homeArtworkHeightDp())))
         representative?.let { loadArtworkInto(cover, it) }
         card.addView(label(name, 14f, Color.rgb(250, 246, 255), true).apply {
             maxLines = 1
