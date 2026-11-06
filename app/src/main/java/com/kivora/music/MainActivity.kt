@@ -2787,6 +2787,18 @@ class MainActivity : AppCompatActivity() {
         content.addView(label("ACCENT PALETTE", 11f, Color.rgb(190, 160, 220), true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
+        val hexInput = EditText(this).apply {
+            setSingleLine(true)
+            hint = "#D0A2FF"
+            setText(String.format("#%06X", 0xFFFFFF and customization.accentArgb))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
         val paletteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val palettes = listOf(
             "Lavender" to 0xFFD0A2FF.toInt(),
@@ -2803,23 +2815,11 @@ class MainActivity : AppCompatActivity() {
                 minHeight = dp(48)
                 setOnClickListener {
                     hexInput.setText(String.format("#%06X", 0xFFFFFF and color))
-                    persistCustomization(customization.copy(accentArgb = color))
+                    persistCustomization(customization.copy(accentArgb = color, secondaryAccentArgb = color))
                 }
             }, LinearLayout.LayoutParams(0, dp(48), 1f))
         }
         content.addView(paletteRow)
-        val hexInput = EditText(this).apply {
-            setSingleLine(true)
-            hint = "#D0A2FF"
-            setText(String.format("#%06X", 0xFFFFFF and customization.accentArgb))
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT
-            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
-                setStroke(dp(1), customization.secondaryAccentArgb)
-            }
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
         content.addView(hexInput, LinearLayout.LayoutParams(-1, dp(50)).apply {
             topMargin = dp(8)
         })
@@ -2917,7 +2917,7 @@ class MainActivity : AppCompatActivity() {
                 if (parsed == null) {
                     Toast.makeText(this, "Enter a valid hex color such as #D0A2FF.", Toast.LENGTH_LONG).show()
                 } else {
-                    persistCustomization(customization.copy(accentArgb = parsed))
+                    persistCustomization(customization.copy(accentArgb = parsed, secondaryAccentArgb = parsed))
                 }
             }
             .setNegativeButton("Close", null)
