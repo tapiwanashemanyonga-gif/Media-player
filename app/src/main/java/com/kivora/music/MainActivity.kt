@@ -3065,7 +3065,17 @@ class MainActivity : AppCompatActivity() {
             } else {
                 runCatching {
                     customizationStore.saveThemeProfile(
-                        A1ThemeProfile(name, customization.accentArgb, customization.secondaryAccentArgb, customization.wallpaperUri)
+                        A1ThemeProfile(
+                            name,
+                            customization.accentArgb,
+                            customization.secondaryAccentArgb,
+                            customization.wallpaperUri,
+                            customization.homeSectionOrder,
+                            customization.hiddenHomeSections,
+                            customization.visualizerSkin,
+                            customization.homeDensity,
+                            customization.homeCardShape
+                        )
                     )
                 }.onSuccess {
                     savedThemes = refreshSavedThemes()
@@ -3086,7 +3096,12 @@ class MainActivity : AppCompatActivity() {
                 persistCustomization(customization.copy(
                     accentArgb = profile.accentArgb,
                     secondaryAccentArgb = profile.secondaryAccentArgb,
-                    wallpaperUri = profile.wallpaperUri
+                    wallpaperUri = profile.wallpaperUri,
+                    homeSectionOrder = profile.homeSectionOrder,
+                    hiddenHomeSections = profile.hiddenHomeSections,
+                    visualizerSkin = profile.visualizerSkin,
+                    homeDensity = profile.homeDensity,
+                    homeCardShape = profile.homeCardShape
                 ))
                 applyCustomizationWallpaper()
                 hexInput.setText(String.format("#%06X", 0xFFFFFF and profile.accentArgb))
@@ -3261,7 +3276,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
         content.addView(wallpaperRow)
-        content.addView(label("More personalization tools will be added in the next stages.", 11f, Color.rgb(178, 160, 195)).apply {
+        content.addView(label("Save a complete style to reuse your colours, wallpaper, home layout, card spacing, corner shape and Now Playing artwork together.", 11f, Color.rgb(178, 160, 195)).apply {
             setPadding(0, dp(14), 0, 0)
         })
 
