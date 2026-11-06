@@ -74,7 +74,7 @@ fun A1HomeHeader(
                 letterSpacing = 1.15.sp
             )
             Text(
-                "Your media.\\nYour moment.",
+                "Your media.\nYour moment.",
                 color = Color(0xFFFFFAFF),
                 fontSize = 29.sp,
                 lineHeight = 33.sp,
