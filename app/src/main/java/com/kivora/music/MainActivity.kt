@@ -16,6 +16,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.LruCache
 import android.util.Size
+import android.util.TypedValue
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -43,6 +44,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -84,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nowTitle: TextView
     private lateinit var nowArtist: TextView
     private lateinit var artwork: ImageView
+    private lateinit var artworkFrame: android.widget.FrameLayout
     private lateinit var miniArtwork: ImageView
     private lateinit var playButton: TextView
     private lateinit var shuffleButton: TextView
@@ -111,6 +114,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoList: LinearLayout
     private lateinit var videoStatus: TextView
     private lateinit var videoPlayerView: PlayerView
+    private lateinit var customizationStore: A1CustomizationStore
+    private var customization by mutableStateOf(A1CustomizationSettings())
+    private var appRoot: LinearLayout? = null
     private var videoPlayer: ExoPlayer? = null
     private var navigationVideoUri: String? = null
     private var lastFailedVideoUri: String? = null
@@ -177,6 +183,16 @@ class MainActivity : AppCompatActivity() {
     private var pendingLyricsPdfText: String = ""
     private val lyricsPdfLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
+    }
+    private val wallpaperPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            customization = customization.copy(wallpaperUri = uri.toString())
+            customizationStore.save(customization)
+            applyCustomizationWallpaper()
+        }
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -298,6 +314,9 @@ class MainActivity : AppCompatActivity() {
 
         window.statusBarColor = Color.rgb(13, 8, 23)
         window.navigationBarColor = Color.rgb(13, 8, 23)
+
+        customizationStore = A1CustomizationStore(this)
+        customization = customizationStore.load()
 
         val preferences = getSharedPreferences(
             "kivora_preferences",
@@ -552,6 +571,8 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        appRoot = root
+
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -585,6 +606,16 @@ class MainActivity : AppCompatActivity() {
                 }
             })
         }
+        header.addView(label("⚙", 22f, Color.rgb(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(44)
+            minHeight = dp(44)
+            contentDescription = "Personalize A1 Family Media"
+            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
+                setStroke(dp(1), customization.accentArgb)
+            }
+            setOnClickListener { openPersonalizationSettings() }
+        })
 
         root.addView(header)
 
@@ -797,6 +828,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Video player"
             visibility = View.GONE
         }
+        applyCinemaSubtitleSize()
         val videoPlayerActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -959,7 +991,7 @@ class MainActivity : AppCompatActivity() {
         val artworkSize = if (compactPlayerLayout) {
             minOf(widthBasedArtworkSize, (screenHeightDp - 410).coerceIn(112, 210))
         } else widthBasedArtworkSize
-        val artworkFrame = android.widget.FrameLayout(this).apply {
+        artworkFrame = android.widget.FrameLayout(this).apply {
             setPadding(dp(5), dp(5), dp(5), dp(5))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
@@ -984,6 +1016,7 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(if (compactPlayerLayout) 12 else 24)
             }
         )
+        applyNowPlayingSkin()
 
         nowTitle = label(
             "Choose a song",
@@ -1445,6 +1478,7 @@ class MainActivity : AppCompatActivity() {
             setContent {
                 A1NavigationBar(
                     selectedTab = selectedNavigationTab,
+                    accentArgb = customization.accentArgb,
                     onTabSelected = { tab -> showTab(tab) }
                 )
             }
@@ -1454,6 +1488,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, dp(68))
         )
         setContentView(root)
+        applyCustomizationWallpaper()
         applyButtonFeedback(root)
 
         searchBox.addTextChangedListener(
@@ -2611,6 +2646,7 @@ class MainActivity : AppCompatActivity() {
                         songCount = songs.size,
                         albumCount = albumCount,
                         playlistCount = playlists.size,
+                        accentArgb = customization.accentArgb,
                         onBrowse = { openHomeShortcut("songs") },
                         onAlbums = { openHomeShortcut("albums") },
                         onArtists = { openHomeShortcut("artists") },
@@ -2618,81 +2654,90 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
             },
-            LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = dp(18)
-            }
+            LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) }
         )
 
-        addHomeSection("Recently played", "YOUR RECENT LISTENS")
-        val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
-        if (recentSongs.isEmpty()) {
-            homeContent.addView(homeEmptyCard("Tracks you play will appear here."))
-        } else {
-            val row = horizontalHomeRow()
-            recentSongs.take(8).forEach { song ->
-                row.addView(homeSongCard(song, song.title, song.artist) {
-                    playSong(song)
-                    showTab("nowPlaying")
-                }, homeCardParams())
+        val sections = linkedMapOf<String, () -> Unit>()
+        sections["recent"] = {
+            addHomeSection("Recently played", "YOUR RECENT LISTENS")
+            val recentSongs = recentlyPlayedUris.mapNotNull { uri ->
+                songs.firstOrNull { it.uri.toString() == uri }
             }
-            homeContent.addView(horizontalHomeScroller(row))
+            if (recentSongs.isEmpty()) {
+                homeContent.addView(homeEmptyCard("Tracks you play will appear here."))
+            } else {
+                val row = horizontalHomeRow()
+                recentSongs.take(8).forEach { song ->
+                    row.addView(homeSongCard(song, song.title, song.artist) {
+                        playSong(song)
+                        showTab("nowPlaying")
+                    }, homeCardParams())
+                }
+                homeContent.addView(horizontalHomeScroller(row))
+            }
+        }
+        sections["albums"] = {
+            addHomeSection("Albums", "FROM YOUR LIBRARY")
+            val albumGroups = songs.groupBy(::albumGroupKey).values
+                .sortedBy { it.first().album.lowercase(Locale.ROOT) }
+            if (albumGroups.isEmpty()) {
+                homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
+            } else {
+                val row = horizontalHomeRow()
+                albumGroups.take(10).forEach { group ->
+                    val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
+                    row.addView(homeSongCard(
+                        representative,
+                        group.first().album,
+                        "${group.first().artist} · ${group.size} ${if (group.size == 1) "song" else "songs"}"
+                    ) {
+                        selectedPlaylist = null
+                        showFavoritesOnly = false
+                        libraryBrowseMode = "albums"
+                        selectedAlbumKey = albumGroupKey(group.first())
+                        selectedArtistName = null
+                        updateFavoriteFilterButton()
+                        updatePlaylistButton()
+                        showTab("library")
+                    }, homeCardParams())
+                }
+                homeContent.addView(horizontalHomeScroller(row))
+            }
+        }
+        sections["playlists"] = {
+            addHomeSection("Playlists", "YOUR COLLECTION")
+            val playlistRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val availablePlaylists = playlists.entries.toList().take(8)
+            if (availablePlaylists.isEmpty()) {
+                homeContent.addView(homeEmptyCard("Create a playlist from the Library to see it here."))
+            } else {
+                availablePlaylists.forEach { (name, _) ->
+                    val tracks = playlistSongs(name)
+                    val representative = tracks.firstOrNull { it.artworkUri != null } ?: tracks.firstOrNull()
+                    playlistRow.addView(homePlaylistCard(name, tracks.size, representative) {
+                        selectedAlbumKey = null
+                        selectedArtistName = null
+                        selectedPlaylist = null
+                        showFavoritesOnly = false
+                        libraryBrowseMode = "songs"
+                        showTab("library")
+                        updateLibraryBrowseButtons()
+                        showPlaylistActionsDialog(name)
+                    }, homeCardParams())
+                }
+                homeContent.addView(horizontalHomeScroller(playlistRow))
+            }
         }
 
-        addHomeSection("Albums", "FROM YOUR LIBRARY")
-        val albumGroups = songs.groupBy(::albumGroupKey).values
-            .sortedBy { it.first().album.lowercase(Locale.ROOT) }
-        if (albumGroups.isEmpty()) {
-            homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
-        } else {
-            val row = horizontalHomeRow()
-            albumGroups.take(10).forEach { group ->
-                val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
-                row.addView(homeSongCard(
-                    representative,
-                    group.first().album,
-                    "${group.first().artist} · ${group.size} ${if (group.size == 1) "song" else "songs"}"
-                ) {
-                    selectedPlaylist = null
-                    showFavoritesOnly = false
-                    libraryBrowseMode = "albums"
-                    selectedAlbumKey = albumGroupKey(group.first())
-                    selectedArtistName = null
-                    updateFavoriteFilterButton()
-                    updatePlaylistButton()
-                    showTab("library")
-                }, homeCardParams())
-            }
-            homeContent.addView(horizontalHomeScroller(row))
-        }
-
-        addHomeSection("Playlists", "YOUR COLLECTION")
-        val playlistRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val availablePlaylists = playlists.entries.toList().take(8)
-        if (availablePlaylists.isEmpty()) {
-            homeContent.addView(homeEmptyCard("Create a playlist from the Library to see it here."))
-        } else {
-            availablePlaylists.forEach { (name, _) ->
-                val tracks = playlistSongs(name)
-                val representative = tracks.firstOrNull { it.artworkUri != null } ?: tracks.firstOrNull()
-                playlistRow.addView(homePlaylistCard(name, tracks.size, representative) {
-                    selectedAlbumKey = null
-                    selectedArtistName = null
-                    selectedPlaylist = null
-                    showFavoritesOnly = false
-                    libraryBrowseMode = "songs"
-                    showTab("library")
-                    updateLibraryBrowseButtons()
-                    showPlaylistActionsDialog(name)
-                }, homeCardParams())
-            }
-            homeContent.addView(horizontalHomeScroller(playlistRow))
+        customization.homeSectionOrder.forEach { section ->
+            if (section !in customization.hiddenHomeSections) sections[section]?.invoke()
         }
         homeContent.addView(label("Tap the mini-player to open Now Playing", 11f, Color.rgb(164, 145, 186)).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(15), 0, dp(3))
         })
 
-        // Separate Adsterra native-banner placement at the end of the Home dashboard.
+        // Keep the existing native banner placement after user-configurable home sections.
         homeContent.addView(
             AdsterraHomeNativeBanner.create(this),
             LinearLayout.LayoutParams(-1, -2).apply {
@@ -2700,6 +2745,424 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(8)
             }
         )
+    }
+
+    private fun applyNowPlayingSkin() {
+        if (!::artworkFrame.isInitialized || !::artwork.isInitialized) return
+        val skin = customization.visualizerSkin
+        val frameShape = android.graphics.drawable.GradientDrawable().apply {
+            shape = if (skin == "vinyl") android.graphics.drawable.GradientDrawable.OVAL
+                else android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(if (skin == "cassette") 12 else 36).toFloat()
+            colors = when (skin) {
+                "vinyl" -> intArrayOf(Color.rgb(24, 22, 30), Color.rgb(79, 62, 94), Color.rgb(20, 18, 26))
+                "cassette" -> intArrayOf(Color.rgb(91, 66, 105), Color.rgb(36, 29, 47))
+                else -> intArrayOf(customization.accentArgb, customization.secondaryAccentArgb, Color.rgb(67, 43, 91))
+            }
+            orientation = android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+            setStroke(dp(if (skin == "vinyl") 3 else 2), customization.accentArgb)
+        }
+        val artworkShape = android.graphics.drawable.GradientDrawable().apply {
+            shape = if (skin == "vinyl") android.graphics.drawable.GradientDrawable.OVAL
+                else android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(if (skin == "cassette") 7 else 26).toFloat()
+            setColor(Color.rgb(52, 32, 75))
+            setStroke(dp(1), customization.secondaryAccentArgb)
+        }
+        artworkFrame.background = frameShape
+        artwork.background = artworkShape
+        artwork.clipToOutline = true
+        artworkFrame.clipToOutline = true
+        artworkFrame.setPadding(dp(if (skin == "cassette") 8 else 5), dp(if (skin == "cassette") 8 else 5),
+            dp(if (skin == "cassette") 8 else 5), dp(if (skin == "cassette") 8 else 5))
+        artworkFrame.contentDescription = when (skin) {
+            "vinyl" -> "Vinyl-style album artwork frame"
+            "cassette" -> "Cassette-style album artwork frame"
+            else -> "Wave-style album artwork frame"
+        }
+    }
+
+    private fun persistCustomization(updated: A1CustomizationSettings) {
+        customization = updated
+        customizationStore.save(updated)
+        if (::homeContent.isInitialized) renderHomeDashboard()
+        applyNowPlayingSkin()
+    }
+
+    private fun applyCustomizationWallpaper() {
+        val root = appRoot ?: return
+        val wallpaper = customization.wallpaperUri
+        if (wallpaper.isNullOrBlank()) {
+            root.background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(13, 8, 23), Color.rgb(24, 13, 39), Color.rgb(12, 10, 22))
+            )
+            return
+        }
+        val uri = runCatching { Uri.parse(wallpaper) }.getOrNull() ?: return
+        val bitmap = runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+            }
+            val target = (resources.displayMetrics.widthPixels * 1.5f).toInt().coerceAtLeast(720)
+            var sample = 1
+            while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) {
+                sample *= 2
+            }
+            val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, options)
+            }
+        }.getOrNull() ?: return
+        root.background = android.graphics.drawable.BitmapDrawable(resources, bitmap).apply {
+            alpha = 92
+        }
+    }
+
+    private fun openPersonalizationSettings() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(12))
+        }
+        val scroll = ScrollView(this).apply { addView(content) }
+        content.addView(label("THEME STUDIO", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        fun colorInput(hintValue: String, value: Int) = EditText(this).apply {
+            setSingleLine(true)
+            hint = hintValue
+            setText(String.format("#%06X", 0xFFFFFF and value))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        val hexInput = colorInput("#D0A2FF", customization.accentArgb)
+        val secondaryHexInput = colorInput("#765397", customization.secondaryAccentArgb)
+        val paletteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val palettes = listOf(
+            Triple("Lavender", 0xFFD0A2FF.toInt(), 0xFF765397.toInt()),
+            Triple("Ocean", 0xFF55C8E8.toInt(), 0xFF245B91.toInt()),
+            Triple("Emerald", 0xFF65D6A0.toInt(), 0xFF205C4A.toInt()),
+            Triple("Sunset", 0xFFFFA36C.toInt(), 0xFF8A3D55.toInt()),
+            Triple("Rose", 0xFFFF82B2.toInt(), 0xFF74365E.toInt())
+        )
+        palettes.forEach { (name, primary, secondary) ->
+            paletteRow.addView(label("●", 24f, primary, true).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "$name theme palette"
+                minWidth = dp(48)
+                minHeight = dp(48)
+                setOnClickListener {
+                    hexInput.setText(String.format("#%06X", 0xFFFFFF and primary))
+                    secondaryHexInput.setText(String.format("#%06X", 0xFFFFFF and secondary))
+                    persistCustomization(customization.copy(accentArgb = primary, secondaryAccentArgb = secondary))
+                }
+            }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }
+        content.addView(paletteRow)
+        val colorInputs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        colorInputs.addView(hexInput, LinearLayout.LayoutParams(0, dp(50), 1f).apply { rightMargin = dp(6) })
+        colorInputs.addView(secondaryHexInput, LinearLayout.LayoutParams(0, dp(50), 1f).apply { leftMargin = dp(6) })
+        content.addView(colorInputs)
+        content.addView(label("Primary accent                         Secondary accent", 10f, Color.LTGRAY).apply {
+            setPadding(dp(2), dp(4), 0, dp(8))
+        })
+        val themePreview = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = roundedBackground(Color.rgb(35, 25, 48), 16).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+        }
+        themePreview.addView(label("A1  THEME PREVIEW", 12f, Color.WHITE, true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        themePreview.addView(label("PLAY", 11f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(9), dp(18), dp(9))
+            background = roundedBackground(customization.accentArgb, 22)
+        })
+        content.addView(themePreview)
+        content.addView(label("Choose a preset or enter two 6-digit HEX colours. Your theme is saved on this device.", 11f, Color.LTGRAY).apply {
+            setPadding(0, dp(6), 0, dp(8))
+        })
+
+        content.addView(label("MY SAVED THEMES", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        val themeNameInput = EditText(this).apply {
+            setSingleLine(true)
+            hint = "Name this theme (e.g. My Night Mode)"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        content.addView(themeNameInput, LinearLayout.LayoutParams(-1, dp(50)))
+        val savedThemeSpinner = android.widget.Spinner(this)
+        fun refreshSavedThemes(): List<A1ThemeProfile> {
+            val profiles = customizationStore.loadThemeProfiles()
+            savedThemeSpinner.adapter = android.widget.ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                profiles.map { it.name }
+            )
+            return profiles
+        }
+        var savedThemes = refreshSavedThemes()
+        content.addView(savedThemeSpinner, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(6)
+        })
+        val themeActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun themeActionButton(title: String, action: () -> Unit) =
+            label(title, 11f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                minHeight = dp(46)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = roundedBackground(Color.rgb(58, 39, 78), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { action() }
+            }
+        themeActions.addView(themeActionButton("Save theme") {
+            val name = themeNameInput.text?.toString()?.trim().orEmpty()
+            if (name.isBlank()) {
+                themeNameInput.error = "Enter a theme name"
+            } else {
+                runCatching {
+                    customizationStore.saveThemeProfile(
+                        A1ThemeProfile(name, customization.accentArgb, customization.secondaryAccentArgb, customization.wallpaperUri)
+                    )
+                }.onSuccess {
+                    savedThemes = refreshSavedThemes()
+                    val selected = savedThemes.indexOfFirst { it.name.equals(name.take(40), ignoreCase = true) }
+                    if (selected >= 0) savedThemeSpinner.setSelection(selected)
+                    themeNameInput.text?.clear()
+                    Toast.makeText(this, "Theme saved on this device.", Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Could not save theme.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(4) })
+        themeActions.addView(themeActionButton("Apply") {
+            val profile = savedThemes.getOrNull(savedThemeSpinner.selectedItemPosition)
+            if (profile == null) {
+                Toast.makeText(this, "Save a theme first.", Toast.LENGTH_SHORT).show()
+            } else {
+                persistCustomization(customization.copy(
+                    accentArgb = profile.accentArgb,
+                    secondaryAccentArgb = profile.secondaryAccentArgb,
+                    wallpaperUri = profile.wallpaperUri
+                ))
+                applyCustomizationWallpaper()
+                hexInput.setText(String.format("#%06X", 0xFFFFFF and profile.accentArgb))
+                secondaryHexInput.setText(String.format("#%06X", 0xFFFFFF and profile.secondaryAccentArgb))
+                Toast.makeText(this, "${profile.name} applied.", Toast.LENGTH_SHORT).show()
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        themeActions.addView(themeActionButton("Delete") {
+            val profile = savedThemes.getOrNull(savedThemeSpinner.selectedItemPosition)
+            if (profile == null) {
+                Toast.makeText(this, "Choose a saved theme first.", Toast.LENGTH_SHORT).show()
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Delete ${profile.name}?")
+                    .setMessage("This removes the saved theme profile from this device. It does not change your current appearance.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Delete") { _, _ ->
+                        customizationStore.deleteThemeProfile(profile.name)
+                        savedThemes = refreshSavedThemes()
+                    }
+                    .show()
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4) })
+        content.addView(themeActions)
+
+        content.addView(label("HOME SCREEN SECTIONS", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        val sectionList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(sectionList)
+        var order = customization.homeSectionOrder.toMutableList()
+        var hidden = customization.hiddenHomeSections.toMutableSet()
+        fun refreshSectionOptions() {
+            sectionList.removeAllViews()
+            val titles = mapOf("recent" to "Recently played", "albums" to "Albums", "playlists" to "Playlists")
+            order.forEachIndexed { index, id ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val toggle = android.widget.CheckBox(this).apply {
+                    text = titles[id] ?: id
+                    setTextColor(Color.WHITE)
+                    isChecked = id !in hidden
+                    setOnCheckedChangeListener { _, checked ->
+                        if (checked) hidden.remove(id) else hidden.add(id)
+                        persistCustomization(customization.copy(hiddenHomeSections = hidden.toSet()))
+                    }
+                }
+                row.addView(toggle, LinearLayout.LayoutParams(0, dp(48), 1f))
+                row.addView(label("↑", 20f, Color.WHITE, true).apply {
+                    gravity = Gravity.CENTER
+                    minWidth = dp(42)
+                    minHeight = dp(44)
+                    contentDescription = "Move ${titles[id]} up"
+                    setOnClickListener {
+                        if (index > 0) {
+                            val item = order.removeAt(index)
+                            order.add(index - 1, item)
+                            persistCustomization(customization.copy(homeSectionOrder = order.toList()))
+                            refreshSectionOptions()
+                        }
+                    }
+                })
+                row.addView(label("↓", 20f, Color.WHITE, true).apply {
+                    gravity = Gravity.CENTER
+                    minWidth = dp(42)
+                    minHeight = dp(44)
+                    contentDescription = "Move ${titles[id]} down"
+                    setOnClickListener {
+                        if (index < order.lastIndex) {
+                            val item = order.removeAt(index)
+                            order.add(index + 1, item)
+                            persistCustomization(customization.copy(homeSectionOrder = order.toList()))
+                            refreshSectionOptions()
+                        }
+                    }
+                })
+                sectionList.addView(row)
+            }
+        }
+        refreshSectionOptions()
+
+        content.addView(label("HOME CARD LAYOUT", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        content.addView(label("Choose how much space your home cards use.", 11f, Color.LTGRAY))
+        val densitySpinner = android.widget.Spinner(this)
+        val densityValues = listOf("Compact", "Comfortable", "Spacious")
+        densitySpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, densityValues
+        )
+        densitySpinner.setSelection(
+            listOf("compact", "comfortable", "spacious").indexOf(customization.homeDensity).coerceAtLeast(0)
+        )
+        content.addView(densitySpinner, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(4)
+        })
+        densitySpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val value = listOf("compact", "comfortable", "spacious").getOrNull(position) ?: "comfortable"
+                if (customization.homeDensity != value) {
+                    persistCustomization(customization.copy(homeDensity = value))
+                }
+            }
+        }
+
+        content.addView(label("CARD CORNERS", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(10), 0, dp(6))
+        })
+        val shapeSpinner = android.widget.Spinner(this)
+        val shapeValues = listOf("Rounded", "Soft", "Square")
+        shapeSpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, shapeValues
+        )
+        shapeSpinner.setSelection(
+            listOf("rounded", "soft", "square").indexOf(customization.homeCardShape).coerceAtLeast(0)
+        )
+        content.addView(shapeSpinner, LinearLayout.LayoutParams(-1, dp(48)))
+        shapeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val value = listOf("rounded", "soft", "square").getOrNull(position) ?: "rounded"
+                if (customization.homeCardShape != value) {
+                    persistCustomization(customization.copy(homeCardShape = value))
+                }
+            }
+        }
+
+        content.addView(label("NOW PLAYING ARTWORK STYLE", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        content.addView(label("Change the frame around your current album artwork.", 11f, Color.LTGRAY))
+        val skinSpinner = android.widget.Spinner(this)
+        val skinLabels = listOf("Wave", "Vinyl", "Cassette")
+        val skinValues = listOf("wave", "vinyl", "cassette")
+        skinSpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, skinLabels
+        )
+        skinSpinner.setSelection(skinValues.indexOf(customization.visualizerSkin).coerceAtLeast(0))
+        content.addView(skinSpinner, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(4)
+        })
+        skinSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val value = skinValues.getOrNull(position) ?: "wave"
+                if (customization.visualizerSkin != value) {
+                    persistCustomization(customization.copy(visualizerSkin = value))
+                }
+            }
+        }
+
+        content.addView(label("HOME WALLPAPER", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        content.addView(label("Choose an image stored on your device. It stays local to this app.", 11f, Color.LTGRAY))
+        val wallpaperRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        wallpaperRow.addView(label("Choose wallpaper", 13f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            background = roundedBackground(Color.rgb(58, 39, 78), 12)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setOnClickListener { wallpaperPickerLauncher.launch(arrayOf("image/*")) }
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        wallpaperRow.addView(label("Reset", 13f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setOnClickListener {
+                persistCustomization(customization.copy(wallpaperUri = null))
+                applyCustomizationWallpaper()
+            }
+        })
+        content.addView(wallpaperRow)
+        content.addView(label("More personalization tools will be added in the next stages.", 11f, Color.rgb(178, 160, 195)).apply {
+            setPadding(0, dp(14), 0, 0)
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("Make A1 yours")
+            .setView(scroll)
+            .setPositiveButton("Apply color") { _, _ ->
+                val raw = hexInput.text?.toString()?.trim().orEmpty()
+                val normalized = if (raw.startsWith("#")) raw else "#$raw"
+                val secondaryRaw = secondaryHexInput.text?.toString()?.trim().orEmpty()
+                val secondaryNormalized = if (secondaryRaw.startsWith("#")) secondaryRaw else "#$secondaryRaw"
+                val parsed = runCatching { Color.parseColor(normalized) }.getOrNull()
+                val secondaryParsed = runCatching { Color.parseColor(secondaryNormalized) }.getOrNull()
+                if (parsed == null || secondaryParsed == null) {
+                    Toast.makeText(this, "Enter valid HEX colours, for example #D0A2FF and #765397.", Toast.LENGTH_LONG).show()
+                } else {
+                    persistCustomization(customization.copy(accentArgb = parsed, secondaryAccentArgb = secondaryParsed))
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun openHomeShortcut(destination: String) {
@@ -2741,16 +3204,48 @@ class MainActivity : AppCompatActivity() {
             addView(row, android.widget.FrameLayout.LayoutParams(-2, -2))
         }
 
-    private fun homeCardParams() = LinearLayout.LayoutParams(
-        dp((resources.configuration.screenWidthDp - 64).coerceIn(150, 210)), -2
-    ).apply { rightMargin = dp(10) }
+    private fun homeCardWidthDp(): Int {
+        val screenWidth = resources.configuration.screenWidthDp
+        return when (customization.homeDensity) {
+            "compact" -> (screenWidth - 76).coerceIn(132, 170)
+            "spacious" -> (screenWidth - 48).coerceIn(176, 240)
+            else -> (screenWidth - 64).coerceIn(150, 210)
+        }
+    }
+
+    private fun homeArtworkHeightDp(): Int = when (customization.homeDensity) {
+        "compact" -> (homeCardWidthDp() - 22).coerceAtLeast(108)
+        "spacious" -> (homeCardWidthDp() - 12).coerceAtLeast(150)
+        else -> (homeCardWidthDp() - 20).coerceAtLeast(128)
+    }
+
+    private fun homeCardPaddingDp(): Int = when (customization.homeDensity) {
+        "compact" -> 7
+        "spacious" -> 13
+        else -> 10
+    }
+
+    private fun homeCardCornerDp(): Int = when (customization.homeCardShape) {
+        "square" -> 5
+        "soft" -> 12
+        else -> 18
+    }
+
+    private fun homeArtworkCornerDp(): Int = when (customization.homeCardShape) {
+        "square" -> 3
+        "soft" -> 9
+        else -> 14
+    }
+
+    private fun homeCardParams() = LinearLayout.LayoutParams(dp(homeCardWidthDp()), -2)
+        .apply { rightMargin = dp(10) }
 
     private fun homeSongCard(song: Song, title: String, subtitle: String, onClick: () -> Unit): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(11))
-            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
-                setStroke(dp(1), Color.rgb(82, 58, 108))
+            setPadding(dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp() + 1))
+            background = roundedBackground(Color.rgb(37, 25, 53), homeCardCornerDp()).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
             }
             isClickable = true
             isFocusable = true
@@ -2760,13 +3255,13 @@ class MainActivity : AppCompatActivity() {
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
-                setStroke(dp(1), Color.rgb(131, 88, 164))
+            background = roundedBackground(Color.rgb(55, 34, 75), homeArtworkCornerDp()).apply {
+                setStroke(dp(1), customization.accentArgb)
             }
             clipToOutline = true
             contentDescription = "Artwork for ${song.title}"
         }
-        card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
+        card.addView(cover, LinearLayout.LayoutParams(-1, dp(homeArtworkHeightDp())))
         loadArtworkInto(cover, song)
         card.addView(label(title, 14f, Color.rgb(250, 246, 255), true).apply {
             maxLines = 1
@@ -2784,9 +3279,9 @@ class MainActivity : AppCompatActivity() {
     private fun homePlaylistCard(name: String, count: Int, representative: Song?, onClick: () -> Unit): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(11))
-            background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
-                setStroke(dp(1), Color.rgb(82, 58, 108))
+            setPadding(dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp()), dp(homeCardPaddingDp() + 1))
+            background = roundedBackground(Color.rgb(37, 25, 53), homeCardCornerDp()).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
             }
             isClickable = true
             isFocusable = true
@@ -2796,13 +3291,13 @@ class MainActivity : AppCompatActivity() {
         val cover = ImageView(this).apply {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
-                setStroke(dp(1), Color.rgb(131, 88, 164))
+            background = roundedBackground(Color.rgb(55, 34, 75), homeArtworkCornerDp()).apply {
+                setStroke(dp(1), customization.accentArgb)
             }
             clipToOutline = true
             contentDescription = "Playlist artwork for $name"
         }
-        card.addView(cover, LinearLayout.LayoutParams(-1, dp((resources.configuration.screenWidthDp - 100).coerceIn(128, 188))))
+        card.addView(cover, LinearLayout.LayoutParams(-1, dp(homeArtworkHeightDp())))
         representative?.let { loadArtworkInto(cover, it) }
         card.addView(label(name, 14f, Color.rgb(250, 246, 255), true).apply {
             maxLines = 1
@@ -2818,7 +3313,7 @@ class MainActivity : AppCompatActivity() {
     private fun homeEmptyCard(message: String): View = label(message, 13f, Color.rgb(183, 163, 204)).apply {
         setPadding(dp(15), dp(16), dp(15), dp(16))
         background = roundedBackground(Color.rgb(31, 22, 44), 16).apply {
-            setStroke(dp(1), Color.rgb(71, 51, 93))
+            setStroke(dp(1), customization.secondaryAccentArgb)
         }
     }
 
@@ -3376,9 +3871,68 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(8) })
         content.addView(actionButton("Play next", "Play ${song.title} after the current song") {
             playSongNext(song)
+        }, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(8) })
+        content.addView(actionButton("Track memory & mood", "Add a personal note or mood for ${song.title}") {
+            openTrackMemoryDialog(song)
         }, LinearLayout.LayoutParams(-1, dp(48)))
 
         dialog.show()
+    }
+
+    private fun openTrackMemoryDialog(song: Song) {
+        val key = song.uri.toString()
+        val saved = customizationStore.loadTrackMemory(key)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        val moodInput = EditText(this).apply {
+            setSingleLine(true)
+            hint = "Mood (e.g. Relaxed, Focused, Joyful)"
+            setText(saved.mood)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        val noteInput = EditText(this).apply {
+            hint = "Your personal memory about this song..."
+            setText(saved.note)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            minLines = 3
+            maxLines = 5
+            gravity = Gravity.TOP
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        content.addView(label("MOOD", 10f, Color.rgb(190, 160, 220), true))
+        content.addView(moodInput, LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(10) })
+        content.addView(label("PERSONAL NOTE", 10f, Color.rgb(190, 160, 220), true))
+        content.addView(noteInput, LinearLayout.LayoutParams(-1, dp(116)))
+        AlertDialog.Builder(this)
+            .setTitle("Your memory · ${song.title}")
+            .setView(content)
+            .setPositiveButton("Save memory") { _, _ ->
+                customizationStore.saveTrackMemory(
+                    key,
+                    A1TrackMemory(
+                        note = noteInput.text?.toString().orEmpty().trim(),
+                        mood = moodInput.text?.toString().orEmpty().trim()
+                    )
+                )
+                Toast.makeText(this, "Track memory saved on this device.", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                customizationStore.saveTrackMemory(key, A1TrackMemory())
+                Toast.makeText(this, "Track memory cleared.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun enqueueSong(song: Song) {
@@ -3974,6 +4528,10 @@ class MainActivity : AppCompatActivity() {
             miniPlayButton.contentDescription = if (player?.isPlaying == true) "Pause playback" else "Start playback"
         }
         playButton.setTextColor(Color.WHITE)
+        playButton.background = roundedBackground(customization.accentArgb, 18)
+        if (::miniPlayButton.isInitialized) {
+            miniPlayButton.background = roundedBackground(customization.accentArgb, 16)
+        }
     }
 
     private fun updateShuffleButton() {
@@ -3981,7 +4539,7 @@ class MainActivity : AppCompatActivity() {
 
         shuffleButton.setTextColor(
             if (player?.shuffleModeEnabled == true) {
-                Color.rgb(196, 145, 255)
+                customization.accentArgb
             } else {
                 Color.rgb(174, 159, 194)
             }
@@ -4428,12 +4986,25 @@ class MainActivity : AppCompatActivity() {
         return try {
             videoPlayer?.apply {
                 setMediaItem(MediaItem.fromUri(video.uri))
+                setPlaybackParameters(PlaybackParameters(savedVideoSpeed()))
                 prepare()
                 playWhenReady = true
             } != null
         } catch (_: RuntimeException) {
             reportVideoPlaybackFailure(video.uri.toString())
             false
+        }
+    }
+
+    private fun cinemaPreferences() = getSharedPreferences("a1_cinema_preferences", MODE_PRIVATE)
+
+    private fun savedVideoSpeed(): Float = cinemaPreferences().getFloat("video_speed", 1f).coerceIn(0.5f, 2f)
+
+    private fun savedSubtitleTextSize(): Int = cinemaPreferences().getInt("subtitle_text_size_sp", 22).coerceIn(16, 36)
+
+    private fun applyCinemaSubtitleSize() {
+        if (::videoPlayerView.isInitialized) {
+            videoPlayerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, savedSubtitleTextSize().toFloat())
         }
     }
 
@@ -4621,6 +5192,90 @@ class MainActivity : AppCompatActivity() {
 
         fun refreshMenu() {
             menuPanel.removeAllViews()
+            val speed = savedVideoSpeed()
+            val speedRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            speedRow.addView(label("PLAYBACK SPEED", 12f, Color.rgb(190, 160, 220), true), LinearLayout.LayoutParams(0, dp(48), 1f))
+            speedRow.addView(label("${speed}×  CHANGE", 13f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBackground(Color.rgb(67, 42, 89), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    val options = arrayOf("0.5×", "0.75×", "1.0×", "1.25×", "1.5×", "1.75×", "2.0×")
+                    val values = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+                    val selected = values.indexOfFirst { kotlin.math.abs(it - savedVideoSpeed()) < 0.01f }.coerceAtLeast(0)
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Playback speed")
+                        .setSingleChoiceItems(options, selected) { dialog, which ->
+                            val chosen = values[which]
+                            cinemaPreferences().edit().putFloat("video_speed", chosen).apply()
+                            videoPlayer?.setPlaybackParameters(PlaybackParameters(chosen))
+                            dialog.dismiss()
+                            refreshMenu()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            })
+            menuPanel.addView(speedRow)
+            menuPanel.addView(label("SUBTITLE APPEARANCE", 12f, Color.rgb(190, 160, 220), true).apply {
+                setPadding(dp(4), dp(8), dp(4), dp(4))
+            })
+            val subtitleRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            subtitleRow.addView(label("Adjust subtitle size", 13f, Color.WHITE), LinearLayout.LayoutParams(0, dp(44), 1f))
+            subtitleRow.addView(label("Aa  ADJUST", 13f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(9), dp(12), dp(9))
+                background = roundedBackground(Color.rgb(67, 42, 89), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    val currentSize = savedSubtitleTextSize()
+                    val sizeBar = SeekBar(this@MainActivity).apply {
+                        max = 20
+                        progress = currentSize - 16
+                    }
+                    val preview = label("Subtitle preview · ${currentSize}sp", currentSize.toFloat(), Color.WHITE, true).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(dp(8), dp(12), dp(8), dp(12))
+                        background = roundedBackground(Color.rgb(24, 20, 30), 10)
+                    }
+                    val panel = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(20), dp(8), dp(20), dp(4))
+                        addView(preview)
+                        addView(sizeBar)
+                    }
+                    sizeBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                        override fun onStopTrackingTouch(bar: SeekBar) = Unit
+                        override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                            preview.textSize = (value + 16).toFloat()
+                            preview.text = "Subtitle preview · ${value + 16}sp"
+                        }
+                    })
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Subtitle text size")
+                        .setView(panel)
+                        .setPositiveButton("Save") { _, _ ->
+                            cinemaPreferences().edit().putInt("subtitle_text_size_sp", sizeBar.progress + 16).apply()
+                            applyCinemaSubtitleSize()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            })
+            menuPanel.addView(subtitleRow)
+            menuPanel.addView(label("YOUR VIDEOS", 12f, Color.rgb(190, 160, 220), true).apply {
+                setPadding(dp(4), dp(10), dp(4), dp(4))
+            })
             if (deviceVideos.isEmpty()) {
                 menuPanel.addView(label("No videos available", 14f, Color.rgb(190, 175, 210)))
                 return

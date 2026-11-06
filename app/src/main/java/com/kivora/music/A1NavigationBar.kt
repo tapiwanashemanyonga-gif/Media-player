@@ -33,10 +33,12 @@ private val A1Muted = Color(0xFFB8A7C9)
 @Composable
 fun A1NavigationBar(
     selectedTab: String,
+    accentArgb: Int = 0xFFD0A2FF.toInt(),
     onTabSelected: (String) -> Unit
 ) {
+    val accent = Color(accentArgb)
     val scheme = darkColorScheme(
-        primary = A1Purple,
+        primary = accent,
         onPrimary = Color.White,
         secondary = Color(0xFFE2C7FF),
         background = A1Background,
@@ -85,7 +87,7 @@ fun A1NavigationBar(
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
-                                selectedTextColor = A1Purple,
+                                selectedTextColor = accent,
                                 indicatorColor = Color(0xFF59347C),
                                 unselectedIconColor = A1Muted,
                                 unselectedTextColor = A1Muted
