@@ -30,7 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val accent = Color(0xFFD0A2FF)
 private val HomeMuted = Color(0xFFC5B4D7)
 private val HomeSurface = Color(0xFF261A36)
 
