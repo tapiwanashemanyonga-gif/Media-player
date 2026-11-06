@@ -134,7 +134,7 @@ jobs:
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: A1-Family-Media-1.7-release
+          name: A1-Family-Media-1.8-release
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -143,15 +143,16 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PUBLISH_A1_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.7
-          name: A1 FAMILY MEDIA 1.7
+          tag_name: v1.8
+          name: A1 FAMILY MEDIA 1.8
           body: |
-            Official A1 FAMILY MEDIA Android release 1.7 with privacy-minimal first-open installation tracking.
+            Official A1 FAMILY MEDIA Android release 1.8. This release adds richer personalisation and song memories while retaining the existing local media experience.
 
             - Local music and video playback
             - Performance and responsive layout improvements
-            - Separate song-list and Home dashboard Adsterra banner placements
+            - Theme Studio saves complete personal styles, including colours, wallpaper, home section order and visibility, visualiser skin, density and card shape
+            - Attach a personal photo to a song memory alongside its mood and note; photo and memory stay on the device
             - First-open installation tracking through the A1 Family Cloud API
+            - Existing music and video playback, file opening and background playback retained
           files: app/build/outputs/apk/release/app-release.apk
-          overwrite_files: true
           make_latest: true
