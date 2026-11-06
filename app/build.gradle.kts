@@ -21,8 +21,8 @@ android {
         applicationId = "com.a1family.media"
         minSdk = 24
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
         val trackingKey = System.getenv("A1_MEDIA_APP_KEY").orEmpty()
             .replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "A1_APP_TRACKING_KEY", "\"$trackingKey\"")
