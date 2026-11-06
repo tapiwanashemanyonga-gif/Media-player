@@ -111,6 +111,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoList: LinearLayout
     private lateinit var videoStatus: TextView
     private lateinit var videoPlayerView: PlayerView
+    private lateinit var customizationStore: A1CustomizationStore
+    private var customization by mutableStateOf(A1CustomizationSettings())
+    private var appRoot: LinearLayout? = null
     private var videoPlayer: ExoPlayer? = null
     private var navigationVideoUri: String? = null
     private var lastFailedVideoUri: String? = null
@@ -177,6 +180,16 @@ class MainActivity : AppCompatActivity() {
     private var pendingLyricsPdfText: String = ""
     private val lyricsPdfLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) writeLyricsPdf(uri, pendingLyricsPdfTitle, pendingLyricsPdfText)
+    }
+    private val wallpaperPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            customization = customization.copy(wallpaperUri = uri.toString())
+            customizationStore.save(customization)
+            applyCustomizationWallpaper()
+        }
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -298,6 +311,9 @@ class MainActivity : AppCompatActivity() {
 
         window.statusBarColor = Color.rgb(13, 8, 23)
         window.navigationBarColor = Color.rgb(13, 8, 23)
+
+        customizationStore = A1CustomizationStore(this)
+        customization = customizationStore.load()
 
         val preferences = getSharedPreferences(
             "kivora_preferences",
@@ -551,6 +567,8 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        appRoot = root
+
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -584,6 +602,16 @@ class MainActivity : AppCompatActivity() {
                 }
             })
         }
+        header.addView(label("⚙", 22f, Color.rgb(232, 213, 255), true).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(44)
+            minHeight = dp(44)
+            contentDescription = "Personalize A1 Family Media"
+            background = roundedBackground(Color.rgb(48, 31, 68), 14).apply {
+                setStroke(dp(1), customization.accentArgb)
+            }
+            setOnClickListener { openPersonalizationSettings() }
+        })
 
         root.addView(header)
 
@@ -1444,6 +1472,7 @@ class MainActivity : AppCompatActivity() {
             setContent {
                 A1NavigationBar(
                     selectedTab = selectedNavigationTab,
+                    accentArgb = customization.accentArgb,
                     onTabSelected = { tab -> showTab(tab) }
                 )
             }
@@ -2610,6 +2639,7 @@ class MainActivity : AppCompatActivity() {
                         songCount = songs.size,
                         albumCount = albumCount,
                         playlistCount = playlists.size,
+                        accentArgb = customization.accentArgb,
                         onBrowse = { openHomeShortcut("songs") },
                         onAlbums = { openHomeShortcut("albums") },
                         onArtists = { openHomeShortcut("artists") },
@@ -2617,81 +2647,90 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
             },
-            LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = dp(18)
-            }
+            LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) }
         )
 
-        addHomeSection("Recently played", "YOUR RECENT LISTENS")
-        val recentSongs = recentlyPlayedUris.mapNotNull { uri -> songs.firstOrNull { it.uri.toString() == uri } }
-        if (recentSongs.isEmpty()) {
-            homeContent.addView(homeEmptyCard("Tracks you play will appear here."))
-        } else {
-            val row = horizontalHomeRow()
-            recentSongs.take(8).forEach { song ->
-                row.addView(homeSongCard(song, song.title, song.artist) {
-                    playSong(song)
-                    showTab("nowPlaying")
-                }, homeCardParams())
+        val sections = linkedMapOf<String, () -> Unit>()
+        sections["recent"] = {
+            addHomeSection("Recently played", "YOUR RECENT LISTENS")
+            val recentSongs = recentlyPlayedUris.mapNotNull { uri ->
+                songs.firstOrNull { it.uri.toString() == uri }
             }
-            homeContent.addView(horizontalHomeScroller(row))
+            if (recentSongs.isEmpty()) {
+                homeContent.addView(homeEmptyCard("Tracks you play will appear here."))
+            } else {
+                val row = horizontalHomeRow()
+                recentSongs.take(8).forEach { song ->
+                    row.addView(homeSongCard(song, song.title, song.artist) {
+                        playSong(song)
+                        showTab("nowPlaying")
+                    }, homeCardParams())
+                }
+                homeContent.addView(horizontalHomeScroller(row))
+            }
+        }
+        sections["albums"] = {
+            addHomeSection("Albums", "FROM YOUR LIBRARY")
+            val albumGroups = songs.groupBy(::albumGroupKey).values
+                .sortedBy { it.first().album.lowercase(Locale.ROOT) }
+            if (albumGroups.isEmpty()) {
+                homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
+            } else {
+                val row = horizontalHomeRow()
+                albumGroups.take(10).forEach { group ->
+                    val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
+                    row.addView(homeSongCard(
+                        representative,
+                        group.first().album,
+                        "${group.first().artist} · ${group.size} ${if (group.size == 1) "song" else "songs"}"
+                    ) {
+                        selectedPlaylist = null
+                        showFavoritesOnly = false
+                        libraryBrowseMode = "albums"
+                        selectedAlbumKey = albumGroupKey(group.first())
+                        selectedArtistName = null
+                        updateFavoriteFilterButton()
+                        updatePlaylistButton()
+                        showTab("library")
+                    }, homeCardParams())
+                }
+                homeContent.addView(horizontalHomeScroller(row))
+            }
+        }
+        sections["playlists"] = {
+            addHomeSection("Playlists", "YOUR COLLECTION")
+            val playlistRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val availablePlaylists = playlists.entries.toList().take(8)
+            if (availablePlaylists.isEmpty()) {
+                homeContent.addView(homeEmptyCard("Create a playlist from the Library to see it here."))
+            } else {
+                availablePlaylists.forEach { (name, _) ->
+                    val tracks = playlistSongs(name)
+                    val representative = tracks.firstOrNull { it.artworkUri != null } ?: tracks.firstOrNull()
+                    playlistRow.addView(homePlaylistCard(name, tracks.size, representative) {
+                        selectedAlbumKey = null
+                        selectedArtistName = null
+                        selectedPlaylist = null
+                        showFavoritesOnly = false
+                        libraryBrowseMode = "songs"
+                        showTab("library")
+                        updateLibraryBrowseButtons()
+                        showPlaylistActionsDialog(name)
+                    }, homeCardParams())
+                }
+                homeContent.addView(horizontalHomeScroller(playlistRow))
+            }
         }
 
-        addHomeSection("Albums", "FROM YOUR LIBRARY")
-        val albumGroups = songs.groupBy(::albumGroupKey).values
-            .sortedBy { it.first().album.lowercase(Locale.ROOT) }
-        if (albumGroups.isEmpty()) {
-            homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
-        } else {
-            val row = horizontalHomeRow()
-            albumGroups.take(10).forEach { group ->
-                val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
-                row.addView(homeSongCard(
-                    representative,
-                    group.first().album,
-                    "${group.first().artist} · ${group.size} ${if (group.size == 1) "song" else "songs"}"
-                ) {
-                    selectedPlaylist = null
-                    showFavoritesOnly = false
-                    libraryBrowseMode = "albums"
-                    selectedAlbumKey = albumGroupKey(group.first())
-                    selectedArtistName = null
-                    updateFavoriteFilterButton()
-                    updatePlaylistButton()
-                    showTab("library")
-                }, homeCardParams())
-            }
-            homeContent.addView(horizontalHomeScroller(row))
-        }
-
-        addHomeSection("Playlists", "YOUR COLLECTION")
-        val playlistRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val availablePlaylists = playlists.entries.toList().take(8)
-        if (availablePlaylists.isEmpty()) {
-            homeContent.addView(homeEmptyCard("Create a playlist from the Library to see it here."))
-        } else {
-            availablePlaylists.forEach { (name, _) ->
-                val tracks = playlistSongs(name)
-                val representative = tracks.firstOrNull { it.artworkUri != null } ?: tracks.firstOrNull()
-                playlistRow.addView(homePlaylistCard(name, tracks.size, representative) {
-                    selectedAlbumKey = null
-                    selectedArtistName = null
-                    selectedPlaylist = null
-                    showFavoritesOnly = false
-                    libraryBrowseMode = "songs"
-                    showTab("library")
-                    updateLibraryBrowseButtons()
-                    showPlaylistActionsDialog(name)
-                }, homeCardParams())
-            }
-            homeContent.addView(horizontalHomeScroller(playlistRow))
+        customization.homeSectionOrder.forEach { section ->
+            if (section !in customization.hiddenHomeSections) sections[section]?.invoke()
         }
         homeContent.addView(label("Tap the mini-player to open Now Playing", 11f, Color.rgb(164, 145, 186)).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(15), 0, dp(3))
         })
 
-        // Separate Adsterra native-banner placement at the end of the Home dashboard.
+        // Keep the existing native banner placement after user-configurable home sections.
         homeContent.addView(
             AdsterraHomeNativeBanner.create(this),
             LinearLayout.LayoutParams(-1, -2).apply {
@@ -2699,6 +2738,188 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(8)
             }
         )
+    }
+
+    private fun persistCustomization(updated: A1CustomizationSettings) {
+        customization = updated
+        customizationStore.save(updated)
+        if (::homeContent.isInitialized) renderHomeDashboard()
+    }
+
+    private fun applyCustomizationWallpaper() {
+        val root = appRoot ?: return
+        val wallpaper = customization.wallpaperUri
+        if (wallpaper.isNullOrBlank()) {
+            root.background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(13, 8, 23), Color.rgb(24, 13, 39), Color.rgb(12, 10, 22))
+            )
+            return
+        }
+        val uri = runCatching { Uri.parse(wallpaper) }.getOrNull() ?: return
+        val bitmap = runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+            }
+            val target = (resources.displayMetrics.widthPixels * 1.5f).toInt().coerceAtLeast(720)
+            var sample = 1
+            while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) {
+                sample *= 2
+            }
+            val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, options)
+            }
+        }.getOrNull() ?: return
+        root.background = android.graphics.drawable.BitmapDrawable(resources, bitmap).apply {
+            alpha = 92
+        }
+    }
+
+    private fun openPersonalizationSettings() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(12))
+        }
+        val scroll = ScrollView(this).apply { addView(content) }
+        content.addView(label("ACCENT PALETTE", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        val paletteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val palettes = listOf(
+            "Lavender" to 0xFFD0A2FF.toInt(),
+            "Ocean" to 0xFF55C8E8.toInt(),
+            "Emerald" to 0xFF65D6A0.toInt(),
+            "Sunset" to 0xFFFFA36C.toInt(),
+            "Rose" to 0xFFFF82B2.toInt()
+        )
+        palettes.forEach { (name, color) ->
+            paletteRow.addView(label("●", 24f, color, true).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "$name accent palette"
+                minWidth = dp(48)
+                minHeight = dp(48)
+                setOnClickListener {
+                    persistCustomization(customization.copy(accentArgb = color))
+                }
+            }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }
+        content.addView(paletteRow)
+        val hexInput = EditText(this).apply {
+            setSingleLine(true)
+            hint = "#D0A2FF"
+            setText(String.format("#%06X", 0xFFFFFF and customization.accentArgb))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        content.addView(hexInput, LinearLayout.LayoutParams(-1, dp(50)).apply {
+            topMargin = dp(8)
+        })
+        content.addView(label("Use a 6-digit hex color, for example #D0A2FF.", 11f, Color.LTGRAY).apply {
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        content.addView(label("HOME SCREEN SECTIONS", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        val sectionList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(sectionList)
+        var order = customization.homeSectionOrder.toMutableList()
+        var hidden = customization.hiddenHomeSections.toMutableSet()
+        fun refreshSectionOptions() {
+            sectionList.removeAllViews()
+            val titles = mapOf("recent" to "Recently played", "albums" to "Albums", "playlists" to "Playlists")
+            order.forEachIndexed { index, id ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val toggle = android.widget.CheckBox(this).apply {
+                    text = titles[id] ?: id
+                    setTextColor(Color.WHITE)
+                    isChecked = id !in hidden
+                    setOnCheckedChangeListener { _, checked ->
+                        if (checked) hidden.remove(id) else hidden.add(id)
+                        persistCustomization(customization.copy(hiddenHomeSections = hidden.toSet()))
+                    }
+                }
+                row.addView(toggle, LinearLayout.LayoutParams(0, dp(48), 1f))
+                row.addView(label("↑", 20f, Color.WHITE, true).apply {
+                    gravity = Gravity.CENTER
+                    minWidth = dp(42)
+                    minHeight = dp(44)
+                    contentDescription = "Move ${titles[id]} up"
+                    setOnClickListener {
+                        if (index > 0) {
+                            val item = order.removeAt(index)
+                            order.add(index - 1, item)
+                            persistCustomization(customization.copy(homeSectionOrder = order.toList()))
+                            refreshSectionOptions()
+                        }
+                    }
+                })
+                row.addView(label("↓", 20f, Color.WHITE, true).apply {
+                    gravity = Gravity.CENTER
+                    minWidth = dp(42)
+                    minHeight = dp(44)
+                    contentDescription = "Move ${titles[id]} down"
+                    setOnClickListener {
+                        if (index < order.lastIndex) {
+                            val item = order.removeAt(index)
+                            order.add(index + 1, item)
+                            persistCustomization(customization.copy(homeSectionOrder = order.toList()))
+                            refreshSectionOptions()
+                        }
+                    }
+                })
+                sectionList.addView(row)
+            }
+        }
+        refreshSectionOptions()
+        content.addView(label("HOME WALLPAPER", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        content.addView(label("Choose an image stored on your device. It stays local to this app.", 11f, Color.LTGRAY))
+        val wallpaperRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        wallpaperRow.addView(label("Choose wallpaper", 13f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            background = roundedBackground(Color.rgb(58, 39, 78), 12)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setOnClickListener { wallpaperPickerLauncher.launch(arrayOf("image/*")) }
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        wallpaperRow.addView(label("Reset", 13f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setOnClickListener {
+                persistCustomization(customization.copy(wallpaperUri = null))
+                applyCustomizationWallpaper()
+            }
+        })
+        content.addView(wallpaperRow)
+        content.addView(label("More personalization tools will be added in the next stages.", 11f, Color.rgb(178, 160, 195)).apply {
+            setPadding(0, dp(14), 0, 0)
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("Make A1 yours")
+            .setView(scroll)
+            .setPositiveButton("Apply color") { _, _ ->
+                val raw = hexInput.text?.toString()?.trim().orEmpty()
+                val normalized = if (raw.startsWith("#")) raw else "#$raw"
+                val parsed = runCatching { Color.parseColor(normalized) }.getOrNull()
+                if (parsed == null) {
+                    Toast.makeText(this, "Enter a valid hex color such as #D0A2FF.", Toast.LENGTH_LONG).show()
+                } else {
+                    persistCustomization(customization.copy(accentArgb = parsed))
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun openHomeShortcut(destination: String) {
@@ -2749,7 +2970,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(11))
             background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
-                setStroke(dp(1), Color.rgb(82, 58, 108))
+                setStroke(dp(1), customization.secondaryAccentArgb)
             }
             isClickable = true
             isFocusable = true
@@ -2760,7 +2981,7 @@ class MainActivity : AppCompatActivity() {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
-                setStroke(dp(1), Color.rgb(131, 88, 164))
+                setStroke(dp(1), customization.accentArgb)
             }
             clipToOutline = true
             contentDescription = "Artwork for ${song.title}"
@@ -2785,7 +3006,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(11))
             background = roundedBackground(Color.rgb(37, 25, 53), 18).apply {
-                setStroke(dp(1), Color.rgb(82, 58, 108))
+                setStroke(dp(1), customization.secondaryAccentArgb)
             }
             isClickable = true
             isFocusable = true
@@ -2796,7 +3017,7 @@ class MainActivity : AppCompatActivity() {
             setImageResource(R.drawable.ic_audio_placeholder)
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = roundedBackground(Color.rgb(55, 34, 75), 14).apply {
-                setStroke(dp(1), Color.rgb(131, 88, 164))
+                setStroke(dp(1), customization.accentArgb)
             }
             clipToOutline = true
             contentDescription = "Playlist artwork for $name"
@@ -2817,7 +3038,7 @@ class MainActivity : AppCompatActivity() {
     private fun homeEmptyCard(message: String): View = label(message, 13f, Color.rgb(183, 163, 204)).apply {
         setPadding(dp(15), dp(16), dp(15), dp(16))
         background = roundedBackground(Color.rgb(31, 22, 44), 16).apply {
-            setStroke(dp(1), Color.rgb(71, 51, 93))
+            setStroke(dp(1), customization.secondaryAccentArgb)
         }
     }
 
