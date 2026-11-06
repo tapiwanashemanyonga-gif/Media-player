@@ -32,7 +32,12 @@ data class A1ThemeProfile(
     val name: String,
     val accentArgb: Int,
     val secondaryAccentArgb: Int,
-    val wallpaperUri: String? = null
+    val wallpaperUri: String? = null,
+    val homeSectionOrder: List<String> = A1CustomizationSettings.DEFAULT_HOME_SECTIONS,
+    val hiddenHomeSections: Set<String> = emptySet(),
+    val visualizerSkin: String = "wave",
+    val homeDensity: String = "comfortable",
+    val homeCardShape: String = "rounded"
 )
 
 data class A1TrackMemory(
@@ -113,6 +118,11 @@ class A1CustomizationStore(context: Context) {
             put("accent", profile.accentArgb)
             put("secondary", profile.secondaryAccentArgb)
             put("wallpaperUri", profile.wallpaperUri)
+            put("homeSectionOrder", JSONArray(profile.homeSectionOrder.filter { it in A1CustomizationSettings.ALLOWED_SECTIONS }))
+            put("hiddenHomeSections", JSONArray(profile.hiddenHomeSections.filter { it in A1CustomizationSettings.ALLOWED_SECTIONS }))
+            put("visualizerSkin", profile.visualizerSkin.takeIf { it in A1CustomizationSettings.ALLOWED_SKINS } ?: "wave")
+            put("homeDensity", profile.homeDensity.takeIf { it in A1CustomizationSettings.ALLOWED_HOME_DENSITIES } ?: "comfortable")
+            put("homeCardShape", profile.homeCardShape.takeIf { it in A1CustomizationSettings.ALLOWED_HOME_CARD_SHAPES } ?: "rounded")
         })
         preferences.edit().putString(KEY_THEME_PROFILES, profiles.toString()).apply()
     }
@@ -128,7 +138,16 @@ class A1CustomizationStore(context: Context) {
                 name = name,
                 accentArgb = item.optInt("accent", 0xFFD0A2FF.toInt()),
                 secondaryAccentArgb = item.optInt("secondary", 0xFF765397.toInt()),
-                wallpaperUri = item.optString("wallpaperUri").takeIf { it.isNotBlank() && it != "null" }
+                wallpaperUri = item.optString("wallpaperUri").takeIf { it.isNotBlank() && it != "null" },
+                homeSectionOrder = item.optJSONArray("homeSectionOrder")?.let { array ->
+                    List(array.length()) { array.optString(it) }.filter { it in A1CustomizationSettings.ALLOWED_SECTIONS }.distinct()
+                }?.ifEmpty { A1CustomizationSettings.DEFAULT_HOME_SECTIONS } ?: A1CustomizationSettings.DEFAULT_HOME_SECTIONS,
+                hiddenHomeSections = item.optJSONArray("hiddenHomeSections")?.let { array ->
+                    List(array.length()) { array.optString(it) }.filter { it in A1CustomizationSettings.ALLOWED_SECTIONS }.toSet()
+                } ?: emptySet(),
+                visualizerSkin = item.optString("visualizerSkin", "wave").takeIf { it in A1CustomizationSettings.ALLOWED_SKINS } ?: "wave",
+                homeDensity = item.optString("homeDensity", "comfortable").takeIf { it in A1CustomizationSettings.ALLOWED_HOME_DENSITIES } ?: "comfortable",
+                homeCardShape = item.optString("homeCardShape", "rounded").takeIf { it in A1CustomizationSettings.ALLOWED_HOME_CARD_SHAPES } ?: "rounded"
             )
         }
         return result.sortedBy { it.name.lowercase() }
