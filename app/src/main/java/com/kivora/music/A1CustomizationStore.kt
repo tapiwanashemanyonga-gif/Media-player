@@ -15,12 +15,16 @@ data class A1CustomizationSettings(
     val homeSectionOrder: List<String> = DEFAULT_HOME_SECTIONS,
     val hiddenHomeSections: Set<String> = emptySet(),
     val visualizerSkin: String = "wave",
-    val pinnedShortcuts: List<String> = emptyList()
+    val pinnedShortcuts: List<String> = emptyList(),
+    val homeDensity: String = "comfortable",
+    val homeCardShape: String = "rounded"
 ) {
     companion object {
         val DEFAULT_HOME_SECTIONS = listOf("recent", "albums", "playlists")
         val ALLOWED_SECTIONS = DEFAULT_HOME_SECTIONS.toSet()
         val ALLOWED_SKINS = setOf("wave", "vinyl", "cassette")
+        val ALLOWED_HOME_DENSITIES = setOf("compact", "comfortable", "spacious")
+        val ALLOWED_HOME_CARD_SHAPES = setOf("rounded", "soft", "square")
     }
 }
 
@@ -63,6 +67,10 @@ class A1CustomizationStore(context: Context) {
         val skin = preferences.getString(KEY_SKIN, "wave").orEmpty()
             .takeIf { it in A1CustomizationSettings.ALLOWED_SKINS } ?: "wave"
         val pins = readStringList(KEY_PINS).distinct().take(MAX_PINS)
+        val density = preferences.getString(KEY_HOME_DENSITY, "comfortable").orEmpty()
+            .takeIf { it in A1CustomizationSettings.ALLOWED_HOME_DENSITIES } ?: "comfortable"
+        val cardShape = preferences.getString(KEY_HOME_CARD_SHAPE, "rounded").orEmpty()
+            .takeIf { it in A1CustomizationSettings.ALLOWED_HOME_CARD_SHAPES } ?: "rounded"
         return A1CustomizationSettings(
             accentArgb = preferences.getInt(KEY_ACCENT, 0xFFD0A2FF.toInt()),
             secondaryAccentArgb = preferences.getInt(KEY_SECONDARY, 0xFF765397.toInt()),
@@ -71,7 +79,9 @@ class A1CustomizationStore(context: Context) {
                 .distinct().filter { it in A1CustomizationSettings.ALLOWED_SECTIONS },
             hiddenHomeSections = hidden,
             visualizerSkin = skin,
-            pinnedShortcuts = pins
+            pinnedShortcuts = pins,
+            homeDensity = density,
+            homeCardShape = cardShape
         )
     }
 
@@ -90,6 +100,8 @@ class A1CustomizationStore(context: Context) {
             .putString(KEY_HOME_HIDDEN, JSONArray(safeHidden).toString())
             .putString(KEY_SKIN, safeSkin)
             .putString(KEY_PINS, JSONArray(settings.pinnedShortcuts.distinct().take(MAX_PINS)).toString())
+            .putString(KEY_HOME_DENSITY, settings.homeDensity.takeIf { it in A1CustomizationSettings.ALLOWED_HOME_DENSITIES } ?: "comfortable")
+            .putString(KEY_HOME_CARD_SHAPE, settings.homeCardShape.takeIf { it in A1CustomizationSettings.ALLOWED_HOME_CARD_SHAPES } ?: "rounded")
             .apply()
     }
 
@@ -205,6 +217,8 @@ class A1CustomizationStore(context: Context) {
         private const val KEY_HOME_HIDDEN = "home_section_hidden"
         private const val KEY_SKIN = "visualizer_skin"
         private const val KEY_PINS = "pinned_shortcuts"
+        private const val KEY_HOME_DENSITY = "home_density"
+        private const val KEY_HOME_CARD_SHAPE = "home_card_shape"
         private const val KEY_TRACK_MEMORIES = "track_memories"
         private const val KEY_THEME_PROFILES = "theme_profiles"
         private const val KEY_EQ_PROFILES = "equalizer_profiles"
