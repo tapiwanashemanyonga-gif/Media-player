@@ -111,6 +111,7 @@ jobs:
           A1_KEYSTORE_PASSWORD: ${{ secrets.A1_KEYSTORE_PASSWORD }}
           A1_KEY_PASSWORD: ${{ secrets.A1_KEY_PASSWORD }}
           A1_KEY_ALIAS: a1family
+          A1_MEDIA_APP_KEY: ${{ secrets[format('A1_{0}', 'MEDIA_APP_KEY')] }}
         run: |
           set -euo pipefail
           for name in A1_KEYSTORE_PASSWORD A1_KEY_PASSWORD; do

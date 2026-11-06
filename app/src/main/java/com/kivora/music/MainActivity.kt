@@ -318,6 +318,7 @@ class MainActivity : AppCompatActivity() {
         connectToPlaybackService()
         handler.post(progressUpdater)
         checkForAppUpdates()
+        A1InstallTrackingClient(this).recordFirstOpen()
 
         val permission = if (Build.VERSION.SDK_INT >= 33) {
             Manifest.permission.READ_MEDIA_AUDIO

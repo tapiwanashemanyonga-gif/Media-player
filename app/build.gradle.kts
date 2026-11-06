@@ -23,6 +23,9 @@ android {
         targetSdk = 35
         versionCode = 7
         versionName = "1.6"
+        val trackingKey = System.getenv("A1_MEDIA_APP_KEY").orEmpty()
+            .replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "A1_APP_TRACKING_KEY", "\"$trackingKey\"")
     }
 
     signingConfigs {
