@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HomePurple = Color(0xFFD0A2FF)
+private val accent = Color(0xFFD0A2FF)
 private val HomeMuted = Color(0xFFC5B4D7)
 private val HomeSurface = Color(0xFF261A36)
 
@@ -39,11 +39,13 @@ fun A1HomeHeader(
     songCount: Int,
     albumCount: Int,
     playlistCount: Int,
+    accentArgb: Int = 0xFFD0A2FF.toInt(),
     onBrowse: () -> Unit,
     onAlbums: () -> Unit,
     onArtists: () -> Unit,
     onFavourites: () -> Unit
 ) {
+    val accent = Color(accentArgb)
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(15.dp)
@@ -67,7 +69,7 @@ fun A1HomeHeader(
         ) {
             Text(
                 "A1 FAMILY MEDIA  ·  YOUR LOCAL COLLECTION",
-                color = HomePurple,
+                color = accent,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.15.sp
@@ -141,7 +143,7 @@ private fun HomeShortcut(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = HomePurple, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(22.dp))
             Text(title, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Text(detail, color = HomeMuted, fontSize = 8.sp, maxLines = 1)
         }
