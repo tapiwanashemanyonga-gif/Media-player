@@ -2852,6 +2852,104 @@ class MainActivity : AppCompatActivity() {
         content.addView(label("Choose a preset or enter two 6-digit HEX colours. Your theme is saved on this device.", 11f, Color.LTGRAY).apply {
             setPadding(0, dp(6), 0, dp(8))
         })
+
+        content.addView(label("MY SAVED THEMES", 11f, Color.rgb(190, 160, 220), true).apply {
+            setPadding(0, dp(14), 0, dp(8))
+        })
+        val themeNameInput = EditText(this).apply {
+            setSingleLine(true)
+            hint = "Name this theme (e.g. My Night Mode)"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        content.addView(themeNameInput, LinearLayout.LayoutParams(-1, dp(50)))
+        val savedThemeSpinner = android.widget.Spinner(this)
+        fun refreshSavedThemes(): List<A1ThemeProfile> {
+            val profiles = customizationStore.loadThemeProfiles()
+            savedThemeSpinner.adapter = android.widget.ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                profiles.map { it.name }
+            )
+            return profiles
+        }
+        var savedThemes = refreshSavedThemes()
+        content.addView(savedThemeSpinner, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(6)
+        })
+        val themeActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun themeActionButton(title: String, action: () -> Unit) =
+            label(title, 11f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                minHeight = dp(46)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = roundedBackground(Color.rgb(58, 39, 78), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { action() }
+            }
+        themeActions.addView(themeActionButton("Save theme") {
+            val name = themeNameInput.text?.toString()?.trim().orEmpty()
+            if (name.isBlank()) {
+                themeNameInput.error = "Enter a theme name"
+            } else {
+                runCatching {
+                    customizationStore.saveThemeProfile(
+                        A1ThemeProfile(name, customization.accentArgb, customization.secondaryAccentArgb, customization.wallpaperUri)
+                    )
+                }.onSuccess {
+                    savedThemes = refreshSavedThemes()
+                    val selected = savedThemes.indexOfFirst { it.name.equals(name.take(40), ignoreCase = true) }
+                    if (selected >= 0) savedThemeSpinner.setSelection(selected)
+                    themeNameInput.text?.clear()
+                    Toast.makeText(this, "Theme saved on this device.", Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Could not save theme.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(4) })
+        themeActions.addView(themeActionButton("Apply") {
+            val profile = savedThemes.getOrNull(savedThemeSpinner.selectedItemPosition)
+            if (profile == null) {
+                Toast.makeText(this, "Save a theme first.", Toast.LENGTH_SHORT).show()
+            } else {
+                persistCustomization(customization.copy(
+                    accentArgb = profile.accentArgb,
+                    secondaryAccentArgb = profile.secondaryAccentArgb,
+                    wallpaperUri = profile.wallpaperUri
+                ))
+                applyCustomizationWallpaper()
+                hexInput.setText(String.format("#%06X", 0xFFFFFF and profile.accentArgb))
+                secondaryHexInput.setText(String.format("#%06X", 0xFFFFFF and profile.secondaryAccentArgb))
+                Toast.makeText(this, "${profile.name} applied.", Toast.LENGTH_SHORT).show()
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+        themeActions.addView(themeActionButton("Delete") {
+            val profile = savedThemes.getOrNull(savedThemeSpinner.selectedItemPosition)
+            if (profile == null) {
+                Toast.makeText(this, "Choose a saved theme first.", Toast.LENGTH_SHORT).show()
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Delete ${profile.name}?")
+                    .setMessage("This removes the saved theme profile from this device. It does not change your current appearance.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Delete") { _, _ ->
+                        customizationStore.deleteThemeProfile(profile.name)
+                        savedThemes = refreshSavedThemes()
+                    }
+                    .show()
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4) })
+        content.addView(themeActions)
+
         content.addView(label("HOME SCREEN SECTIONS", 11f, Color.rgb(190, 160, 220), true).apply {
             setPadding(0, dp(14), 0, dp(8))
         })
