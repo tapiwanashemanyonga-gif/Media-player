@@ -5,7 +5,10 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
-import java.time.Instant
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 /**
@@ -36,7 +39,7 @@ class A1InstallTrackingClient(context: Context) {
             .put("event_id", eventId)
             .put("event_type", "install_first_open")
             .put("visitor_id", visitorId)
-            .put("occurred_at", Instant.now().toString())
+            .put("occurred_at", utcTimestamp())
             .put(
                 "metadata",
                 JSONObject()
@@ -73,6 +76,10 @@ class A1InstallTrackingClient(context: Context) {
             }
         }, "a1-install-tracking").start()
     }
+
+    private fun utcTimestamp(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }.format(Date())
 
     private companion object {
         const val EVENTS_URL = "https://a1-family-cloud-api.tapiwanashemanyonga.workers.dev/v1/events"
