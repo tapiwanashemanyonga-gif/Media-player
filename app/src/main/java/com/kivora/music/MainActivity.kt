@@ -2784,13 +2784,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(18), dp(8), dp(18), dp(12))
         }
         val scroll = ScrollView(this).apply { addView(content) }
-        content.addView(label("ACCENT PALETTE", 11f, Color.rgb(190, 160, 220), true).apply {
+        content.addView(label("THEME STUDIO", 11f, Color.rgb(190, 160, 220), true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
-        val hexInput = EditText(this).apply {
+        fun colorInput(hintValue: String, value: Int) = EditText(this).apply {
             setSingleLine(true)
-            hint = "#D0A2FF"
-            setText(String.format("#%06X", 0xFFFFFF and customization.accentArgb))
+            hint = hintValue
+            setText(String.format("#%06X", 0xFFFFFF and value))
             setTextColor(Color.WHITE)
             setHintTextColor(Color.GRAY)
             inputType = android.text.InputType.TYPE_CLASS_TEXT
@@ -2799,32 +2799,58 @@ class MainActivity : AppCompatActivity() {
             }
             setPadding(dp(12), dp(10), dp(12), dp(10))
         }
+        val hexInput = colorInput("#D0A2FF", customization.accentArgb)
+        val secondaryHexInput = colorInput("#765397", customization.secondaryAccentArgb)
         val paletteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val palettes = listOf(
-            "Lavender" to 0xFFD0A2FF.toInt(),
-            "Ocean" to 0xFF55C8E8.toInt(),
-            "Emerald" to 0xFF65D6A0.toInt(),
-            "Sunset" to 0xFFFFA36C.toInt(),
-            "Rose" to 0xFFFF82B2.toInt()
+            Triple("Lavender", 0xFFD0A2FF.toInt(), 0xFF765397.toInt()),
+            Triple("Ocean", 0xFF55C8E8.toInt(), 0xFF245B91.toInt()),
+            Triple("Emerald", 0xFF65D6A0.toInt(), 0xFF205C4A.toInt()),
+            Triple("Sunset", 0xFFFFA36C.toInt(), 0xFF8A3D55.toInt()),
+            Triple("Rose", 0xFFFF82B2.toInt(), 0xFF74365E.toInt())
         )
-        palettes.forEach { (name, color) ->
-            paletteRow.addView(label("●", 24f, color, true).apply {
+        palettes.forEach { (name, primary, secondary) ->
+            paletteRow.addView(label("●", 24f, primary, true).apply {
                 gravity = Gravity.CENTER
-                contentDescription = "$name accent palette"
+                contentDescription = "$name theme palette"
                 minWidth = dp(48)
                 minHeight = dp(48)
                 setOnClickListener {
-                    hexInput.setText(String.format("#%06X", 0xFFFFFF and color))
-                    persistCustomization(customization.copy(accentArgb = color, secondaryAccentArgb = color))
+                    hexInput.setText(String.format("#%06X", 0xFFFFFF and primary))
+                    secondaryHexInput.setText(String.format("#%06X", 0xFFFFFF and secondary))
+                    persistCustomization(customization.copy(accentArgb = primary, secondaryAccentArgb = secondary))
                 }
             }, LinearLayout.LayoutParams(0, dp(48), 1f))
         }
         content.addView(paletteRow)
-        content.addView(hexInput, LinearLayout.LayoutParams(-1, dp(50)).apply {
-            topMargin = dp(8)
+        val colorInputs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        colorInputs.addView(hexInput, LinearLayout.LayoutParams(0, dp(50), 1f).apply { rightMargin = dp(6) })
+        colorInputs.addView(secondaryHexInput, LinearLayout.LayoutParams(0, dp(50), 1f).apply { leftMargin = dp(6) })
+        content.addView(colorInputs)
+        content.addView(label("Primary accent                         Secondary accent", 10f, Color.LTGRAY).apply {
+            setPadding(dp(2), dp(4), 0, dp(8))
         })
-        content.addView(label("Use a 6-digit hex color, for example #D0A2FF.", 11f, Color.LTGRAY).apply {
-            setPadding(0, dp(4), 0, dp(8))
+        val themePreview = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = roundedBackground(Color.rgb(35, 25, 48), 16).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+        }
+        themePreview.addView(label("A1  THEME PREVIEW", 12f, Color.WHITE, true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        themePreview.addView(label("PLAY", 11f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(9), dp(18), dp(9))
+            background = roundedBackground(customization.accentArgb, 22)
+        })
+        content.addView(themePreview)
+        content.addView(label("Choose a preset or enter two 6-digit HEX colours. Your theme is saved on this device.", 11f, Color.LTGRAY).apply {
+            setPadding(0, dp(6), 0, dp(8))
         })
         content.addView(label("HOME SCREEN SECTIONS", 11f, Color.rgb(190, 160, 220), true).apply {
             setPadding(0, dp(14), 0, dp(8))
@@ -2913,11 +2939,14 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Apply color") { _, _ ->
                 val raw = hexInput.text?.toString()?.trim().orEmpty()
                 val normalized = if (raw.startsWith("#")) raw else "#$raw"
+                val secondaryRaw = secondaryHexInput.text?.toString()?.trim().orEmpty()
+                val secondaryNormalized = if (secondaryRaw.startsWith("#")) secondaryRaw else "#$secondaryRaw"
                 val parsed = runCatching { Color.parseColor(normalized) }.getOrNull()
-                if (parsed == null) {
-                    Toast.makeText(this, "Enter a valid hex color such as #D0A2FF.", Toast.LENGTH_LONG).show()
+                val secondaryParsed = runCatching { Color.parseColor(secondaryNormalized) }.getOrNull()
+                if (parsed == null || secondaryParsed == null) {
+                    Toast.makeText(this, "Enter valid HEX colours, for example #D0A2FF and #765397.", Toast.LENGTH_LONG).show()
                 } else {
-                    persistCustomization(customization.copy(accentArgb = parsed, secondaryAccentArgb = parsed))
+                    persistCustomization(customization.copy(accentArgb = parsed, secondaryAccentArgb = secondaryParsed))
                 }
             }
             .setNegativeButton("Close", null)
