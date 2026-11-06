@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -105,7 +106,19 @@ internal object AdsterraSongListBanner {
             </body>
             </html>
         """.trimIndent()
-        container.addView(webView, LinearLayout.LayoutParams(bannerWidth, dp(context, 50)))
+        // Keep the advert inside a fixed 320x50 viewport so a third-party iframe
+        // cannot draw over or intercept the following song row.
+        val adFrame = FrameLayout(context).apply {
+            clipChildren = true
+            clipToPadding = true
+            isClickable = false
+            isFocusable = false
+        }
+        adFrame.addView(
+            webView,
+            FrameLayout.LayoutParams(bannerWidth, dp(context, 50), Gravity.CENTER)
+        )
+        container.addView(adFrame, LinearLayout.LayoutParams(bannerWidth, dp(context, 50)))
         webView.loadDataWithBaseURL("https://$AD_HOST/", html, "text/html", "UTF-8", null)
         return container
     }
