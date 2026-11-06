@@ -1684,6 +1684,124 @@ class MainActivity : AppCompatActivity() {
                 content.addView(slider)
             }
 
+            var latestLevels = state.getIntArray(KivoraPlaybackService.KEY_LEVELS)?.toList().orEmpty()
+            var latestEnabled = state.getBoolean(KivoraPlaybackService.KEY_ENABLED)
+            val profileHeading = label("MY SOUND PROFILES", 10f, Color.rgb(194, 163, 224), true).apply {
+                setPadding(0, dp(16), 0, dp(6))
+            }
+            content.addView(profileHeading)
+            content.addView(label("Save your custom band settings and reuse them whenever you like.", 11f, Color.LTGRAY).apply {
+                setPadding(0, 0, 0, dp(6))
+            })
+            val profileSpinner = android.widget.Spinner(this)
+            fun refreshEqualizerProfiles(): List<A1EqualizerProfile> {
+                val profiles = customizationStore.loadEqualizerProfiles()
+                profileSpinner.adapter = android.widget.ArrayAdapter(
+                    this@MainActivity,
+                    android.R.layout.simple_spinner_dropdown_item,
+                    profiles.map { it.name }
+                )
+                return profiles
+            }
+            var savedProfiles = refreshEqualizerProfiles()
+            content.addView(profileSpinner, LinearLayout.LayoutParams(-1, dp(46)))
+            fun profileAction(title: String, action: () -> Unit) = label(title, 11f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                minHeight = dp(44)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedBackground(Color.rgb(58, 39, 78), 12)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { action() }
+            }
+            val profileActions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            profileActions.addView(profileAction("Save current") {
+                if (latestLevels.size != frequencies.size || latestLevels.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Play a song and adjust the equalizer first.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val nameInput = EditText(this@MainActivity).apply {
+                        hint = "e.g. Deep Bass, Clear Vocals"
+                        setSingleLine(true)
+                        setTextColor(Color.WHITE)
+                        setHintTextColor(Color.GRAY)
+                        inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                    }
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Save sound profile")
+                        .setView(nameInput)
+                        .setPositiveButton("Save") { _, _ ->
+                            val name = nameInput.text?.toString()?.trim().orEmpty()
+                            runCatching {
+                                customizationStore.saveEqualizerProfile(
+                                    A1EqualizerProfile(name, latestLevels, latestEnabled)
+                                )
+                            }.onSuccess {
+                                savedProfiles = refreshEqualizerProfiles()
+                                val selected = savedProfiles.indexOfFirst { it.name.equals(name.take(40), true) }
+                                if (selected >= 0) profileSpinner.setSelection(selected)
+                                Toast.makeText(this@MainActivity, "Sound profile saved on this device.", Toast.LENGTH_SHORT).show()
+                            }.onFailure {
+                                Toast.makeText(this@MainActivity, it.message ?: "Couldn't save sound profile.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = dp(4) })
+            profileActions.addView(profileAction("Apply") {
+                val profile = savedProfiles.getOrNull(profileSpinner.selectedItemPosition)
+                if (profile == null) {
+                    Toast.makeText(this@MainActivity, "Save a sound profile first.", Toast.LENGTH_SHORT).show()
+                } else if (profile.levelsMillibels.size != frequencies.size) {
+                    Toast.makeText(this@MainActivity, "This profile was made for a different equalizer. Save it again on this device.", Toast.LENGTH_LONG).show()
+                } else {
+                    sendEqualizerCommand(
+                        KivoraPlaybackService.COMMAND_SET_ENABLED,
+                        Bundle().apply { putBoolean(KivoraPlaybackService.KEY_ENABLED, profile.enabled) }
+                    ) { updated ->
+                        applyState(updated)
+                        fun applyProfileBand(index: Int) {
+                            if (index >= profile.levelsMillibels.size) {
+                                Toast.makeText(this@MainActivity, "${profile.name} applied.", Toast.LENGTH_SHORT).show()
+                                return
+                            }
+                            val level = profile.levelsMillibels[index].coerceIn(minLevel, maxLevel)
+                            sendEqualizerCommand(
+                                KivoraPlaybackService.COMMAND_SET_BAND,
+                                Bundle().apply {
+                                    putInt(KivoraPlaybackService.KEY_BAND, index)
+                                    putInt(KivoraPlaybackService.KEY_LEVEL, level)
+                                }
+                            ) { nextState ->
+                                applyState(nextState)
+                                applyProfileBand(index + 1)
+                            }
+                        }
+                        applyProfileBand(0)
+                    }
+                }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+            profileActions.addView(profileAction("Delete") {
+                val profile = savedProfiles.getOrNull(profileSpinner.selectedItemPosition)
+                if (profile == null) {
+                    Toast.makeText(this@MainActivity, "Choose a saved profile first.", Toast.LENGTH_SHORT).show()
+                } else {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Delete ${profile.name}?")
+                        .setMessage("This removes the saved sound profile from this device.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete") { _, _ ->
+                            customizationStore.deleteEqualizerProfile(profile.name)
+                            savedProfiles = refreshEqualizerProfiles()
+                        }
+                        .show()
+                }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { leftMargin = dp(4) })
+            content.addView(profileActions)
+
             val dialog = AlertDialog.Builder(this)
                 .setTitle("Audio equalizer")
                 .setView(ScrollView(this).apply { addView(content) })
@@ -1702,7 +1820,9 @@ class MainActivity : AppCompatActivity() {
                         spinner.setSelection(selectedPreset)
                     }
                 }
+                latestEnabled = updated.getBoolean(KivoraPlaybackService.KEY_ENABLED)
                 val levels = updated.getIntArray(KivoraPlaybackService.KEY_LEVELS) ?: return
+                latestLevels = levels.toList()
                 levels.indices.filter { it < bandSliders.size }.forEach { band ->
                     bandSliders[band].progress = levels[band] - minLevel
                     levelLabels[band].text = formatEqualizerLevel(levels[band])
