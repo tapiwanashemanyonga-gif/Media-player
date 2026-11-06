@@ -183,6 +183,12 @@ class A1CustomizationStore(context: Context) {
         }.toList()
     }
 
+    fun deleteEqualizerProfile(name: String) {
+        val profiles = readObject(KEY_EQ_PROFILES)
+        profiles.remove(name)
+        preferences.edit().putString(KEY_EQ_PROFILES, profiles.toString()).apply()
+    }
+
     fun saveFolderTag(uri: String, tag: String?) {
         val tags = readObject(KEY_FOLDER_TAGS)
         if (tag.isNullOrBlank()) tags.remove(uri) else tags.put(uri, tag.trim().take(40))
