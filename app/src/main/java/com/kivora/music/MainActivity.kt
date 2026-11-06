@@ -3867,9 +3867,68 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(8) })
         content.addView(actionButton("Play next", "Play ${song.title} after the current song") {
             playSongNext(song)
+        }, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(8) })
+        content.addView(actionButton("Track memory & mood", "Add a personal note or mood for ${song.title}") {
+            openTrackMemoryDialog(song)
         }, LinearLayout.LayoutParams(-1, dp(48)))
 
         dialog.show()
+    }
+
+    private fun openTrackMemoryDialog(song: Song) {
+        val key = song.uri.toString()
+        val saved = customizationStore.loadTrackMemory(key)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        val moodInput = EditText(this).apply {
+            setSingleLine(true)
+            hint = "Mood (e.g. Relaxed, Focused, Joyful)"
+            setText(saved.mood)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        val noteInput = EditText(this).apply {
+            hint = "Your personal memory about this song..."
+            setText(saved.note)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            minLines = 3
+            maxLines = 5
+            gravity = Gravity.TOP
+            background = roundedBackground(Color.rgb(35, 25, 48), 12).apply {
+                setStroke(dp(1), customization.secondaryAccentArgb)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        content.addView(label("MOOD", 10f, Color.rgb(190, 160, 220), true))
+        content.addView(moodInput, LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(10) })
+        content.addView(label("PERSONAL NOTE", 10f, Color.rgb(190, 160, 220), true))
+        content.addView(noteInput, LinearLayout.LayoutParams(-1, dp(116)))
+        AlertDialog.Builder(this)
+            .setTitle("Your memory · ${song.title}")
+            .setView(content)
+            .setPositiveButton("Save memory") { _, _ ->
+                customizationStore.saveTrackMemory(
+                    key,
+                    A1TrackMemory(
+                        note = noteInput.text?.toString().orEmpty().trim(),
+                        mood = moodInput.text?.toString().orEmpty().trim()
+                    )
+                )
+                Toast.makeText(this, "Track memory saved on this device.", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                customizationStore.saveTrackMemory(key, A1TrackMemory())
+                Toast.makeText(this, "Track memory cleared.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun enqueueSong(song: Song) {
