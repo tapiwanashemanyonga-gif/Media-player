@@ -34,6 +34,12 @@ jobs:
           test -s "$MANIFEST"
           test -s "$SONG_AD_FILE"
           test -s "$HOME_AD_FILE"
+          git fetch --no-tags --depth=1 origin main
+          git diff --check FETCH_HEAD HEAD
+          grep -Fq 'private var songRenderLimit = 40' "$MAIN_ACTIVITY"
+          grep -Fq 'private var videoRenderLimit = 24' "$MAIN_ACTIVITY"
+          grep -Fq 'handler.postDelayed(pendingRender, 180L)' "$MAIN_ACTIVITY"
+          grep -Fq 'searchRenderRunnable?.let(handler::removeCallbacks)' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoThumbnailCache' "$MAIN_ACTIVITY"
