@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PACKAGE="com.a1family.media"
-ACTIVITY="com.kivora.music/.MainActivity"
+ACTIVITY="com.a1family.media/com.kivora.music.MainActivity"
 APK_PATH="${APK_PATH:-app-release.apk}"
 SCREEN_WIDTH="${SCREEN_WIDTH:-360}"
 SCREEN_HEIGHT="${SCREEN_HEIGHT:-800}"
