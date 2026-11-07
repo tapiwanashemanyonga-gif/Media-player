@@ -95,8 +95,14 @@ jobs:
           grep -Fq 'handler.postDelayed(pendingRender, 180L)' "$MAIN_ACTIVITY"
           grep -Fq 'searchRenderRunnable?.let(handler::removeCallbacks)' "$MAIN_ACTIVITY"
           grep -Fq 'cachedAlbumGroups' "$MAIN_ACTIVITY"
-          grep -Fq 'val songsByUri = HashMap<String, Song>(songs.size)' "$MAIN_ACTIVITY"
-          grep -Fq 'if (!songsByUri.containsKey(uri)) songsByUri[uri] = song' "$MAIN_ACTIVITY"
+          HELPER_FILE="app/src/main/java/com/kivora/music/MediaLibraryHelpers.kt"
+          UNIT_TEST_FILE="app/src/test/java/com/kivora/music/MediaLibraryHelpersTest.kt"
+          test -s "$HELPER_FILE"
+          test -s "$UNIT_TEST_FILE"
+          grep -Fq 'firstItemByKey(songs)' "$MAIN_ACTIVITY"
+          grep -Fq 'filterItemsByTitle(deviceVideos, query)' "$MAIN_ACTIVITY"
+          grep -Fq 'firstItemByKeyPreservesFirstDuplicate' "$UNIT_TEST_FILE"
+          grep -Fq 'titleFilterTrimsAndIgnoresCase' "$UNIT_TEST_FILE"
           grep -Fq 'else if (tab == "videos" && deviceVideos.isNotEmpty())' "$MAIN_ACTIVITY"
           grep -Fq 'minimumHeight = dp(if (compactPlayerLayout) 34 else 42)' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
@@ -153,6 +159,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+
+      - name: Run media library unit regression tests
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
 
       - name: Restore existing A1 release signing keystore
         shell: bash
