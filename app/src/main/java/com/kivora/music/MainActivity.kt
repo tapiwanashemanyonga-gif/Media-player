@@ -537,7 +537,7 @@ class MainActivity : AppCompatActivity() {
         !(BuildConfig.DEBUG && intent.getBooleanExtra("a1.instrumentation.disable_ads", false))
 
     private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt
+        (value * resources.displayMetrics.density).toInt()
 
     private fun label(
         value: String,
