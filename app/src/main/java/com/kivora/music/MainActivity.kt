@@ -182,6 +182,8 @@ class MainActivity : AppCompatActivity() {
     private val navigationButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
+    // Album grouping is reused by the Home dashboard instead of recalculated on every track change.
+    private var cachedAlbumGroups: List<List<Song>>? = null
     private var activeQueue: List<Song> = emptyList()
     private val recentlyPlayedUris = mutableListOf<String>()
     private val favoriteSongUris = mutableSetOf<String>()
@@ -211,11 +213,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private var searchRenderRunnable: Runnable? = null
 
-    // Keep large MediaStore scans and video thumbnail decoding off the UI thread.
+    // Keep media scans and thumbnail decoding off the UI thread, and bound each UI render batch.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
-    private var songRenderLimit = 80
-    private var videoRenderLimit = 60
+    private var songRenderLimit = 40
+    private var videoRenderLimit = 24
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
     private var musicScanRequestId = 0
@@ -467,6 +470,7 @@ class MainActivity : AppCompatActivity() {
                 val song = Song(name, "Unknown artist", "Unknown album", 0L, uri, null)
                 songs.removeAll { it.uri == uri }
                 songs.add(0, song)
+                cachedAlbumGroups = null
                 normalizedSearchText[uri.toString()] =
                     (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
                 renderSongs(searchBox.text?.toString().orEmpty())
@@ -1540,11 +1544,22 @@ class MainActivity : AppCompatActivity() {
                     count: Int
                 ) {
                     searchQuery = s?.toString().orEmpty()
-                    songRenderLimit = 80
-                    videoRenderLimit = 60
+                    songRenderLimit = 40
+                    videoRenderLimit = 24
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
-                    if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
+                    // Avoid rebuilding dozens of Compose rows on every keystroke.
+                    // Only the most recent query is rendered after a short pause.
+                    searchRenderRunnable?.let(handler::removeCallbacks)
+                    val query = s?.toString().orEmpty()
+                    val targetTab = currentTab
+                    val pendingRender = Runnable {
+                        if (!isFinishing && !isDestroyed && currentTab == targetTab) {
+                            if (targetTab == "videos") renderVideos(query) else renderSongs(query)
+                        }
+                    }
+                    searchRenderRunnable = pendingRender
+                    handler.postDelayed(pendingRender, 180L)
                 }
 
                 override fun afterTextChanged(
@@ -2791,7 +2806,11 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        val albumCount = songs.map(::albumGroupKey).distinct().size
+        val albumGroups = cachedAlbumGroups ?: songs.groupBy(::albumGroupKey).values
+            .map { it.toList() }
+            .sortedBy { it.first().album.lowercase(Locale.ROOT) }
+            .also { cachedAlbumGroups = it }
+        val albumCount = albumGroups.size
         homeContent.addView(
             ComposeView(this).apply {
                 setContent {
@@ -2831,8 +2850,6 @@ class MainActivity : AppCompatActivity() {
         }
         sections["albums"] = {
             addHomeSection("Albums", "FROM YOUR LIBRARY")
-            val albumGroups = songs.groupBy(::albumGroupKey).values
-                .sortedBy { it.first().album.lowercase(Locale.ROOT) }
             if (albumGroups.isEmpty()) {
                 homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
             } else {
@@ -3551,6 +3568,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 songs.clear()
                 songs.addAll(scannedSongs)
+                cachedAlbumGroups = null
                 normalizedSearchText.clear()
                 syncPlaylistToPlayer()
                 recordRecentlyPlayed(player?.currentMediaItem)
@@ -3580,13 +3598,12 @@ class MainActivity : AppCompatActivity() {
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
+        // Build the lookup once: the previous nested scan became quadratic for large libraries.
+        val songsByUri = songs.associateBy { it.uri.toString() }
         val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
             val uri = p.getMediaItemAt(index)
                 .localConfiguration?.uri?.toString()
-
-            uri?.let { savedUri ->
-                songs.firstOrNull { it.uri.toString() == savedUri }
-            }
+            uri?.let(songsByUri::get)
         }
 
         if (p.mediaItemCount > 0) {
@@ -3874,7 +3891,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    songRenderLimit += 80
+                    songRenderLimit += 40
                     renderSongs(searchBox.text?.toString().orEmpty())
                 }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
@@ -4800,6 +4817,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         musicScanRequestId++
         videoScanRequestId++
+        searchRenderRunnable?.let(handler::removeCallbacks)
+        searchRenderRunnable = null
         musicScanExecutor.shutdownNow()
         videoScanExecutor.shutdownNow()
         videoThumbnailExecutor.shutdownNow()
@@ -4819,9 +4838,8 @@ class MainActivity : AppCompatActivity() {
         fullscreenVideoDialog = null
         restoreVideoPlayerView()
 
-        // Invalidate any pending artwork callback and stop its worker.
+        // Invalidate any pending artwork callback before releasing the activity.
         artworkRequestId++
-        artworkExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
@@ -4996,7 +5014,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    videoRenderLimit += 60
+                    videoRenderLimit += 24
                     renderVideos(query)
                 }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
