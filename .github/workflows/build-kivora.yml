@@ -15,6 +15,11 @@ on:
 permissions:
   contents: write
 
+# Keep only the newest run for this pull request/branch; stale matrix runs waste emulator capacity.
+concurrency:
+  group: a1-family-media-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-compatibility:
     name: Android API ${{ matrix.api-level }} compatibility test
