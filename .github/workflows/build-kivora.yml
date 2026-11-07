@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         api-level: [24, 29, 31, 33, 34, 35, 36]
     steps:
@@ -55,6 +55,17 @@ jobs:
           # Keep the install, SDK check, permission grant and test in one shell invocation.
           script: gradle --no-daemon installDebug && sdk_level=$(adb shell getprop ro.build.version.sdk | tr -d '\r') && if [ "$sdk_level" -ge 33 ]; then adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO; else adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE; fi && gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
+      - name: Upload Android instrumentation test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results-api-${{ matrix.api-level }}
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: ignore
+          retention-days: 14
+
   release:
     runs-on: ubuntu-latest
 
@@ -84,7 +95,9 @@ jobs:
           grep -Fq 'handler.postDelayed(pendingRender, 180L)' "$MAIN_ACTIVITY"
           grep -Fq 'searchRenderRunnable?.let(handler::removeCallbacks)' "$MAIN_ACTIVITY"
           grep -Fq 'cachedAlbumGroups' "$MAIN_ACTIVITY"
-          grep -Fq 'val songsByUri = songs.associateBy' "$MAIN_ACTIVITY"
+          grep -Fq 'val songsByUri = HashMap<String, Song>(songs.size)' "$MAIN_ACTIVITY"
+          grep -Fq 'if (!songsByUri.containsKey(uri)) songsByUri[uri] = song' "$MAIN_ACTIVITY"
+          grep -Fq 'else if (tab == "videos" && deviceVideos.isNotEmpty())' "$MAIN_ACTIVITY"
           grep -Fq 'minimumHeight = dp(if (compactPlayerLayout) 34 else 42)' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
