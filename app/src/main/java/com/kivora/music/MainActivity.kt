@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -327,8 +328,21 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(13, 8, 23)
-        window.navigationBarColor = Color.rgb(13, 8, 23)
+        if (Build.VERSION.SDK_INT >= 35) {
+            // Android 15+ enforces edge-to-edge for apps targeting API 35 or newer.
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
+        } else {
+            window.statusBarColor = Color.rgb(13, 8, 23)
+            window.navigationBarColor = Color.rgb(13, 8, 23)
+        }
 
         customizationStore = A1CustomizationStore(this)
         customization = customizationStore.load()
@@ -1520,7 +1534,28 @@ class MainActivity : AppCompatActivity() {
             composeNavigation,
             LinearLayout.LayoutParams(-1, dp(68))
         )
+        if (Build.VERSION.SDK_INT >= 35) {
+            val baseLeft = root.paddingLeft
+            val baseTop = root.paddingTop
+            val baseRight = root.paddingRight
+            val baseBottom = root.paddingBottom
+            ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
+                val systemInsets = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+                )
+                view.setPadding(
+                    baseLeft + systemInsets.left,
+                    baseTop + systemInsets.top,
+                    baseRight + systemInsets.right,
+                    baseBottom + systemInsets.bottom
+                )
+                windowInsets
+            }
+        }
         setContentView(root)
+        if (Build.VERSION.SDK_INT >= 35) {
+            ViewCompat.requestApplyInsets(root)
+        }
         applyCustomizationWallpaper()
         applyButtonFeedback(root)
 
