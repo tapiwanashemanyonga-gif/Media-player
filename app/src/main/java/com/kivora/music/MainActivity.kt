@@ -211,11 +211,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private var searchRenderRunnable: Runnable? = null
 
-    // Keep large MediaStore scans and video thumbnail decoding off the UI thread.
+    // Keep media scans and thumbnail decoding off the UI thread, and bound each UI render batch.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
-    private var songRenderLimit = 80
-    private var videoRenderLimit = 60
+    private var songRenderLimit = 40
+    private var videoRenderLimit = 24
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
     private var musicScanRequestId = 0
@@ -1540,11 +1541,22 @@ class MainActivity : AppCompatActivity() {
                     count: Int
                 ) {
                     searchQuery = s?.toString().orEmpty()
-                    songRenderLimit = 80
-                    videoRenderLimit = 60
+                    songRenderLimit = 40
+                    videoRenderLimit = 24
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
-                    if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
+                    // Avoid rebuilding dozens of Compose rows on every keystroke.
+                    // Only the most recent query is rendered after a short pause.
+                    searchRenderRunnable?.let(handler::removeCallbacks)
+                    val query = s?.toString().orEmpty()
+                    val targetTab = currentTab
+                    val pendingRender = Runnable {
+                        if (!isFinishing && !isDestroyed && currentTab == targetTab) {
+                            if (targetTab == "videos") renderVideos(query) else renderSongs(query)
+                        }
+                    }
+                    searchRenderRunnable = pendingRender
+                    handler.postDelayed(pendingRender, 180L)
                 }
 
                 override fun afterTextChanged(
@@ -3874,7 +3886,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    songRenderLimit += 80
+                    songRenderLimit += 40
                     renderSongs(searchBox.text?.toString().orEmpty())
                 }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
@@ -4800,6 +4812,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         musicScanRequestId++
         videoScanRequestId++
+        searchRenderRunnable?.let(handler::removeCallbacks)
+        searchRenderRunnable = null
         musicScanExecutor.shutdownNow()
         videoScanExecutor.shutdownNow()
         videoThumbnailExecutor.shutdownNow()
@@ -4819,9 +4833,8 @@ class MainActivity : AppCompatActivity() {
         fullscreenVideoDialog = null
         restoreVideoPlayerView()
 
-        // Invalidate any pending artwork callback and stop its worker.
+        // Invalidate any pending artwork callback before releasing the activity.
         artworkRequestId++
-        artworkExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
@@ -4996,7 +5009,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    videoRenderLimit += 60
+                    videoRenderLimit += 24
                     renderVideos(query)
                 }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
