@@ -40,6 +40,8 @@ jobs:
           grep -Fq 'private var videoRenderLimit = 24' "$MAIN_ACTIVITY"
           grep -Fq 'handler.postDelayed(pendingRender, 180L)' "$MAIN_ACTIVITY"
           grep -Fq 'searchRenderRunnable?.let(handler::removeCallbacks)' "$MAIN_ACTIVITY"
+          grep -Fq 'cachedAlbumGroups' "$MAIN_ACTIVITY"
+          grep -Fq 'val songsByUri = songs.associateBy' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoThumbnailCache' "$MAIN_ACTIVITY"
