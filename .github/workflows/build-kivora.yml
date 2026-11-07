@@ -51,7 +51,14 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim -camera-back none
           disable-animations: true
-          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
+          script: |
+            set -euo pipefail
+            if [ "${{ matrix.api-level }}" -lt 33 ]; then
+              adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE
+            else
+              adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO
+            fi
+            gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
   release:
     runs-on: ubuntu-latest
