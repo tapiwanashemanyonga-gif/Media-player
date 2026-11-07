@@ -1,9 +1,11 @@
 package com.kivora.music
 
+import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -20,7 +22,11 @@ class MainActivityPlaybackTest {
 
     @Test
     fun musicAndVideoPlayersPauseEachOtherWhenPlaybackStarts() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        val launchIntent = Intent(
+            ApplicationProvider.getApplicationContext(),
+            MainActivity::class.java
+        ).putExtra("a1.instrumentation.disable_ads", true)
+        ActivityScenario.launch<MainActivity>(launchIntent).use { scenario ->
             val players = awaitPlayers(scenario)
             assertNotNull("Music service controller should connect", players.first)
             assertNotNull("Video player should be created", players.second)
