@@ -81,7 +81,7 @@ matches = [
 if not matches:
     raise SystemExit("Mini-player play control is missing from the accessibility hierarchy.")
 bounds = matches[0].attrib.get("bounds", "")
-numbers = [int(value) for value in re.findall(r"-?\\d+", bounds)]
+numbers = [int(value) for value in re.findall(r"-?\d+", bounds)]
 if len(numbers) != 4:
     raise SystemExit(f"Mini-player control has invalid bounds: {bounds}")
 left, top, right, bottom = numbers
