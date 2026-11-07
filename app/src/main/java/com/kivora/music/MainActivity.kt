@@ -182,6 +182,8 @@ class MainActivity : AppCompatActivity() {
     private val navigationButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
+    // Album grouping is reused by the Home dashboard instead of recalculated on every track change.
+    private var cachedAlbumGroups: List<List<Song>>? = null
     private var activeQueue: List<Song> = emptyList()
     private val recentlyPlayedUris = mutableListOf<String>()
     private val favoriteSongUris = mutableSetOf<String>()
@@ -468,6 +470,7 @@ class MainActivity : AppCompatActivity() {
                 val song = Song(name, "Unknown artist", "Unknown album", 0L, uri, null)
                 songs.removeAll { it.uri == uri }
                 songs.add(0, song)
+                cachedAlbumGroups = null
                 normalizedSearchText[uri.toString()] =
                     (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
                 renderSongs(searchBox.text?.toString().orEmpty())
@@ -2803,7 +2806,11 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        val albumCount = songs.map(::albumGroupKey).distinct().size
+        val albumGroups = cachedAlbumGroups ?: songs.groupBy(::albumGroupKey).values
+            .map { it.toList() }
+            .sortedBy { it.first().album.lowercase(Locale.ROOT) }
+            .also { cachedAlbumGroups = it }
+        val albumCount = albumGroups.size
         homeContent.addView(
             ComposeView(this).apply {
                 setContent {
@@ -2843,8 +2850,6 @@ class MainActivity : AppCompatActivity() {
         }
         sections["albums"] = {
             addHomeSection("Albums", "FROM YOUR LIBRARY")
-            val albumGroups = songs.groupBy(::albumGroupKey).values
-                .sortedBy { it.first().album.lowercase(Locale.ROOT) }
             if (albumGroups.isEmpty()) {
                 homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
             } else {
@@ -3563,6 +3568,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 songs.clear()
                 songs.addAll(scannedSongs)
+                cachedAlbumGroups = null
                 normalizedSearchText.clear()
                 syncPlaylistToPlayer()
                 recordRecentlyPlayed(player?.currentMediaItem)
@@ -3592,13 +3598,12 @@ class MainActivity : AppCompatActivity() {
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
+        // Build the lookup once: the previous nested scan became quadratic for large libraries.
+        val songsByUri = songs.associateBy { it.uri.toString() }
         val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
             val uri = p.getMediaItemAt(index)
                 .localConfiguration?.uri?.toString()
-
-            uri?.let { savedUri ->
-                songs.firstOrNull { it.uri.toString() == savedUri }
-            }
+            uri?.let(songsByUri::get)
         }
 
         if (p.mediaItemCount > 0) {
