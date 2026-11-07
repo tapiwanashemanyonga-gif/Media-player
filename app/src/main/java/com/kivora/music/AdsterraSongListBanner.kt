@@ -1,7 +1,9 @@
 package com.kivora.music
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
@@ -70,10 +72,9 @@ internal object AdsterraSongListBanner {
             }
         }
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val scheme = request.url.scheme?.lowercase()
-                return scheme != "http" && scheme != "https"
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                openAdDestinationExternally(context, request.url)
+
 
             override fun onRenderProcessGone(
                 view: WebView,
@@ -86,10 +87,8 @@ internal object AdsterraSongListBanner {
             }
 
             @Suppress("DEPRECATION")
-            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                val scheme = android.net.Uri.parse(url).scheme?.lowercase()
-                return scheme != "http" && scheme != "https"
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
+                openAdDestinationExternally(context, Uri.parse(url))
         }
 
         val html = """
@@ -131,6 +130,20 @@ internal object AdsterraSongListBanner {
         container.addView(adFrame, LinearLayout.LayoutParams(bannerWidth, dp(context, 50)))
         webView.loadDataWithBaseURL("https://$AD_HOST/", html, "text/html", "UTF-8", null)
         return container
+    }
+
+
+    /** Open ad click-through destinations in the user's external browser, never inside the player. */
+    private fun openAdDestinationExternally(context: Context, uri: Uri): Boolean {
+        if (uri.scheme?.lowercase() !in setOf("http", "https")) return true
+        return try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     private fun dp(context: Context, value: Int): Int =
