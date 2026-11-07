@@ -83,11 +83,13 @@ jobs:
           MANIFEST="app/src/main/AndroidManifest.xml"
           GRADLE_FILE="app/build.gradle.kts"
           COMPATIBILITY_TEST="app/src/androidTest/java/com/kivora/music/MainActivityCompatibilityTest.kt"
+          PLAYBACK_TEST="app/src/androidTest/java/com/kivora/music/MainActivityPlaybackTest.kt"
           SONG_AD_FILE="app/src/main/java/com/kivora/music/AdsterraSongListBanner.kt"
           HOME_AD_FILE="app/src/main/java/com/kivora/music/AdsterraHomeNativeBanner.kt"
           test -s "$MAIN_ACTIVITY"
           test -s "$MANIFEST"
           test -s "$COMPATIBILITY_TEST"
+          test -s "$PLAYBACK_TEST"
           test -s "$SONG_AD_FILE"
           test -s "$HOME_AD_FILE"
           git fetch --no-tags --depth=1 origin main
