@@ -4,9 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,80 +47,108 @@ fun A1HomeHeader(
     onFavourites: () -> Unit
 ) {
     val accent = Color(accentArgb)
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(15.dp)
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compactHome = maxWidth < 360.dp
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(25.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            Color(0xFF43265F),
-                            Color(0xFF2B1B40),
-                            Color(0xFF1D172A)
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(if (compactHome) 12.dp else 15.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(if (compactHome) 21.dp else 25.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xFF43265F),
+                                Color(0xFF2B1B40),
+                                Color(0xFF1D172A)
+                            )
                         )
                     )
-                )
-                .border(1.dp, Color(0xFF765397), RoundedCornerShape(25.dp))
-                .padding(horizontal = 19.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
-        ) {
-            Text(
-                "A1 FAMILY MEDIA  ·  YOUR LOCAL COLLECTION",
-                color = accent,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.15.sp
-            )
-            Text(
-                "Your media.\nYour moment.",
-                color = Color(0xFFFFFAFF),
-                fontSize = 29.sp,
-                lineHeight = 33.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "All your music and videos, together in one beautiful place.",
-                color = HomeMuted,
-                fontSize = 12.sp,
-                lineHeight = 18.sp
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .border(1.dp, Color(0xFF765397), RoundedCornerShape(if (compactHome) 21.dp else 25.dp))
+                    .padding(horizontal = if (compactHome) 15.dp else 19.dp, vertical = if (compactHome) 16.dp else 20.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compactHome) 10.dp else 13.dp)
             ) {
-                HomeStat(songCount.toString(), "SONGS", Modifier.weight(1f))
-                HomeStat(albumCount.toString(), "ALBUMS", Modifier.weight(1f))
-                HomeStat(playlistCount.toString(), "PLAYLISTS", Modifier.weight(1f))
+                Text(
+                    "A1 FAMILY MEDIA  ·  YOUR LOCAL COLLECTION",
+                    color = accent,
+                    fontSize = if (compactHome) 8.sp else 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = if (compactHome) 0.7.sp else 1.15.sp,
+                    maxLines = 1
+                )
+                Text(
+                    "Your media.\nYour moment.",
+                    color = Color(0xFFFFFAFF),
+                    fontSize = if (compactHome) 26.sp else 29.sp,
+                    lineHeight = if (compactHome) 30.sp else 33.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "All your music and videos, together in one beautiful place.",
+                    color = HomeMuted,
+                    fontSize = if (compactHome) 11.sp else 12.sp,
+                    lineHeight = if (compactHome) 16.sp else 18.sp
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(if (compactHome) 6.dp else 8.dp)
+                ) {
+                    HomeStat(songCount.toString(), "SONGS", Modifier.weight(1f), compactHome)
+                    HomeStat(albumCount.toString(), "ALBUMS", Modifier.weight(1f), compactHome)
+                    HomeStat(playlistCount.toString(), "PLAYLISTS", Modifier.weight(1f), compactHome)
+                }
             }
-        }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            HomeShortcut("Songs", "Listen", Icons.Filled.MusicNote, onBrowse, Modifier.weight(1f), accent)
-            HomeShortcut("Albums", "Browse", Icons.Filled.Album, onAlbums, Modifier.weight(1f), accent)
-            HomeShortcut("Artists", "Explore", Icons.Filled.Person, onArtists, Modifier.weight(1f), accent)
-            HomeShortcut("Saved", "Favourites", Icons.Filled.Favorite, onFavourites, Modifier.weight(1f), accent)
+            if (compactHome) {
+                // Two comfortable columns prevent four shortcut cards becoming cramped
+                // on narrow phones and keep labels readable without horizontal scrolling.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    HomeShortcut("Songs", "Listen", Icons.Filled.MusicNote, onBrowse, Modifier.weight(1f), accent, true)
+                    HomeShortcut("Albums", "Browse", Icons.Filled.Album, onAlbums, Modifier.weight(1f), accent, true)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    HomeShortcut("Artists", "Explore", Icons.Filled.Person, onArtists, Modifier.weight(1f), accent, true)
+                    HomeShortcut("Saved", "Favourites", Icons.Filled.Favorite, onFavourites, Modifier.weight(1f), accent, true)
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    HomeShortcut("Songs", "Listen", Icons.Filled.MusicNote, onBrowse, Modifier.weight(1f), accent)
+                    HomeShortcut("Albums", "Browse", Icons.Filled.Album, onAlbums, Modifier.weight(1f), accent)
+                    HomeShortcut("Artists", "Explore", Icons.Filled.Person, onArtists, Modifier.weight(1f), accent)
+                    HomeShortcut("Saved", "Favourites", Icons.Filled.Favorite, onFavourites, Modifier.weight(1f), accent)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun HomeStat(value: String, label: String, modifier: Modifier = Modifier) {
+private fun HomeStat(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
+) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(13.dp))
             .background(Color(0x33201032))
-            .padding(horizontal = 9.dp, vertical = 9.dp),
+            .padding(horizontal = if (compact) 7.dp else 9.dp, vertical = if (compact) 8.dp else 9.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Text(value, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = HomeMuted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+        Text(value, color = Color.White, fontSize = if (compact) 16.sp else 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(label, color = HomeMuted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, maxLines = 1)
     }
 }
 
@@ -129,23 +159,28 @@ private fun HomeShortcut(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    accent: Color = Color(0xFFD0A2FF)
+    accent: Color = Color(0xFFD0A2FF),
+    compact: Boolean = false
 ) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .heightIn(min = if (compact) 86.dp else 82.dp)
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = HomeSurface),
-        shape = RoundedCornerShape(17.dp),
+        shape = RoundedCornerShape(if (compact) 15.dp else 17.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF49345F)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 13.dp, horizontal = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = if (compact) 11.dp else 13.dp, horizontal = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 7.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(22.dp))
-            Text(title, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(detail, color = HomeMuted, fontSize = 8.sp, maxLines = 1)
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(if (compact) 23.dp else 22.dp))
+            Text(title, color = Color.White, fontSize = if (compact) 12.sp else 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(detail, color = HomeMuted, fontSize = if (compact) 9.sp else 8.sp, maxLines = 1)
         }
     }
 }
