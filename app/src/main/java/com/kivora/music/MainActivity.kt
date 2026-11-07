@@ -3976,6 +3976,28 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    /** Shared by the real music start path and the playback regression test. */
+    internal fun stopVideoForMusicPlayback() {
+        videoPlayer?.apply {
+            pause()
+            stop()
+            clearMediaItems()
+        }
+        selectedVideoUri = null
+        navigationVideoUri = null
+        if (::videoStatus.isInitialized) {
+            videoStatus.text = if (deviceVideos.isEmpty()) "No videos yet" else "Choose a video to play."
+            renderVideos(searchBox.text?.toString().orEmpty())
+        }
+    }
+
+    /** Shared by the real video start path and the playback regression test. */
+    internal fun pauseMusicForVideoPlayback() {
+        player?.pause()
+        updateNowPlaying()
+        updatePlayButton()
+    }
+
     private fun playSong(song: Song) {
         val p = player
 
@@ -4014,17 +4036,7 @@ class MainActivity : AppCompatActivity() {
         activeQueue = queue
 
         // Enforce a single active playback source before starting music.
-        videoPlayer?.apply {
-            pause()
-            stop()
-            clearMediaItems()
-        }
-        selectedVideoUri = null
-        navigationVideoUri = null
-        if (::videoStatus.isInitialized) {
-            videoStatus.text = if (deviceVideos.isEmpty()) "No videos yet" else "Choose a video to play."
-            renderVideos(searchBox.text?.toString().orEmpty())
-        }
+        stopVideoForMusicPlayback()
         p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
         p.prepare()
         p.play()
@@ -5194,9 +5206,7 @@ class MainActivity : AppCompatActivity() {
         renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
         // Pause music but retain its current item and queue for the mini player.
-        player?.pause()
-        updateNowPlaying()
-        updatePlayButton()
+        pauseMusicForVideoPlayback()
         return try {
             videoPlayer?.apply {
                 setMediaItem(MediaItem.fromUri(video.uri))
