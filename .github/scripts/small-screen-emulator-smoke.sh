@@ -65,6 +65,32 @@ sleep 3
 adb shell uiautomator dump /sdcard/a1-home.xml >/dev/null
 adb pull /sdcard/a1-home.xml "$OUT_DIR/home.xml" >/dev/null
 grep -Fq 'Home' "$OUT_DIR/home.xml"
+grep -Fq 'Choose a song' "$OUT_DIR/home.xml"
+grep -Fq 'Play or pause playback' "$OUT_DIR/home.xml"
+python3 - "$OUT_DIR/home.xml" "$SCREEN_WIDTH" "$SCREEN_HEIGHT" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, width, height = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+root = ET.parse(path).getroot()
+matches = [
+    node for node in root.iter("node")
+    if node.attrib.get("content-desc") == "Play or pause playback"
+]
+if not matches:
+    raise SystemExit("Mini-player play control is missing from the accessibility hierarchy.")
+bounds = matches[0].attrib.get("bounds", "")
+numbers = [int(value) for value in re.findall(r"-?\\d+", bounds)]
+if len(numbers) != 4:
+    raise SystemExit(f"Mini-player control has invalid bounds: {bounds}")
+left, top, right, bottom = numbers
+if left < 0 or top < 0 or right > width or bottom > height - 68:
+    raise SystemExit(
+        f"Mini-player control is outside the usable phone viewport: {bounds} on {width}x{height}."
+    )
+print(f"Mini-player bounds fit above bottom navigation: {bounds}")
+PY
 adb exec-out screencap -p > "$OUT_DIR/home.png"
 
 # Rotation forces a compact-height configuration; returning to portrait checks recreation again.
