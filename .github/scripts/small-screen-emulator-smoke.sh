@@ -151,12 +151,60 @@ if (( API_LEVEL == 36 )); then
   adb shell wm size "${SCREEN_WIDTH}x${SCREEN_HEIGHT}"
   sleep 2
   assert_activity_and_capture "very-small-320x640"
+  grep -Fq 'Play or pause playback' "$OUT_DIR/very-small-320x640.xml"
+  python3 - "$OUT_DIR/very-small-320x640.xml" "$SCREEN_WIDTH" "$SCREEN_HEIGHT" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, width, height = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+root = ET.parse(path).getroot()
+node = next(
+    (item for item in root.iter("node")
+     if item.attrib.get("content-desc") == "Play or pause playback"),
+    None
+)
+if node is None:
+    raise SystemExit("Mini-player is missing on the 320x640 phone viewport.")
+bounds = node.attrib.get("bounds", "")
+values = [int(value) for value in re.findall(r"-?\d+", bounds)]
+if len(values) != 4:
+    raise SystemExit(f"Mini-player has invalid bounds: {bounds}")
+left, top, right, bottom = values
+if left < 0 or top < 0 or right > width or bottom > height - 68:
+    raise SystemExit(f"Mini-player overlaps the bottom navigation on 320x640: {bounds}")
+print(f"320x640 mini-player bounds are valid: {bounds}")
+PY
   NAV_Y=$((SCREEN_HEIGHT - 58))
   adb shell input tap "$((SCREEN_WIDTH * 5 / 8))" "$NAV_Y"
   sleep 2
   adb shell uiautomator dump /sdcard/a1-small-library.xml >/dev/null
   adb pull /sdcard/a1-small-library.xml "$OUT_DIR/very-small-library.xml" >/dev/null
-  grep -Fq 'Your library' "$OUT_DIR/very-small-library.xml"
+  assert_selected_tab "$OUT_DIR/very-small-library.xml" "Library"
+  grep -Fq 'Show your library' "$OUT_DIR/very-small-library.xml"
+  TOGGLE_CENTER=$(python3 - "$OUT_DIR/very-small-library.xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") == "Hide or show library controls while keeping the song list visible":
+        values = [int(value) for value in re.findall(r"-?\d+", node.attrib.get("bounds", ""))]
+        if len(values) == 4:
+            left, top, right, bottom = values
+            print((left + right) // 2, (top + bottom) // 2)
+            break
+else:
+    raise SystemExit("Library toggle is missing on the 320x640 phone viewport.")
+PY
+  )
+  read -r TOGGLE_X TOGGLE_Y <<< "$TOGGLE_CENTER"
+  adb shell input tap "$TOGGLE_X" "$TOGGLE_Y"
+  sleep 2
+  adb shell uiautomator dump /sdcard/a1-small-library-expanded.xml >/dev/null
+  adb pull /sdcard/a1-small-library-expanded.xml "$OUT_DIR/very-small-library-expanded.xml" >/dev/null
+  grep -Fq 'Your library' "$OUT_DIR/very-small-library-expanded.xml"
 fi
 
 CRASH_LOG="$OUT_DIR/android-runtime.log"
