@@ -52,7 +52,8 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none
           disable-animations: true
-          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
+          # Pre-grant media permissions so Android's runtime permission dialog does not pause MainActivity during ActivityScenario.launch().
+          script: adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE || true; adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO || true; gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
   release:
     runs-on: ubuntu-latest
