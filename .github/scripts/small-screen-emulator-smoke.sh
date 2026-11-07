@@ -19,9 +19,9 @@ adb shell pm install -r "$APK_PATH"
 if (( API_LEVEL >= 33 )); then
   adb shell pm grant "$PACKAGE" android.permission.READ_MEDIA_AUDIO
   adb shell pm grant "$PACKAGE" android.permission.READ_MEDIA_VIDEO
-fi
-if (( API_LEVEL >= 34 )); then
-  adb shell pm grant "$PACKAGE" android.permission.READ_MEDIA_VISUAL_USER_SELECTED || true
+  if (( API_LEVEL >= 34 )); then
+    adb shell pm grant "$PACKAGE" android.permission.READ_MEDIA_VISUAL_USER_SELECTED || true
+  fi
 else
   adb shell pm grant "$PACKAGE" android.permission.READ_EXTERNAL_STORAGE
 fi
