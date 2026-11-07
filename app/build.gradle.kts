@@ -20,7 +20,7 @@ android {
     defaultConfig {
         applicationId = "com.a1family.media"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 9
         versionName = "1.8"
         val trackingKey = System.getenv("A1_MEDIA_APP_KEY").orEmpty()
