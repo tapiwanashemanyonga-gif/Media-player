@@ -182,6 +182,8 @@ class MainActivity : AppCompatActivity() {
     private val navigationButtons = linkedMapOf<String, TextView>()
 
     private val songs = mutableListOf<Song>()
+    // Album grouping is reused by the Home dashboard instead of recalculated on every track change.
+    private var cachedAlbumGroups: List<List<Song>>? = null
     private var activeQueue: List<Song> = emptyList()
     private val recentlyPlayedUris = mutableListOf<String>()
     private val favoriteSongUris = mutableSetOf<String>()
@@ -211,11 +213,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private var searchRenderRunnable: Runnable? = null
 
-    // Keep large MediaStore scans and video thumbnail decoding off the UI thread.
+    // Keep media scans and thumbnail decoding off the UI thread, and bound each UI render batch.
     private val musicScanExecutor = Executors.newSingleThreadExecutor()
-    private var songRenderLimit = 80
-    private var videoRenderLimit = 60
+    private var songRenderLimit = 40
+    private var videoRenderLimit = 24
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
     private var musicScanRequestId = 0
@@ -467,6 +470,7 @@ class MainActivity : AppCompatActivity() {
                 val song = Song(name, "Unknown artist", "Unknown album", 0L, uri, null)
                 songs.removeAll { it.uri == uri }
                 songs.add(0, song)
+                cachedAlbumGroups = null
                 normalizedSearchText[uri.toString()] =
                     (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
                 renderSongs(searchBox.text?.toString().orEmpty())
@@ -527,6 +531,10 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getMainExecutor(this)
         )
     }
+
+    /** Instrumentation can opt out of third-party WebViews; normal app sessions always keep ads. */
+    private fun shouldLoadAdBanners(): Boolean =
+        !(BuildConfig.DEBUG && intent.getBooleanExtra("a1.instrumentation.disable_ads", false))
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -1076,7 +1084,7 @@ class MainActivity : AppCompatActivity() {
 
         progress = SeekBar(this).apply {
             max = 1000
-            minHeight = dp(if (compactPlayerLayout) 34 else 42)
+            minimumHeight = dp(if (compactPlayerLayout) 34 else 42)
             setPadding(dp(2), 0, dp(2), 0)
 
             progressTintList =
@@ -1540,11 +1548,22 @@ class MainActivity : AppCompatActivity() {
                     count: Int
                 ) {
                     searchQuery = s?.toString().orEmpty()
-                    songRenderLimit = 80
-                    videoRenderLimit = 60
+                    songRenderLimit = 40
+                    videoRenderLimit = 24
                     clearSearchButton.visibility =
                         if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
-                    if (currentTab == "videos") renderVideos(s?.toString().orEmpty()) else renderSongs(s?.toString().orEmpty())
+                    // Avoid rebuilding dozens of Compose rows on every keystroke.
+                    // Only the most recent query is rendered after a short pause.
+                    searchRenderRunnable?.let(handler::removeCallbacks)
+                    val query = s?.toString().orEmpty()
+                    val targetTab = currentTab
+                    val pendingRender = Runnable {
+                        if (!isFinishing && !isDestroyed && currentTab == targetTab) {
+                            if (targetTab == "videos") renderVideos(query) else renderSongs(query)
+                        }
+                    }
+                    searchRenderRunnable = pendingRender
+                    handler.postDelayed(pendingRender, 180L)
                 }
 
                 override fun afterTextChanged(
@@ -2791,7 +2810,11 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        val albumCount = songs.map(::albumGroupKey).distinct().size
+        val albumGroups = cachedAlbumGroups ?: songs.groupBy(::albumGroupKey).values
+            .map { it.toList() }
+            .sortedBy { it.first().album.lowercase(Locale.ROOT) }
+            .also { cachedAlbumGroups = it }
+        val albumCount = albumGroups.size
         homeContent.addView(
             ComposeView(this).apply {
                 setContent {
@@ -2831,8 +2854,6 @@ class MainActivity : AppCompatActivity() {
         }
         sections["albums"] = {
             addHomeSection("Albums", "FROM YOUR LIBRARY")
-            val albumGroups = songs.groupBy(::albumGroupKey).values
-                .sortedBy { it.first().album.lowercase(Locale.ROOT) }
             if (albumGroups.isEmpty()) {
                 homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
             } else {
@@ -2891,13 +2912,15 @@ class MainActivity : AppCompatActivity() {
         })
 
         // Keep the existing native banner placement after user-configurable home sections.
-        homeContent.addView(
-            AdsterraHomeNativeBanner.create(this),
-            LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(10)
-                bottomMargin = dp(8)
-            }
-        )
+        if (shouldLoadAdBanners()) {
+            homeContent.addView(
+                AdsterraHomeNativeBanner.create(this),
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    topMargin = dp(10)
+                    bottomMargin = dp(8)
+                }
+            )
+        }
     }
 
     private fun applyNowPlayingSkin() {
@@ -3551,6 +3574,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 songs.clear()
                 songs.addAll(scannedSongs)
+                cachedAlbumGroups = null
                 normalizedSearchText.clear()
                 syncPlaylistToPlayer()
                 recordRecentlyPlayed(player?.currentMediaItem)
@@ -3580,13 +3604,13 @@ class MainActivity : AppCompatActivity() {
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
+        // Build the lookup once: the previous nested scan became quadratic for large libraries.
+        // Indexed lookup preserves the old first-match behavior for duplicate URIs.
+        val songsByUri = firstItemByKey(songs) { it.uri.toString() }
         val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
             val uri = p.getMediaItemAt(index)
                 .localConfiguration?.uri?.toString()
-
-            uri?.let { savedUri ->
-                songs.firstOrNull { it.uri.toString() == savedUri }
-            }
+            uri?.let(songsByUri::get)
         }
 
         if (p.mediaItemCount > 0) {
@@ -3853,7 +3877,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Original 320x50 banner: one placement after song 4, only for libraries over 50 songs.
-            if (visibleSongs.size > 50 && songIndex == 3 && visibleSongs.size > 8) {
+            if (shouldLoadAdBanners() && visibleSongs.size > 50 && songIndex == 3 && visibleSongs.size > 8) {
                 songList.addView(
                     AdsterraSongListBanner.create(this),
                     LinearLayout.LayoutParams(-1, -2).apply {
@@ -3874,7 +3898,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    songRenderLimit += 80
+                    songRenderLimit += 40
                     renderSongs(searchBox.text?.toString().orEmpty())
                 }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
@@ -3952,6 +3976,28 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    /** Shared by the real music start path and the playback regression test. */
+    internal fun stopVideoForMusicPlayback() {
+        videoPlayer?.apply {
+            pause()
+            stop()
+            clearMediaItems()
+        }
+        selectedVideoUri = null
+        navigationVideoUri = null
+        if (::videoStatus.isInitialized) {
+            videoStatus.text = if (deviceVideos.isEmpty()) "No videos yet" else "Choose a video to play."
+            renderVideos(searchBox.text?.toString().orEmpty())
+        }
+    }
+
+    /** Shared by the real video start path and the playback regression test. */
+    internal fun pauseMusicForVideoPlayback() {
+        player?.pause()
+        updateNowPlaying()
+        updatePlayButton()
+    }
+
     private fun playSong(song: Song) {
         val p = player
 
@@ -3990,17 +4036,7 @@ class MainActivity : AppCompatActivity() {
         activeQueue = queue
 
         // Enforce a single active playback source before starting music.
-        videoPlayer?.apply {
-            pause()
-            stop()
-            clearMediaItems()
-        }
-        selectedVideoUri = null
-        navigationVideoUri = null
-        if (::videoStatus.isInitialized) {
-            videoStatus.text = if (deviceVideos.isEmpty()) "No videos yet" else "Choose a video to play."
-            renderVideos(searchBox.text?.toString().orEmpty())
-        }
+        stopVideoForMusicPlayback()
         p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
         p.prepare()
         p.play()
@@ -4800,6 +4836,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         musicScanRequestId++
         videoScanRequestId++
+        searchRenderRunnable?.let(handler::removeCallbacks)
+        searchRenderRunnable = null
         musicScanExecutor.shutdownNow()
         videoScanExecutor.shutdownNow()
         videoThumbnailExecutor.shutdownNow()
@@ -4819,7 +4857,7 @@ class MainActivity : AppCompatActivity() {
         fullscreenVideoDialog = null
         restoreVideoPlayerView()
 
-        // Invalidate any pending artwork callback and stop its worker.
+        // Invalidate pending artwork callbacks and stop the activity-owned worker.
         artworkRequestId++
         artworkExecutor.shutdownNow()
 
@@ -4953,7 +4991,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val filteredVideos = deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }
+        val filteredVideos = filterItemsByTitle(deviceVideos, query) { it.title }
         if (filteredVideos.isEmpty()) {
             videoStatus.visibility = View.VISIBLE
             videoStatus.text = "No videos match your search."
@@ -4996,7 +5034,7 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    videoRenderLimit += 60
+                    videoRenderLimit += 24
                     renderVideos(query)
                 }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
@@ -5168,9 +5206,7 @@ class MainActivity : AppCompatActivity() {
         renderVideos(searchBox.text?.toString().orEmpty())
         videoStatus.text = "Playing: ${video.title}"
         // Pause music but retain its current item and queue for the mini player.
-        player?.pause()
-        updateNowPlaying()
-        updatePlayButton()
+        pauseMusicForVideoPlayback()
         return try {
             videoPlayer?.apply {
                 setMediaItem(MediaItem.fromUri(video.uri))
@@ -5713,6 +5749,9 @@ class MainActivity : AppCompatActivity() {
         } else if (tab == "library") {
             updateLibraryBrowseButtons()
             renderSongs(searchBox.text?.toString().orEmpty())
+        } else if (tab == "videos" && deviceVideos.isNotEmpty()) {
+            // Reapply the current query when returning from another tab.
+            renderVideos(searchBox.text?.toString().orEmpty())
         }
 
         navigationButtons.forEach { (name, button) ->

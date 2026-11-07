@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - perf/a1-family-all-device-stability
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -13,7 +15,64 @@ on:
 permissions:
   contents: write
 
+# Keep only the newest run for this pull request/branch; stale matrix runs waste emulator capacity.
+concurrency:
+  group: a1-family-media-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  android-compatibility:
+    name: Android API ${{ matrix.api-level }} compatibility test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        api-level: [24, 29, 31, 33, 34, 35, 36]
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Launch emulator and run compatibility and playback tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect -camera-back none
+          disable-animations: true
+          # Keep the install, SDK check, permission grant and test in one shell invocation.
+          script: gradle --no-daemon installDebug && sdk_level=$(adb shell getprop ro.build.version.sdk | tr -d '\r') && if [ "$sdk_level" -ge 33 ]; then adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO; else adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE; fi && gradle --no-daemon --stacktrace connectedDebugAndroidTest
+
+      - name: Upload Android instrumentation test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results-api-${{ matrix.api-level }}
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: ignore
+          retention-days: 14
+
   release:
     runs-on: ubuntu-latest
 
@@ -28,12 +87,33 @@ jobs:
           MAIN_ACTIVITY="app/src/main/java/com/kivora/music/MainActivity.kt"
           MANIFEST="app/src/main/AndroidManifest.xml"
           GRADLE_FILE="app/build.gradle.kts"
+          COMPATIBILITY_TEST="app/src/androidTest/java/com/kivora/music/MainActivityCompatibilityTest.kt"
+          PLAYBACK_TEST="app/src/androidTest/java/com/kivora/music/MainActivityPlaybackTest.kt"
           SONG_AD_FILE="app/src/main/java/com/kivora/music/AdsterraSongListBanner.kt"
           HOME_AD_FILE="app/src/main/java/com/kivora/music/AdsterraHomeNativeBanner.kt"
           test -s "$MAIN_ACTIVITY"
           test -s "$MANIFEST"
+          test -s "$COMPATIBILITY_TEST"
+          test -s "$PLAYBACK_TEST"
           test -s "$SONG_AD_FILE"
           test -s "$HOME_AD_FILE"
+          git fetch --no-tags --depth=1 origin main
+          git diff --check FETCH_HEAD HEAD
+          grep -Fq 'private var songRenderLimit = 40' "$MAIN_ACTIVITY"
+          grep -Fq 'private var videoRenderLimit = 24' "$MAIN_ACTIVITY"
+          grep -Fq 'handler.postDelayed(pendingRender, 180L)' "$MAIN_ACTIVITY"
+          grep -Fq 'searchRenderRunnable?.let(handler::removeCallbacks)' "$MAIN_ACTIVITY"
+          grep -Fq 'cachedAlbumGroups' "$MAIN_ACTIVITY"
+          HELPER_FILE="app/src/main/java/com/kivora/music/MediaLibraryHelpers.kt"
+          UNIT_TEST_FILE="app/src/test/java/com/kivora/music/MediaLibraryHelpersTest.kt"
+          test -s "$HELPER_FILE"
+          test -s "$UNIT_TEST_FILE"
+          grep -Fq 'firstItemByKey(songs)' "$MAIN_ACTIVITY"
+          grep -Fq 'filterItemsByTitle(deviceVideos, query)' "$MAIN_ACTIVITY"
+          grep -Fq 'firstItemByKeyPreservesFirstDuplicate' "$UNIT_TEST_FILE"
+          grep -Fq 'titleFilterTrimsAndIgnoresCase' "$UNIT_TEST_FILE"
+          grep -Fq 'else if (tab == "videos" && deviceVideos.isNotEmpty())' "$MAIN_ACTIVITY"
+          grep -Fq 'minimumHeight = dp(if (compactPlayerLayout) 34 else 42)' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoThumbnailCache' "$MAIN_ACTIVITY"
@@ -89,6 +169,9 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Run media library unit regression tests
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
+
       - name: Restore existing A1 release signing keystore
         shell: bash
         env:
@@ -140,20 +223,15 @@ jobs:
           retention-days: 30
 
       - name: Publish public GitHub release for the website
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.8
-          name: A1 FAMILY MEDIA 1.8
+          tag_name: ${{ github.ref_name }}
+          name: A1 FAMILY MEDIA ${{ github.ref_name }}
           body: |
-            A1 FAMILY MEDIA 1.8 playback hotfix. This rebuild fixes song-list advert viewport isolation so the advert cannot overlap the next song row. No app version change; existing release history is preserved.
+            A1 FAMILY MEDIA release ${{ github.ref_name }}.
 
-            - Local music and video playback
-            - Performance and responsive layout improvements
-            - Theme Studio saves complete personal styles, including colours, wallpaper, home section order and visibility, visualiser skin, density and card shape
-            - Attach a personal photo to a song memory alongside its mood and note; photo and memory stay on the device
-            - First-open installation tracking through the A1 Family Cloud API
-            - Existing music and video playback, file opening and background playback retained
+            See the verified app version and release notes in this workflow run.
           files: app/build/outputs/apk/release/app-release.apk
-          overwrite_files: true
+          overwrite_files: false
           make_latest: true
