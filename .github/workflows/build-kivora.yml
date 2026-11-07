@@ -52,8 +52,17 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none
           disable-animations: true
-          # Pre-grant media permissions so Android's runtime permission dialog does not pause MainActivity during ActivityScenario.launch().
-          script: adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE || true; adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO || true; gradle --no-daemon --stacktrace connectedDebugAndroidTest
+          # Install the app before granting runtime permissions; otherwise pm reports Unknown package.
+          script: |
+            set -e
+            gradle --no-daemon installDebug
+            sdk_level=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
+            if [ "$sdk_level" -ge 33 ]; then
+              adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO
+            else
+              adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE
+            fi
+            gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
   release:
     runs-on: ubuntu-latest
