@@ -83,6 +83,7 @@ jobs:
           grep -Fq 'searchRenderRunnable?.let(handler::removeCallbacks)' "$MAIN_ACTIVITY"
           grep -Fq 'cachedAlbumGroups' "$MAIN_ACTIVITY"
           grep -Fq 'val songsByUri = songs.associateBy' "$MAIN_ACTIVITY"
+          grep -Fq 'minimumHeight = dp(if (compactPlayerLayout) 34 else 42)' "$MAIN_ACTIVITY"
           grep -Fq 'musicScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoScanExecutor.execute {' "$MAIN_ACTIVITY"
           grep -Fq 'videoThumbnailCache' "$MAIN_ACTIVITY"
