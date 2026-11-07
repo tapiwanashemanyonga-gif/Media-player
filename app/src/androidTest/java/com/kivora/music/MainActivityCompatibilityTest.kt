@@ -1,7 +1,9 @@
 package com.kivora.music
 
+import android.content.Intent
 import android.view.ViewGroup
 import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -13,7 +15,11 @@ class MainActivityCompatibilityTest {
 
     @Test
     fun activityLaunchesAndSurvivesRecreation() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        val launchIntent = Intent(
+            ApplicationProvider.getApplicationContext(),
+            MainActivity::class.java
+        ).putExtra("a1.instrumentation.disable_ads", true)
+        ActivityScenario.launch<MainActivity>(launchIntent).use { scenario ->
             scenario.onActivity { activity ->
                 assertFalse("MainActivity should remain active after launch", activity.isFinishing)
                 assertNotNull("Activity window should be available", activity.window)
