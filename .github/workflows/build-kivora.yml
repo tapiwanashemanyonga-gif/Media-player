@@ -52,29 +52,7 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none
           disable-animations: true
-          script: |
-            # The emulator action runs this script with /bin/sh, not Bash.
-            # Keep the boot check POSIX-compatible so the test command is reached.
-            set -eu
-            adb devices -l
-            adb wait-for-device
-            attempt=0
-            boot_completed=""
-            while [ "$attempt" -lt 60 ]; do
-              boot_completed="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-              if [ "$boot_completed" = "1" ]; then
-                break
-              fi
-              attempt=$((attempt + 1))
-              sleep 2
-            done
-            if [ "$boot_completed" != "1" ]; then
-              echo "Android emulator did not finish booting within 120 seconds."
-              adb devices -l
-              adb shell getprop sys.boot_completed || true
-              exit 1
-            fi
-            gradle --no-daemon --stacktrace connectedDebugAndroidTest
+          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
   release:
     runs-on: ubuntu-latest
