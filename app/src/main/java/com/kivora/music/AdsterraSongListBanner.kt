@@ -70,10 +70,12 @@ internal object AdsterraSongListBanner {
             }
         }
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val scheme = request.url.scheme?.lowercase()
-                return scheme != "http" && scheme != "https"
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                AdsterraExternalNavigation.shouldOpenExternally(
+                    view.context,
+                    request.url,
+                    request.hasGesture()
+                )
 
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
