@@ -1080,7 +1080,7 @@ class MainActivity : AppCompatActivity() {
 
         progress = SeekBar(this).apply {
             max = 1000
-            minHeight = dp(if (compactPlayerLayout) 34 else 42)
+            minimumHeight = dp(if (compactPlayerLayout) 34 else 42)
             setPadding(dp(2), 0, dp(2), 0)
 
             progressTintList =
