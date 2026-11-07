@@ -75,6 +75,16 @@ internal object AdsterraSongListBanner {
                 return scheme != "http" && scheme != "https"
             }
 
+            override fun onRenderProcessGone(
+                view: WebView,
+                detail: android.webkit.RenderProcessGoneDetail
+            ): Boolean {
+                // Keep a failed third-party creative from crashing the music player process.
+                view.stopLoading()
+                view.visibility = View.GONE
+                return true
+            }
+
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                 val scheme = android.net.Uri.parse(url).scheme?.lowercase()
