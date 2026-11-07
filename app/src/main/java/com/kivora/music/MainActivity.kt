@@ -532,8 +532,12 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    /** Instrumentation can opt out of third-party WebViews; normal app sessions always keep ads. */
+    private fun shouldLoadAdBanners(): Boolean =
+        !(BuildConfig.DEBUG && intent.getBooleanExtra("a1.instrumentation.disable_ads", false))
+
     private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+        (value * resources.displayMetrics.density).toInt
 
     private fun label(
         value: String,
@@ -2908,13 +2912,15 @@ class MainActivity : AppCompatActivity() {
         })
 
         // Keep the existing native banner placement after user-configurable home sections.
-        homeContent.addView(
-            AdsterraHomeNativeBanner.create(this),
-            LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(10)
-                bottomMargin = dp(8)
-            }
-        )
+        if (shouldLoadAdBanners()) {
+            homeContent.addView(
+                AdsterraHomeNativeBanner.create(this),
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    topMargin = dp(10)
+                    bottomMargin = dp(8)
+                }
+            )
+        }
     }
 
     private fun applyNowPlayingSkin() {
@@ -3871,7 +3877,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Original 320x50 banner: one placement after song 4, only for libraries over 50 songs.
-            if (visibleSongs.size > 50 && songIndex == 3 && visibleSongs.size > 8) {
+            if (shouldLoadAdBanners() && visibleSongs.size > 50 && songIndex == 3 && visibleSongs.size > 8) {
                 songList.addView(
                     AdsterraSongListBanner.create(this),
                     LinearLayout.LayoutParams(-1, -2).apply {
