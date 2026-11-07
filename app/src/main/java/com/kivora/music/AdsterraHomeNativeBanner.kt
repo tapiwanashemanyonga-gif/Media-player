@@ -1,7 +1,9 @@
 package com.kivora.music
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.view.Gravity
@@ -64,10 +66,9 @@ internal object AdsterraHomeNativeBanner {
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val scheme = request.url.scheme?.lowercase()
-                return scheme != "https" && scheme != "http"
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                openAdDestinationExternally(context, request.url)
+
 
             override fun onRenderProcessGone(
                 view: WebView,
@@ -80,10 +81,8 @@ internal object AdsterraHomeNativeBanner {
                 return true
             }
             @Suppress("DEPRECATION")
-            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                val scheme = Uri.parse(url).scheme?.lowercase()
-                return scheme != "https" && scheme != "http"
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
+                openAdDestinationExternally(context, Uri.parse(url))
         }
         val html = """
             <!doctype html>
@@ -107,6 +106,20 @@ internal object AdsterraHomeNativeBanner {
         container.addView(webView, LinearLayout.LayoutParams(bannerWidth, dp(context, 240)))
         webView.loadDataWithBaseURL("https://$AD_HOST/", html, "text/html", "UTF-8", null)
         return container
+    }
+
+
+    /** Open ad click-through destinations in the user's external browser, never inside the player. */
+    private fun openAdDestinationExternally(context: Context, uri: Uri): Boolean {
+        if (uri.scheme?.lowercase() !in setOf("http", "https")) return true
+        return try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     private fun dp(context: Context, value: Int): Int =
