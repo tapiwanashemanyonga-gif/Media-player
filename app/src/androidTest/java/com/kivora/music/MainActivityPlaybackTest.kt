@@ -41,7 +41,9 @@ class MainActivityPlaybackTest {
                 players.second.play()
             }
             assertTrue("Video player should start the local test media", awaitState(scenario) { it.second.isPlaying })
-            scenario.onActivity {
+            scenario.onActivity { activity ->
+                // Exercise the same exclusivity hook used by MainActivity.playSong().
+                activity.stopVideoForMusicPlayback()
                 players.first.setMediaItem(mediaItem)
                 players.first.prepare()
                 players.first.play()
@@ -53,9 +55,11 @@ class MainActivityPlaybackTest {
             )
 
             // Exercise the reverse direction as well.
-            scenario.onActivity {
-                players.first.pause()
-                players.second.seekTo(0L)
+            scenario.onActivity { activity ->
+                // Exercise the same pause hook used by MainActivity.playDeviceVideo().
+                activity.pauseMusicForVideoPlayback()
+                players.second.setMediaItem(mediaItem)
+                players.second.prepare()
                 players.second.play()
             }
             assertTrue(
