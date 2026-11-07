@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - perf/a1-family-all-device-stability
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -214,20 +216,15 @@ jobs:
           retention-days: 30
 
       - name: Publish public GitHub release for the website
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.8
-          name: A1 FAMILY MEDIA 1.8
+          tag_name: ${{ github.ref_name }}
+          name: A1 FAMILY MEDIA ${{ github.ref_name }}
           body: |
-            A1 FAMILY MEDIA 1.8 playback hotfix. This rebuild fixes song-list advert viewport isolation so the advert cannot overlap the next song row. No app version change; existing release history is preserved.
+            A1 FAMILY MEDIA release ${{ github.ref_name }}.
 
-            - Local music and video playback
-            - Performance and responsive layout improvements
-            - Theme Studio saves complete personal styles, including colours, wallpaper, home section order and visibility, visualiser skin, density and card shape
-            - Attach a personal photo to a song memory alongside its mood and note; photo and memory stay on the device
-            - First-open installation tracking through the A1 Family Cloud API
-            - Existing music and video playback, file opening and background playback retained
+            See the verified app version and release notes in this workflow run.
           files: app/build/outputs/apk/release/app-release.apk
-          overwrite_files: true
+          overwrite_files: false
           make_latest: true
