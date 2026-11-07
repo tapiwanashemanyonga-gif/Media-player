@@ -3599,7 +3599,12 @@ class MainActivity : AppCompatActivity() {
         val p = player ?: return
 
         // Build the lookup once: the previous nested scan became quadratic for large libraries.
-        val songsByUri = songs.associateBy { it.uri.toString() }
+        // Preserve the old first-match behavior when duplicate content URIs exist.
+        val songsByUri = HashMap<String, Song>(songs.size)
+        songs.forEach { song ->
+            val uri = song.uri.toString()
+            if (!songsByUri.containsKey(uri)) songsByUri[uri] = song
+        }
         val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
             val uri = p.getMediaItemAt(index)
                 .localConfiguration?.uri?.toString()
@@ -5731,6 +5736,9 @@ class MainActivity : AppCompatActivity() {
         } else if (tab == "library") {
             updateLibraryBrowseButtons()
             renderSongs(searchBox.text?.toString().orEmpty())
+        } else if (tab == "videos" && deviceVideos.isNotEmpty()) {
+            // Reapply the current query when returning from another tab.
+            renderVideos(searchBox.text?.toString().orEmpty())
         }
 
         navigationButtons.forEach { (name, button) ->
