@@ -577,6 +577,7 @@ class MainActivity : AppCompatActivity() {
         val narrowPhoneLayout = screenWidthDp < 360
         // Short screens (including landscape phones and split-screen) need a denser player.
         val compactPlayerLayout = screenHeightDp < 700
+        val compactMiniPlayer = compactLayout || compactPlayerLayout
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(if (compactLayout) 12 else 18), dp(if (compactLayout) 10 else 14), dp(if (compactLayout) 12 else 18), dp(8))
@@ -1399,7 +1400,12 @@ class MainActivity : AppCompatActivity() {
         miniPlayer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(9), dp(14), dp(9))
+            setPadding(
+                dp(if (compactMiniPlayer) 9 else 14),
+                dp(if (compactMiniPlayer) 4 else 9),
+                dp(if (compactMiniPlayer) 9 else 14),
+                dp(if (compactMiniPlayer) 4 else 9)
+            )
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(Color.rgb(48, 29, 69), Color.rgb(30, 23, 43))
@@ -1419,20 +1425,26 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Current song album artwork"
             setOnClickListener { showTab("nowPlaying") }
         }
-        miniPlayer.addView(miniArtwork, LinearLayout.LayoutParams(dp(44), dp(44)))
+        miniPlayer.addView(
+            miniArtwork,
+            LinearLayout.LayoutParams(
+                dp(if (compactMiniPlayer) 38 else 44),
+                dp(if (compactMiniPlayer) 38 else 44)
+            )
+        )
 
         val miniInfo = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), 0, dp(8), 0)
+            setPadding(dp(if (compactMiniPlayer) 8 else 10), 0, dp(if (compactMiniPlayer) 6 else 8), 0)
         }
 
-        miniTitle = label("Choose a song", 13f, Color.WHITE, true).apply {
+        miniTitle = label("Choose a song", if (compactMiniPlayer) 12f else 13f, Color.WHITE, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setOnClickListener { showTab("nowPlaying") }
         }
-        miniArtist = label("Your library is ready", 11f, Color.rgb(190, 175, 210)).apply {
+        miniArtist = label("Your library is ready", if (compactMiniPlayer) 10f else 11f, Color.rgb(190, 175, 210)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setOnClickListener { showTab("nowPlaying") }
@@ -1443,10 +1455,10 @@ class MainActivity : AppCompatActivity() {
 
         miniPlayButton = TextView(this).apply {
             text = "▶"
-            textSize = 22f
+            textSize = if (compactMiniPlayer) 20f else 22f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            setPadding(dp(if (compactMiniPlayer) 10 else 14), dp(8), dp(if (compactMiniPlayer) 10 else 14), dp(8))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(171, 99, 255), Color.rgb(111, 56, 211))
@@ -1481,11 +1493,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        miniPlayer.addView(miniPlayButton, LinearLayout.LayoutParams(dp(48), dp(44)))
+        miniPlayer.addView(
+            miniPlayButton,
+            LinearLayout.LayoutParams(
+                dp(48),
+                dp(48)
+            )
+        )
         root.addView(
             miniPlayer,
-            LinearLayout.LayoutParams(-1, dp(62)).apply {
-                bottomMargin = dp(8)
+            LinearLayout.LayoutParams(-1, dp(if (compactMiniPlayer) 56 else 62)).apply {
+                bottomMargin = dp(if (compactMiniPlayer) 4 else 8)
             }
         )
 
@@ -5644,8 +5662,15 @@ class MainActivity : AppCompatActivity() {
         if (tab == "home") renderHomeDashboard()
         searchBox.visibility =
             if (tab == "search" || tab == "library" || tab == "videos") View.VISIBLE else View.GONE
+        if (tab == "library") {
+            // Start the Music library in its compact view. Users can expand the
+            // library title, collection shortcuts, browse modes and sorting on demand.
+            libraryControlsVisible = false
+            getSharedPreferences("kivora_preferences", MODE_PRIVATE).edit()
+                .putBoolean("hide_songs_albums_shortcuts", true).apply()
+        }
         libraryHeader.visibility =
-            if (tab == "library") View.VISIBLE else View.GONE
+            if (tab == "library" && libraryControlsVisible) View.VISIBLE else View.GONE
         songScroll.visibility =
             if (tab == "search" || tab == "library") View.VISIBLE else View.GONE
         val showVideoLibrary = tab == "videos" && deviceVideos.isNotEmpty()
@@ -5656,6 +5681,8 @@ class MainActivity : AppCompatActivity() {
             if (tab == "videos" && hasSelectedVideo) View.VISIBLE else View.GONE
         if (::libraryVisibilityToggle.isInitialized) {
             libraryVisibilityToggle.visibility = if (tab == "library") View.VISIBLE else View.GONE
+            libraryVisibilityToggle.text =
+                if (libraryControlsVisible) "Hide your library" else "Show your library"
         }
         if (tab == "videos" && deviceVideos.isEmpty()) {
             searchBox.visibility = View.GONE
