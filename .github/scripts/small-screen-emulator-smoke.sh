@@ -47,24 +47,66 @@ LIBRARY_X=$((SCREEN_WIDTH * 5 / 8))
 VIDEOS_X=$((SCREEN_WIDTH * 7 / 8))
 HOME_X=$((SCREEN_WIDTH / 8))
 
+assert_selected_tab() {
+  local xml="$1"
+  local tab="$2"
+  python3 - "$xml" "$tab" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+tab = sys.argv[2]
+if not any(
+    node.attrib.get("text") == tab and node.attrib.get("selected") == "true"
+    for node in root.iter("node")
+):
+    raise SystemExit(f"The {tab} navigation destination did not become selected.")
+PY
+}
+
 adb shell input tap "$LIBRARY_X" "$NAV_Y"
 sleep 3
 adb shell uiautomator dump /sdcard/a1-library.xml >/dev/null
 adb pull /sdcard/a1-library.xml "$OUT_DIR/library.xml" >/dev/null
-grep -Fq 'Your library' "$OUT_DIR/library.xml"
-grep -Fq 'Hide your library' "$OUT_DIR/library.xml"
+assert_selected_tab "$OUT_DIR/library.xml" "Library"
+grep -Fq 'Show your library' "$OUT_DIR/library.xml"
+
+TOGGLE_CENTER=$(python3 - "$OUT_DIR/library.xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") == "Hide or show library controls while keeping the song list visible":
+        values = [int(value) for value in re.findall(r"-?\d+", node.attrib.get("bounds", ""))]
+        if len(values) == 4:
+            left, top, right, bottom = values
+            print((left + right) // 2, (top + bottom) // 2)
+            break
+else:
+    raise SystemExit("Library visibility toggle is missing from the phone viewport.")
+PY
+)
+read -r TOGGLE_X TOGGLE_Y <<< "$TOGGLE_CENTER"
+adb shell input tap "$TOGGLE_X" "$TOGGLE_Y"
+sleep 2
+adb shell uiautomator dump /sdcard/a1-library-expanded.xml >/dev/null
+adb pull /sdcard/a1-library-expanded.xml "$OUT_DIR/library-expanded.xml" >/dev/null
+grep -Fq 'Your library' "$OUT_DIR/library-expanded.xml"
+grep -Fq 'Hide your library' "$OUT_DIR/library-expanded.xml"
 
 adb shell input tap "$VIDEOS_X" "$NAV_Y"
-sleep 3
+sleep 4
 adb shell uiautomator dump /sdcard/a1-videos.xml >/dev/null
 adb pull /sdcard/a1-videos.xml "$OUT_DIR/videos.xml" >/dev/null
-grep -Fq 'Open Videos to scan your device.' "$OUT_DIR/videos.xml"
+assert_selected_tab "$OUT_DIR/videos.xml" "Videos"
 
 adb shell input tap "$HOME_X" "$NAV_Y"
 sleep 3
 adb shell uiautomator dump /sdcard/a1-home.xml >/dev/null
 adb pull /sdcard/a1-home.xml "$OUT_DIR/home.xml" >/dev/null
-grep -Fq 'Home' "$OUT_DIR/home.xml"
+assert_selected_tab "$OUT_DIR/home.xml" "Home"
 grep -Fq 'Choose a song' "$OUT_DIR/home.xml"
 grep -Fq 'Play or pause playback' "$OUT_DIR/home.xml"
 python3 - "$OUT_DIR/home.xml" "$SCREEN_WIDTH" "$SCREEN_HEIGHT" <<'PY'
