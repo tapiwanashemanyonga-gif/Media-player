@@ -14,7 +14,7 @@ test -s "$APK_PATH"
 adb wait-for-device
 adb shell wm size "${SCREEN_WIDTH}x${SCREEN_HEIGHT}"
 adb shell wm density 160
-adb shell pm install -r "$APK_PATH"
+adb install -r "$APK_PATH"
 
 if (( API_LEVEL >= 33 )); then
   adb shell pm grant "$PACKAGE" android.permission.READ_MEDIA_AUDIO
