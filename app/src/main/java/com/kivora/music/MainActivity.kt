@@ -1402,9 +1402,9 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(
                 dp(if (compactMiniPlayer) 9 else 14),
-                dp(if (compactMiniPlayer) 6 else 9),
+                dp(if (compactMiniPlayer) 4 else 9),
                 dp(if (compactMiniPlayer) 9 else 14),
-                dp(if (compactMiniPlayer) 6 else 9)
+                dp(if (compactMiniPlayer) 4 else 9)
             )
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
@@ -1465,8 +1465,6 @@ class MainActivity : AppCompatActivity() {
             ).apply { cornerRadius = dp(24).toFloat() }
             minWidth = dp(48)
             minHeight = dp(48)
-            minWidth = dp(if (compactMiniPlayer) 44 else 48)
-            minHeight = dp(44)
             contentDescription = "Play or pause playback"
             isFocusable = true
             setOnClickListener {
@@ -1498,14 +1496,14 @@ class MainActivity : AppCompatActivity() {
         miniPlayer.addView(
             miniPlayButton,
             LinearLayout.LayoutParams(
-                dp(if (compactMiniPlayer) 44 else 48),
-                dp(44)
+                dp(48),
+                dp(48)
             )
         )
         root.addView(
             miniPlayer,
-            LinearLayout.LayoutParams(-1, dp(if (compactMiniPlayer) 54 else 62)).apply {
-                bottomMargin = dp(if (compactMiniPlayer) 5 else 8)
+            LinearLayout.LayoutParams(-1, dp(if (compactMiniPlayer) 56 else 62)).apply {
+                bottomMargin = dp(if (compactMiniPlayer) 4 else 8)
             }
         )
 
