@@ -266,9 +266,9 @@ class MainActivity : AppCompatActivity() {
 
     private val videoPermissionLauncher =
         registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-            if (granted) {
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { results ->
+            if (hasVideoAccess()) {
                 loadVideos()
             } else {
                 videoStatus.text = "Allow video access to show your videos."
@@ -487,6 +487,14 @@ class MainActivity : AppCompatActivity() {
                 playSong(song)
             }
             else -> Toast.makeText(this, "This file type isn't supported by A1 FAMILY MEDIA.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Selected-video access can change in system settings while the app is backgrounded.
+        if (currentTab == "videos" && videosLoaded && hasVideoAccess()) {
+            loadVideos()
         }
     }
 
@@ -4980,7 +4988,15 @@ class MainActivity : AppCompatActivity() {
             videoPlaceholder.visibility = View.GONE
             videoPlayerView.visibility = View.GONE
             if (currentTab == "videos") homeScroll.visibility = View.VISIBLE
-            videoStatus.text = "Your video library is ready when you are."
+            videoStatus.visibility = View.VISIBLE
+            videoStatus.text = if (hasPartialVideoAccess()) {
+                "No selected videos. Tap here to manage video access."
+            } else {
+                "Your video library is ready when you are."
+            }
+            videoStatus.setOnClickListener {
+                if (hasPartialVideoAccess()) requestVideoAccess()
+            }
             videoList.addView(label("No videos yet", 18f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(20), dp(28), dp(20), dp(28))
@@ -4995,10 +5011,17 @@ class MainActivity : AppCompatActivity() {
             return
         }
         // With no active selection, let the thumbnail list occupy the full video panel.
-        videoStatus.visibility = if (selectedVideoUri == null) View.GONE else View.VISIBLE
+        videoStatus.visibility = if (selectedVideoUri == null && !hasPartialVideoAccess()) View.GONE else View.VISIBLE
         videoPlaceholder.visibility = if (currentTab == "videos") View.VISIBLE else View.GONE
         if (currentTab == "videos") homeScroll.visibility = View.GONE
-        videoStatus.text = "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
+        videoStatus.text = if (hasPartialVideoAccess()) {
+            "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching selected videos · Tap to manage access"
+        } else {
+            "${deviceVideos.count { it.title.contains(query.trim(), ignoreCase = true) }} matching videos"
+        }
+        videoStatus.setOnClickListener {
+            if (hasPartialVideoAccess()) requestVideoAccess()
+        }
 
         filteredVideos.take(videoRenderLimit).forEach { video ->
             videoList.addView(
@@ -5691,6 +5714,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun hasVideoAccess(): Boolean {
+        val hasFullAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_VIDEO
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        val hasSelectedAccess = Build.VERSION.SDK_INT >= 34 &&
+            ContextCompat.checkSelfPermission(
+                this,
+                "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+            ) == PackageManager.PERMISSION_GRANTED
+        return hasFullAccess || hasSelectedAccess
+    }
+
+    private fun hasPartialVideoAccess(): Boolean =
+        Build.VERSION.SDK_INT >= 34 &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_VIDEO
+            ) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(
+                this,
+                "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+            ) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestVideoAccess() {
+        when {
+            Build.VERSION.SDK_INT >= 34 -> videoPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.READ_MEDIA_VIDEO,
+                    "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+                )
+            )
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                videoPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_VIDEO))
+            else -> videoPermissionLauncher.launch(
+                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            )
+        }
+    }
+
     private fun showTab(tab: String) {
         currentTab = tab
         selectedNavigationTab = if (tab == "nowPlaying") "home" else tab
@@ -5724,15 +5794,10 @@ class MainActivity : AppCompatActivity() {
             homeScroll.visibility = View.VISIBLE
         }
         if (tab == "videos" && !videosLoaded) {
-            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Manifest.permission.READ_MEDIA_VIDEO
-            } else {
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            }
-            if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            if (hasVideoAccess()) {
                 loadVideos()
             } else {
-                videoPermissionLauncher.launch(permission)
+                requestVideoAccess()
             }
         }
         homeScroll.visibility = if (tab == "home" || (tab == "videos" && deviceVideos.isEmpty())) View.VISIBLE else View.GONE
