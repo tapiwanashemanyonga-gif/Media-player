@@ -68,6 +68,17 @@ internal object AdsterraHomeNativeBanner {
                 val scheme = request.url.scheme?.lowercase()
                 return scheme != "https" && scheme != "http"
             }
+
+            override fun onRenderProcessGone(
+                view: WebView,
+                detail: android.webkit.RenderProcessGoneDetail
+            ): Boolean {
+                // A third-party creative may crash Chromium's renderer. Contain that failure
+                // to this ad slot instead of allowing WebView to terminate the whole player.
+                view.stopLoading()
+                view.visibility = View.GONE
+                return true
+            }
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                 val scheme = Uri.parse(url).scheme?.lowercase()
