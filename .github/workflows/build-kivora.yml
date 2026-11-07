@@ -166,3 +166,47 @@ jobs:
           files: app/build/outputs/apk/release/app-release.apk
           overwrite_files: true
           make_latest: true
+
+
+  small_screen_emulator_smoke:
+    name: Compact phone smoke test (API ${{ matrix.api-level }})
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        api-level: [24, 29, 32, 33, 34, 35, 36]
+    env:
+      API_LEVEL: ${{ matrix.api-level }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Download signed release APK
+        uses: actions/download-artifact@v4
+        with:
+          name: A1-Family-Media-1.8-hotfix
+          path: emulator-apk
+
+      - name: Run compact-phone emulator checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save
+          disable-animations: true
+          script: |
+            APK_PATH=emulator-apk/app-release.apk bash .github/scripts/small-screen-emulator-smoke.sh
+
+      - name: Upload compact-phone screenshots and UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A1-small-phone-API-${{ matrix.api-level }}-evidence
+          path: small-screen-results/api-${{ matrix.api-level }}
+          if-no-files-found: warn
+          retention-days: 14
