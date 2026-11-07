@@ -3599,12 +3599,8 @@ class MainActivity : AppCompatActivity() {
         val p = player ?: return
 
         // Build the lookup once: the previous nested scan became quadratic for large libraries.
-        // Preserve the old first-match behavior when duplicate content URIs exist.
-        val songsByUri = HashMap<String, Song>(songs.size)
-        songs.forEach { song ->
-            val uri = song.uri.toString()
-            if (!songsByUri.containsKey(uri)) songsByUri[uri] = song
-        }
+        // Indexed lookup preserves the old first-match behavior for duplicate URIs.
+        val songsByUri = firstItemByKey(songs) { it.uri.toString() }
         val existingQueue = (0 until p.mediaItemCount).mapNotNull { index ->
             val uri = p.getMediaItemAt(index)
                 .localConfiguration?.uri?.toString()
@@ -4976,7 +4972,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val filteredVideos = deviceVideos.filter { it.title.contains(query.trim(), ignoreCase = true) }
+        val filteredVideos = filterItemsByTitle(deviceVideos, query) { it.title }
         if (filteredVideos.isEmpty()) {
             videoStatus.visibility = View.VISIBLE
             videoStatus.text = "No videos match your search."
