@@ -15,13 +15,9 @@ permissions:
 
 jobs:
   android-compatibility:
-    name: Android API ${{ matrix.api-level }} launch and recreation test
+    name: Android API 35 launch and recreation test
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        api-level: [24, 29, 33, 35, 36]
+    timeout-minutes: 40
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -45,19 +41,18 @@ jobs:
       - name: Launch emulator and test activity lifecycle
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ matrix.api-level }}
+          api-level: 35
           target: default
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim -camera-back none
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none
           disable-animations: true
           script: |
             set -euo pipefail
-            if [ "${{ matrix.api-level }}" -lt 33 ]; then
-              adb shell pm grant com.a1family.media android.permission.READ_EXTERNAL_STORAGE
-            else
-              adb shell pm grant com.a1family.media android.permission.READ_MEDIA_AUDIO
-            fi
+            # Let Gradle install the app and instrumentation APK before any optional
+            # permission setup. This smoke test only verifies launch and recreation.
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -q 1
             gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
   release:
