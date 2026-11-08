@@ -373,7 +373,6 @@ class MainActivity : AppCompatActivity() {
         loadSavedPlaylists()
         buildScreen()
         connectToPlaybackService()
-        handler.post(progressUpdater)
         checkForAppUpdates()
         A1InstallTrackingClient(this).recordFirstOpen()
 
@@ -501,6 +500,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Refresh playback progress only while this activity is visible.
+        handler.removeCallbacks(progressUpdater)
+        handler.post(progressUpdater)
         // Video and selected-item access can change in system settings while backgrounded.
         if (currentTab == "videos" && videosLoaded) {
             if (hasVideoAccess()) {
@@ -526,6 +528,11 @@ class MainActivity : AppCompatActivity() {
                 renderVideos(searchBox.text?.toString().orEmpty())
             }
         }
+    }
+
+    override fun onPause() {
+        handler.removeCallbacks(progressUpdater)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
