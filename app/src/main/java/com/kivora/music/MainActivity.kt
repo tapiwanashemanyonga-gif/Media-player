@@ -1177,8 +1177,8 @@ class MainActivity : AppCompatActivity() {
                         if (fromUser) {
                             val d = player?.duration ?: 0L
                             val targetPosition = d * value / 1000L
-                            elapsedText.text = formatTime(targetPosition)
-                            durationText.text = "−${formatTime(d - targetPosition)}"
+                            elapsedText.text = PlaybackTimeFormatter.format(targetPosition)
+                            durationText.text = "−${PlaybackTimeFormatter.format(d - targetPosition)}"
                         }
                     }
 
@@ -2206,7 +2206,7 @@ class MainActivity : AppCompatActivity() {
         if (state.getBoolean(KivoraPlaybackService.KEY_TIMER_ACTIVE)) {
             val minutes = state.getInt(KivoraPlaybackService.KEY_DURATION_MINUTES)
             val remaining = state.getLong(KivoraPlaybackService.KEY_REMAINING_MILLIS)
-            sleepTimerStatus?.text = "$minutes-minute timer · ${formatTime(remaining)} remaining"
+            sleepTimerStatus?.text = "$minutes-minute timer · ${PlaybackTimeFormatter.format(remaining)} remaining"
         } else if (state.getBoolean(KivoraPlaybackService.KEY_TIMER_EXPIRED)) {
             sleepTimerStatus?.text = "Timer finished · music paused"
         } else {
@@ -4714,22 +4714,10 @@ class MainActivity : AppCompatActivity() {
                     0
                 }
 
-            elapsedText.text = formatTime(position)
+            elapsedText.text = PlaybackTimeFormatter.format(position)
         }
 
-        durationText.text = "−${formatTime(duration - position)}"
-    }
-
-    private fun formatTime(milliseconds: Long): String {
-        val totalSeconds =
-            (milliseconds.coerceAtLeast(0L) / 1000L).toInt()
-
-        return String.format(
-            Locale.getDefault(),
-            "%d:%02d",
-            totalSeconds / 60,
-            totalSeconds % 60
-        )
+        durationText.text = "−${PlaybackTimeFormatter.format(duration - position)}"
     }
 
     override fun onDestroy() {
@@ -4858,7 +4846,7 @@ class MainActivity : AppCompatActivity() {
                     setContent {
                         A1VideoRow(
                             title = video.title,
-                            duration = formatTime(video.durationMs),
+                            duration = PlaybackTimeFormatter.format(video.durationMs),
                             isSelected = video.uri.toString() == selectedVideoUri,
                             onThumbnailReady = { imageView ->
                                 loadVideoThumbnail(video, imageView)
@@ -5221,7 +5209,7 @@ class MainActivity : AppCompatActivity() {
                 if (videoPlayer?.isPlaying == true) scheduleHide?.invoke()
             }
             override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
-                if (fromUser) elapsed.text = formatTime((videoPlayer?.duration?.coerceAtLeast(0L) ?: 0L) * value / 1000L)
+                if (fromUser) elapsed.text = PlaybackTimeFormatter.format((videoPlayer?.duration?.coerceAtLeast(0L) ?: 0L) * value / 1000L)
             }
         })
         seekRow.addView(elapsed)
@@ -5361,8 +5349,8 @@ class MainActivity : AppCompatActivity() {
             val position = p.currentPosition.coerceAtLeast(0L)
             val length = p.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
             if (!seeking) seek.progress = if (length > 0) (position * 1000L / length).toInt().coerceIn(0, 1000) else 0
-            elapsed.text = formatTime(position)
-            duration.text = formatTime(length)
+            elapsed.text = PlaybackTimeFormatter.format(position)
+            duration.text = PlaybackTimeFormatter.format(length)
             currentTitle.text = deviceVideos.firstOrNull { it.uri.toString() == selectedVideoUri }?.title
                 ?: if (lastFailedVideoUri != null) "Playback error" else "Video"
             val playing = p.isPlaying
