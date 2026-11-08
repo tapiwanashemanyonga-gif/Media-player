@@ -1958,7 +1958,7 @@ class MainActivity : AppCompatActivity() {
                 latestLevels = levels.toList()
                 levels.indices.filter { it < bandSliders.size }.forEach { band ->
                     bandSliders[band].progress = levels[band] - minLevel
-                    levelLabels[band].text = formatEqualizerLevel(levels[band])
+                    levelLabels[band].text = AudioEffectLevelFormatter.format(levels[band])
                 }
             }
             updateDialogState = ::applyState
@@ -2761,11 +2761,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSelectSongsForPlaylistDialog() {
         val query = searchBox.text?.toString().orEmpty().trim().lowercase(Locale.ROOT)
-        val candidates = sortLibrarySongs(songs.filter { song ->
+        val candidates = MediaLibraryOrdering.sortSongs(songs.filter { song ->
             val searchableText =
                 "${song.title.trim()} ${song.artist.trim()} ${song.album.trim()}".lowercase(Locale.ROOT)
             query.isEmpty() || searchableText.contains(query)
-        })
+        }, librarySortMode, recentlyPlayedTracker.uris)
         if (candidates.isEmpty()) {
             AlertDialog.Builder(this)
                 .setTitle("No songs available")
