@@ -85,11 +85,14 @@ class A1InstallTrackingClient(context: Context) {
             granted -> "You currently allow optional installation analytics."
             else -> "You currently do not allow optional installation analytics."
         }
+        val visitorId = preferences.getString(KEY_VISITOR_ID, null)
+        val reference = visitorId?.let { "\n\nInstallation reference: $it\nInclude this reference if you email a privacy request." }.orEmpty()
         val details = status + "\n\n" +
             "If enabled, A1 sends a random installation ID, event time, app version and Android platform. " +
             "The service provider may receive your IP address and ordinary connection metadata. " +
             "Your music, videos and lyrics are not included. This choice does not affect playback or advertising.\n\n" +
-            "Declining stops future optional analytics sends. It cannot remove information already received by the analytics service; contact the privacy email in the policy for a data request."
+            "Declining stops future optional analytics sends. It cannot remove information already received by the analytics service; contact the privacy email in the policy for a data request." +
+            reference
         val dialog = AlertDialog.Builder(hostActivity)
             .setTitle("Privacy choices")
             .setMessage(details)
