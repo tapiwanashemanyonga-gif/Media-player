@@ -52,10 +52,11 @@ assert_activity_and_capture() {
   local label="$1"
   local xml="$OUT_DIR/$label.xml"
   adb shell am force-stop "$PACKAGE"
-  adb shell am start -W -n "$ACTIVITY" || true
+  adb shell am start -W -n "$ACTIVITY"
   local resumed=false
   for _ in $(seq 1 30); do
-    if adb shell dumpsys activity activities 2>/dev/null | grep -q "$PACKAGE"; then
+    ACTIVITY_DUMP="$(adb shell dumpsys activity activities 2>/dev/null || true)"
+    if grep -Fq "$PACKAGE" <<< "$ACTIVITY_DUMP"; then
       resumed=true
       break
     fi
@@ -123,7 +124,7 @@ grep -Fq 'Hide your library' "$OUT_DIR/library-expanded.xml"
 adb shell input tap "$VIDEOS_X" "$NAV_Y"
 sleep 4
 capture_hierarchy /sdcard/a1-videos.xml "$OUT_DIR/videos.xml"
-if ! grep -Fq 'No videos yet' "$OUT_DIR/videos.xml" && ! grep -Fq 'Your video library is ready when you are.' "$OUT_DIR/videos.xml" && ! grep -Fq 'matching videos' "$OUT_DIR/videos.xml" && ! grep -Fq 'matching selected videos' "$OUT_DIR/videos.xml"; then
+if ! grep -Fq 'No videos yet' "$OUT_DIR/videos.xml" && ! grep -Fq 'Your video library is ready when you are.' "$OUT_DIR/videos.xml" && ! grep -Fq 'No selected videos.' "$OUT_DIR/videos.xml" && ! grep -Fq 'No videos match your search.' "$OUT_DIR/videos.xml" && ! grep -Fq 'matching videos' "$OUT_DIR/videos.xml" && ! grep -Fq 'matching selected videos' "$OUT_DIR/videos.xml"; then
   echo "The Videos destination did not display its expected video-library content."
   exit 1
 fi
