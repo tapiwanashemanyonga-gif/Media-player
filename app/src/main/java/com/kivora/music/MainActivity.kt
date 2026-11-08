@@ -1289,10 +1289,29 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openBassBoost() }
         }
 
-        playerShortcuts.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
-        playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
-        playerShortcuts.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
-        playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+        if (narrowPhoneLayout) {
+            // Keep shortcut labels readable on very narrow phones instead of squeezing four buttons into one row.
+            playerShortcuts.orientation = LinearLayout.VERTICAL
+            val firstShortcutRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            firstShortcutRow.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+            firstShortcutRow.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+            val secondShortcutRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            secondShortcutRow.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+            secondShortcutRow.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+            playerShortcuts.addView(firstShortcutRow, LinearLayout.LayoutParams(-1, -2))
+            playerShortcuts.addView(secondShortcutRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        } else {
+            playerShortcuts.addView(minimizePlayerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(4) })
+            playerShortcuts.addView(equalizerButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+            playerShortcuts.addView(bassBoostButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) })
+            playerShortcuts.addView(songListButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
+        }
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
