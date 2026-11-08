@@ -256,11 +256,11 @@ class MainActivity : AppCompatActivity() {
             if (granted) {
                 loadSongs()
             } else {
-                Toast.makeText(
-                    this,
-                    "Allow music access to show songs from your device.",
-                    Toast.LENGTH_LONG
-                ).show()
+                showMediaPermissionHelp(
+                    title = "Music access is needed",
+                    message = "A1 FAMILY MEDIA needs permission to find and play audio files stored on your device. Your music stays on your device.",
+                    retryLabel = "Try again"
+                ) { requestMusicAccess() }
             }
         }
 
@@ -271,12 +271,12 @@ class MainActivity : AppCompatActivity() {
             if (hasVideoAccess()) {
                 loadVideos()
             } else {
-                videoStatus.text = "Allow video access to show your videos."
-                Toast.makeText(
-                    this,
-                    "Video access is needed to display your device videos.",
-                    Toast.LENGTH_LONG
-                ).show()
+                videoStatus.text = "Video access is needed. Use the button below to try again or open app settings."
+                showMediaPermissionHelp(
+                    title = "Video access is needed",
+                    message = "Allow video access so A1 FAMILY MEDIA can display and play videos stored on your device. You can grant access to selected videos on supported Android versions.",
+                    retryLabel = "Try again"
+                ) { requestVideoAccess() }
             }
         }
 
@@ -380,7 +380,7 @@ class MainActivity : AppCompatActivity() {
         ) {
             loadSongs()
         } else {
-            permissionLauncher.launch(permission)
+            requestMusicAccess()
         }
         if (savedInstanceState == null) handleIncomingMediaIntent(intent)
     }
@@ -5816,6 +5816,41 @@ class MainActivity : AppCompatActivity() {
                 this,
                 "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
             ) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestMusicAccess() {
+        val permission = if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        permissionLauncher.launch(permission)
+    }
+
+    private fun showMediaPermissionHelp(
+        title: String,
+        message: String,
+        retryLabel: String,
+        onRetry: () -> Unit
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(retryLabel) { _, _ -> onRetry() }
+            .setNeutralButton("App settings") { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                }.onFailure {
+                    Toast.makeText(this, "Couldn't open app settings.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
 
     private fun requestVideoAccess() {
         when {
