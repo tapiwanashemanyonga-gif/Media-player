@@ -9,8 +9,6 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.pdf.PdfDocument
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
