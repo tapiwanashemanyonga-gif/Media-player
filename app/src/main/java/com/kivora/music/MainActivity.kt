@@ -4,15 +4,12 @@ package com.kivora.music
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
-import android.content.ContentUris
 import android.content.pm.PackageManager
-import android.database.Cursor
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
-import android.util.LruCache
 import android.util.TypedValue
 import android.os.Bundle
 import android.os.Handler
@@ -52,7 +49,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
-import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
