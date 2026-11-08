@@ -61,22 +61,6 @@ import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
 
-data class Song(
-    val title: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long,
-    val uri: Uri,
-    val artworkUri: Uri?
-)
-
-data class DeviceVideo(
-    val id: Long,
-    val title: String,
-    val uri: Uri,
-    val durationMs: Long
-)
-
 class MainActivity : AppCompatActivity() {
 
     private var player: MediaController? = null
