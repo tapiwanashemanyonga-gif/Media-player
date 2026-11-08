@@ -1,6 +1,10 @@
 package com.kivora.music
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.appcompat.app.AlertDialog
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -12,17 +16,62 @@ import java.util.TimeZone
 import java.util.UUID
 
 /**
- * Sends one privacy-minimal first-open event per app installation.
+ * Sends one optional first-open event per installation, only after the user opts in.
  * The app key is a public client credential; authorization is enforced by the API.
  */
 class A1InstallTrackingClient(context: Context) {
     private val appContext = context.applicationContext
+    private val activity = context as? Activity
 
     fun recordFirstOpen() {
         val appKey = BuildConfig.A1_APP_TRACKING_KEY
         if (appKey.isBlank()) return
 
         val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        if (preferences.getBoolean(KEY_CONSENT_DECIDED, false)) {
+            if (preferences.getBoolean(KEY_CONSENT_GRANTED, false)) sendFirstOpen(appKey, preferences)
+            return
+        }
+
+        val hostActivity = activity?.takeIf { !it.isFinishing && !it.isDestroyed } ?: return
+        AlertDialog.Builder(hostActivity)
+            .setTitle("Optional installation analytics")
+            .setMessage(
+                "A1 FAMILY MEDIA can send one installation event to help us understand app installs. " +
+                    "If you allow it, we send a random installation ID, the event time, app version and " +
+                    "Android platform to the A1 Family Media analytics service. The service provider may " +
+                    "also receive your IP address and ordinary connection metadata when the request is sent. " +
+                    "This is optional. Your music, videos and lyrics are not included in this event, and " +
+                    "declining does not affect playback or advertising. Read the Privacy Policy for details."
+            )
+            .setPositiveButton("Allow optional analytics") { _, _ ->
+                preferences.edit()
+                    .putBoolean(KEY_CONSENT_DECIDED, true)
+                    .putBoolean(KEY_CONSENT_GRANTED, true)
+                    .apply()
+                sendFirstOpen(appKey, preferences)
+            }
+            .setNegativeButton("Don't allow") { _, _ ->
+                preferences.edit()
+                    .putBoolean(KEY_CONSENT_DECIDED, true)
+                    .putBoolean(KEY_CONSENT_GRANTED, false)
+                    .apply()
+            }
+            .setNeutralButton("Privacy policy") { _, _ ->
+                runCatching {
+                    hostActivity.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))
+                    )
+                }
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun sendFirstOpen(
+        appKey: String,
+        preferences: android.content.SharedPreferences
+    ) {
         if (preferences.getBoolean(KEY_SENT, false)) return
 
         val visitorId = preferences.getString(KEY_VISITOR_ID, null)
@@ -83,9 +132,12 @@ class A1InstallTrackingClient(context: Context) {
 
     private companion object {
         const val EVENTS_URL = "https://a1-family-cloud-api.tapiwanashemanyonga.workers.dev/v1/events"
+        const val PRIVACY_POLICY_URL = "https://a1-family-media-site.onrender.com/privacy.html"
         const val PREFERENCES = "a1_cloud_tracking"
         const val KEY_SENT = "install_first_open_sent"
         const val KEY_VISITOR_ID = "visitor_id"
         const val KEY_PENDING_EVENT_ID = "pending_install_event_id"
+        const val KEY_CONSENT_DECIDED = "install_analytics_consent_decided"
+        const val KEY_CONSENT_GRANTED = "install_analytics_consent_granted"
     }
 }
