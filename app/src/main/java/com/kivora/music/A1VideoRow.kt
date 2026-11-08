@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,14 +49,16 @@ fun A1VideoRow(
         ),
         tonalElevation = 0.dp
     ) {
-        Row(
-            modifier = Modifier.padding(9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(11.dp)
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compact = maxWidth < 340.dp
+            Row(
+                modifier = Modifier.padding(if (compact) 7.dp else 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 11.dp)
+            ) {
             Box(
                 modifier = Modifier
-                    .size(width = 100.dp, height = 70.dp)
+                    .size(width = if (compact) 84.dp else 100.dp, height = if (compact) 60.dp else 70.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFF39264B)),
                 contentAlignment = Alignment.Center
@@ -96,6 +99,7 @@ fun A1VideoRow(
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 5.dp)
                 )
+            }
             }
         }
     }
