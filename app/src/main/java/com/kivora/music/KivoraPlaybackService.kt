@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.session.MediaSession
@@ -157,7 +158,12 @@ class KivoraPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this).build()
+        val player = ExoPlayer.Builder(this).build().apply {
+            // Let Media3 manage focus changes (pause/duck/resume) when other apps
+            // request audio, and pause when headphones or an audio route disconnects.
+            setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
+            setHandleAudioBecomingNoisy(true)
+        }
         musicPlayer = player
         mediaSession = MediaSession.Builder(this, player)
             .setCallback(equalizerCallback)
