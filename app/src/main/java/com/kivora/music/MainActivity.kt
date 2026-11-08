@@ -196,17 +196,12 @@ class MainActivity : AppCompatActivity() {
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private var musicScanRequestId = 0
     private var videoScanRequestId = 0
-    private val videoThumbnailLoader = VideoThumbnailLoader(
-        contentResolver = contentResolver,
-        density = resources.displayMetrics.density
-    ) { !isFinishing && !isDestroyed }
+    // Defer Context-dependent helpers until onCreate, after Android attaches this Activity.
+    private lateinit var videoThumbnailLoader: VideoThumbnailLoader
 
     // Keep the selected-track request guard in MainActivity; decoding and caching live separately.
     private var artworkRequestId = 0
-    private val albumArtworkLoader = AlbumArtworkLoader(
-        contentResolver = contentResolver,
-        minimumTargetSizePx = dp(32)
-    ) { !isFinishing && !isDestroyed }
+    private lateinit var albumArtworkLoader: AlbumArtworkLoader
 
 
     // Optimization: cache lowercase search text for each song.
@@ -306,6 +301,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Activity Context and resources are safe to access only after super.onCreate().
+        videoThumbnailLoader = VideoThumbnailLoader(
+            contentResolver = contentResolver,
+            density = resources.displayMetrics.density
+        ) { !isFinishing && !isDestroyed }
+        albumArtworkLoader = AlbumArtworkLoader(
+            contentResolver = contentResolver,
+            minimumTargetSizePx = dp(32)
+        ) { !isFinishing && !isDestroyed }
 
         if (Build.VERSION.SDK_INT >= 35) {
             // Android 15+ enforces edge-to-edge for apps targeting API 35 or newer.
