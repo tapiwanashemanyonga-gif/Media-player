@@ -3917,17 +3917,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val queueCandidates = when {
-            selectedPlaylist != null -> playlistSongs(selectedPlaylist.orEmpty())
-            showFavoritesOnly -> songs.filter { favoriteSongUris.contains(it.uri.toString()) }
-            else -> songs.toList()
-        }
-        val queue = queueCandidates.filter { queuedSong ->
-            (currentTab != "library" || selectedAlbumKey == null ||
-                MediaLibraryOrdering.albumGroupKey(queuedSong) == selectedAlbumKey) &&
-                (currentTab != "library" || selectedArtistName == null ||
-                    queuedSong.artist.equals(selectedArtistName, ignoreCase = true))
-        }
+        val queue = MediaQueueSelector.select(
+            allSongs = songs,
+            playlistSongs = selectedPlaylist?.let(::playlistSongs),
+            favoritesOnly = showFavoritesOnly,
+            favoriteUris = favoriteSongUris,
+            libraryBrowse = currentTab == "library",
+            selectedAlbumKey = selectedAlbumKey,
+            selectedArtistName = selectedArtistName
+        )
 
         val startIndex = queue.indexOfFirst { it.uri == song.uri }
 
