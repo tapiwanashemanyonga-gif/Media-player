@@ -126,7 +126,7 @@ fun A1SongRow(
                     imageVector = Icons.Filled.MoreVert,
                     contentDescription = "More song actions",
                     tint = Color(0xFFD8B4FE),
-                    modifier = Modifier.size(19.dp)
+                    modifier = Modifier.size(if (compact) 17.dp else 19.dp)
                 )
             }
             }
