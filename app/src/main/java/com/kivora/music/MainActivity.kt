@@ -165,7 +165,7 @@ class MainActivity : AppCompatActivity() {
 
     private val songs = mutableListOf<Song>()
     private var activeQueue: List<Song> = emptyList()
-    private val recentlyPlayedUris = mutableListOf<String>()
+    private val recentlyPlayedTracker = RecentlyPlayedTracker()
     private val favoriteSongUris = mutableSetOf<String>()
     private val playlists = linkedMapOf<String, MutableSet<String>>()
 
@@ -2849,9 +2849,7 @@ class MainActivity : AppCompatActivity() {
     private fun recordRecentlyPlayed(mediaItem: MediaItem?) {
         val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
         if (songs.none { it.uri.toString() == uri }) return
-        recentlyPlayedUris.remove(uri)
-        recentlyPlayedUris.add(0, uri)
-        while (recentlyPlayedUris.size > 12) recentlyPlayedUris.removeAt(recentlyPlayedUris.lastIndex)
+        recentlyPlayedTracker.record(uri)
         if (::homeContent.isInitialized && currentTab == "home") renderHomeDashboard()
     }
 
@@ -2881,7 +2879,7 @@ class MainActivity : AppCompatActivity() {
         val sections = linkedMapOf<String, () -> Unit>()
         sections["recent"] = {
             addHomeSection("Recently played", "YOUR RECENT LISTENS")
-            val recentSongs = recentlyPlayedUris.mapNotNull { uri ->
+            val recentSongs = recentlyPlayedTracker.uris.mapNotNull { uri ->
                 songs.firstOrNull { it.uri.toString() == uri }
             }
             if (recentSongs.isEmpty()) {
@@ -4644,7 +4642,7 @@ class MainActivity : AppCompatActivity() {
         )
         "recent" -> items.sortedWith(
             compareBy<Song> {
-                recentlyPlayedUris.indexOf(it.uri.toString()).let { index ->
+                recentlyPlayedTracker.uris.indexOf(it.uri.toString()).let { index ->
                     if (index < 0) Int.MAX_VALUE else index
                 }
             }.thenBy { it.title.trim().lowercase(Locale.ROOT) }
@@ -4669,7 +4667,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSortOptions() {
         val modes = mutableListOf("title", "artist")
         val labels = mutableListOf("Title A–Z", "Artist A–Z")
-        if (recentlyPlayedUris.isNotEmpty()) {
+        if (recentlyPlayedTracker.uris.isNotEmpty()) {
             modes.add("recent")
             labels.add("Recently played")
         }
