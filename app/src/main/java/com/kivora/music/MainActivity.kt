@@ -4982,10 +4982,12 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Play a song from your library before adding lyrics.", Toast.LENGTH_LONG).show()
             return
         }
-        val prefs = getSharedPreferences("a1_family_lyrics", MODE_PRIVATE)
+        val lyricsStore = LyricsStore(
+            getSharedPreferences("a1_family_lyrics", MODE_PRIVATE)
+        )
         val lyrics = EditText(this).apply {
             hint = "Paste or type your own lyrics here…"
-            setText(prefs.getString(song.uri.toString(), ""))
+            setText(lyricsStore.get(song.uri.toString()))
             setSingleLine(false)
             minLines = 10
             maxLines = 22
@@ -5029,7 +5031,7 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Close", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                prefs.edit().putString(song.uri.toString(), lyrics.text.toString()).apply()
+                lyricsStore.save(song.uri.toString(), lyrics.text.toString())
                 Toast.makeText(this, "Lyrics saved for ${song.title}.", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
@@ -5039,7 +5041,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Write or paste lyrics before exporting.", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
-                prefs.edit().putString(song.uri.toString(), text).apply()
+                lyricsStore.save(song.uri.toString(), text)
                 pendingLyricsPdfTitle = song.title
                 pendingLyricsPdfText = text
                 val safeTitle = song.title.replace(Regex("[^A-Za-z0-9 _-]"), "").trim().take(60).ifBlank { "Lyrics" }
