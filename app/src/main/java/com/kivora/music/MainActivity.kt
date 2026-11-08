@@ -539,11 +539,15 @@ class MainActivity : AppCompatActivity() {
                     updateProgress()
 
                 } catch (e: Exception) {
-                    Toast.makeText(
-                        this,
-                        "Couldn't connect to the music service. Reopen Kivora Music Player.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    // The future can be cancelled while the activity is being destroyed.
+                    // Do not try to show UI from a finishing or destroyed activity.
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(
+                            this,
+                            "Couldn't connect to the music service. Reopen A1 FAMILY MEDIA.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
             },
             ContextCompat.getMainExecutor(this)
