@@ -208,15 +208,13 @@ class MainActivity : AppCompatActivity() {
         density = resources.displayMetrics.density
     ) { !isFinishing && !isDestroyed }
 
-    // Optimization: decode album artwork away from the UI thread.
-    private val artworkExecutor = Executors.newSingleThreadExecutor()
+    // Keep the selected-track request guard in MainActivity; decoding and caching live separately.
     private var artworkRequestId = 0
-    private val artworkCache = object : LruCache<String, android.graphics.Bitmap>(
-        (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-    ) {
-        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
-            (value.byteCount / 1024).coerceAtLeast(1)
-    }
+    private val albumArtworkLoader = AlbumArtworkLoader(
+        contentResolver = contentResolver,
+        minimumTargetSizePx = dp(32)
+    ) { !isFinishing && !isDestroyed }
+
 
     // Optimization: cache lowercase search text for each song.
     private val normalizedSearchText = mutableMapOf<String, String>()
@@ -3687,9 +3685,8 @@ class MainActivity : AppCompatActivity() {
             params?.width?.takeIf { it > 0 } ?: 0,
             params?.height?.takeIf { it > 0 } ?: 0
         ).takeIf { it > 0 } ?: dp(192)
-        val cacheKey = "$artworkUri@$targetSize"
 
-        fun applyIfCurrent(bitmap: android.graphics.Bitmap) {
+        albumArtworkLoader.load(artworkUri, targetSize) { bitmap ->
             if (
                 !isFinishing && !isDestroyed && imageView.tag == songKey &&
                 (requestId == null || requestId == artworkRequestId)
@@ -3697,50 +3694,6 @@ class MainActivity : AppCompatActivity() {
                 imageView.clearColorFilter()
                 imageView.setImageBitmap(bitmap)
             }
-        }
-
-        artworkCache.get(cacheKey)?.let { cachedBitmap ->
-            applyIfCurrent(cachedBitmap)
-            return
-        }
-
-        artworkExecutor.execute {
-            val bitmap = artworkCache.get(cacheKey) ?: decodeArtwork(artworkUri, targetSize)
-                ?.also { artworkCache.put(cacheKey, it) }
-
-            if (bitmap != null) {
-                runOnUiThread {
-                    applyIfCurrent(bitmap)
-                }
-            }
-        }
-    }
-
-    private fun decodeArtwork(artworkUri: Uri, targetSizePx: Int): android.graphics.Bitmap? {
-        return try {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            val boundsStream = contentResolver.openInputStream(artworkUri) ?: return null
-            boundsStream.use { stream ->
-                BitmapFactory.decodeStream(stream, null, bounds)
-            }
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-            val target = targetSizePx.coerceAtLeast(dp(32))
-            var sampleSize = 1
-            while (maxOf(
-                    bounds.outWidth / (sampleSize * 2),
-                    bounds.outHeight / (sampleSize * 2)
-                ) >= target
-            ) {
-                sampleSize *= 2
-            }
-            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-            val decodeStream = contentResolver.openInputStream(artworkUri) ?: return null
-            decodeStream.use { stream ->
-                BitmapFactory.decodeStream(stream, null, options)
-            }
-        } catch (_: Exception) {
-            null
         }
     }
 
@@ -4872,7 +4825,7 @@ class MainActivity : AppCompatActivity() {
         musicScanExecutor.shutdownNow()
         videoScanExecutor.shutdownNow()
         videoThumbnailLoader.close()
-        artworkExecutor.shutdownNow()
+        albumArtworkLoader.close()
 
         handler.removeCallbacks(progressUpdater)
         stopSleepTimerPolling()
