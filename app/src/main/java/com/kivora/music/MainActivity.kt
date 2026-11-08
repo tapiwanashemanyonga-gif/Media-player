@@ -15,7 +15,6 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.util.LruCache
-import android.util.Size
 import android.util.TypedValue
 import android.os.Bundle
 import android.os.Handler
@@ -202,16 +201,12 @@ class MainActivity : AppCompatActivity() {
     private var songRenderLimit = 80
     private var videoRenderLimit = 60
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
-    private val videoThumbnailExecutor = Executors.newFixedThreadPool(2)
     private var musicScanRequestId = 0
     private var videoScanRequestId = 0
-    private val videoThumbnailCache = object : LruCache<String, android.graphics.Bitmap>(
-        (Runtime.getRuntime().maxMemory() / 1024L / 16L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-    ) {
-        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int =
-            (value.byteCount / 1024).coerceAtLeast(1)
-    }
-    private val videoThumbnailTargets = HashMap<String, MutableList<ImageView>>()
+    private val videoThumbnailLoader = VideoThumbnailLoader(
+        contentResolver = contentResolver,
+        density = resources.displayMetrics.density
+    ) { !isFinishing && !isDestroyed }
 
     // Optimization: decode album artwork away from the UI thread.
     private val artworkExecutor = Executors.newSingleThreadExecutor()
@@ -4876,7 +4871,7 @@ class MainActivity : AppCompatActivity() {
         videoScanRequestId++
         musicScanExecutor.shutdownNow()
         videoScanExecutor.shutdownNow()
-        videoThumbnailExecutor.shutdownNow()
+        videoThumbnailLoader.close()
         artworkExecutor.shutdownNow()
 
         handler.removeCallbacks(progressUpdater)
@@ -4941,38 +4936,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadVideoThumbnail(video: DeviceVideo, imageView: ImageView) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val key = video.uri.toString()
-        imageView.tag = key
-        val cached = videoThumbnailCache.get(key)
-        if (cached != null) {
-            imageView.setImageBitmap(cached)
-            return
-        }
-        val shouldDecode = synchronized(videoThumbnailTargets) {
-            val targets = videoThumbnailTargets.getOrPut(key) { mutableListOf() }
-            targets.add(imageView)
-            targets.size == 1
-        }
-        if (!shouldDecode) return
-        val width = dp(112).coerceAtLeast(1)
-        val height = dp(76).coerceAtLeast(1)
-        videoThumbnailExecutor.execute {
-            val bitmap = try {
-                contentResolver.loadThumbnail(video.uri, Size(width, height), null)
-            } catch (_: Exception) { null }
-            handler.post {
-                if (bitmap != null && !isFinishing && !isDestroyed) videoThumbnailCache.put(key, bitmap)
-                val targets = synchronized(videoThumbnailTargets) {
-                    videoThumbnailTargets.remove(key).orEmpty()
-                }
-                if (bitmap != null && !isFinishing && !isDestroyed) {
-                    targets.forEach { target ->
-                        if (target.tag == key) target.setImageBitmap(bitmap)
-                    }
-                }
-            }
-        }
+        videoThumbnailLoader.load(video, imageView)
     }
 
     private fun renderVideos(query: String = searchBox.text?.toString().orEmpty()) {
