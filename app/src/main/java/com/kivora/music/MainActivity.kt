@@ -5400,7 +5400,10 @@ class MainActivity : AppCompatActivity() {
             }
             visibility = View.GONE
         }
-        val menuScroll = ScrollView(this)
+        val menuScroll = ScrollView(this).apply {
+            // Do not reserve a large empty area while the fullscreen settings menu is closed.
+            visibility = View.GONE
+        }
         menuScroll.addView(menuPanel)
         // Limit the expanded fullscreen menu on short landscape phones while retaining scrolling.
         val fullscreenMenuHeight = (resources.configuration.screenHeightDp * 0.32f)
@@ -5577,6 +5580,7 @@ class MainActivity : AppCompatActivity() {
                         refreshMenu()
                         if (started) {
                             menuPanel.visibility = View.GONE
+                            menuScroll.visibility = View.GONE
                             showControls?.invoke()
                         }
                     }
@@ -5628,6 +5632,7 @@ class MainActivity : AppCompatActivity() {
             val open = menuPanel.visibility != View.VISIBLE
             if (open) refreshMenu()
             menuPanel.visibility = if (open) View.VISIBLE else View.GONE
+            menuScroll.visibility = if (open) View.VISIBLE else View.GONE
             showControls?.invoke()
         }
         videoPlayerView.setOnClickListener {
