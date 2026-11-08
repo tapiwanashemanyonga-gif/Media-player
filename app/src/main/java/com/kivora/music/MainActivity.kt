@@ -2859,7 +2859,7 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        val albumCount = songs.map(MediaLibraryOrdering::albumGroupKey).distinct().size
+        val albumCount = songs.map(MediaLibraryOrderingMediaLibraryOrdering::albumGroupKey).distinct().size
         homeContent.addView(
             ComposeView(this).apply {
                 setContent {
@@ -2899,7 +2899,7 @@ class MainActivity : AppCompatActivity() {
         }
         sections["albums"] = {
             addHomeSection("Albums", "FROM YOUR LIBRARY")
-            val albumGroups = songs.groupBy(::albumGroupKey).values
+            val albumGroups = songs.groupBy(MediaLibraryOrdering::albumGroupKey).values
                 .sortedBy { it.first().album.lowercase(Locale.ROOT) }
             if (albumGroups.isEmpty()) {
                 homeContent.addView(homeEmptyCard("Albums will appear when music is available."))
@@ -2915,7 +2915,7 @@ class MainActivity : AppCompatActivity() {
                         selectedPlaylist = null
                         showFavoritesOnly = false
                         libraryBrowseMode = "albums"
-                        selectedAlbumKey = albumGroupKey(group.first())
+                        selectedAlbumKey = MediaLibraryOrdering.albumGroupKey(group.first())
                         selectedArtistName = null
                         updateFavoriteFilterButton()
                         updatePlaylistButton()
@@ -3709,11 +3709,11 @@ class MainActivity : AppCompatActivity() {
             sortContainer.visibility =
                 if (showingCollections || selectedPlaylist != null) View.GONE else View.VISIBLE
         }
-        val albumCount = visibleSongs.map(::albumGroupKey).distinct().size
+        val albumCount = visibleSongs.map(MediaLibraryOrdering::albumGroupKey).distinct().size
         val artistCount = visibleSongs.map { it.artist.lowercase(Locale.ROOT) }.distinct().size
 
         libraryCount.text = when {
-            isLibraryBrowse && selectedAlbumKey != null -> "${visibleSongs.size} tracks · ${songs.firstOrNull { albumGroupKey(it) == selectedAlbumKey }?.album ?: "Album"}"
+            isLibraryBrowse && selectedAlbumKey != null -> "${visibleSongs.size} tracks · ${songs.firstOrNull { MediaLibraryOrdering.albumGroupKey(it) == selectedAlbumKey }?.album ?: "Album"}"
             isLibraryBrowse && selectedArtistName != null -> "${visibleSongs.size} tracks · $selectedArtistName"
             showingCollections && libraryBrowseMode == "albums" -> "$albumCount albums"
             showingCollections && libraryBrowseMode == "artists" -> "$artistCount artists"
@@ -3769,7 +3769,7 @@ class MainActivity : AppCompatActivity() {
         if (isLibraryDetail) {
             val modeTitle = if (selectedAlbumKey != null) "Albums" else "Artists"
             val detailTitle = selectedAlbumKey?.let { albumKey ->
-                songs.firstOrNull { albumGroupKey(it) == albumKey }?.album ?: "Album"
+                songs.firstOrNull { MediaLibraryOrdering.albumGroupKey(it) == albumKey }?.album ?: "Album"
             } ?: selectedArtistName.orEmpty()
             val backButton = label("‹  ALL $modeTitle", 12f, Color.rgb(224, 197, 248), true).apply {
                 gravity = Gravity.CENTER_VERTICAL
@@ -3859,7 +3859,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderAlbumGroups(items: List<Song>) {
-        items.groupBy(::albumGroupKey).values
+        items.groupBy(MediaLibraryOrdering::albumGroupKey).values
             .sortedBy { group -> group.first().album.lowercase(Locale.ROOT) }
             .forEach { group ->
                 val representative = group.firstOrNull { it.artworkUri != null } ?: group.first()
@@ -3870,7 +3870,7 @@ class MainActivity : AppCompatActivity() {
                     coverSong = representative,
                     description = "Open album ${group.first().album}, $artistNames, ${group.size} songs"
                 ) {
-                    selectedAlbumKey = albumGroupKey(group.first())
+                    selectedAlbumKey = MediaLibraryOrdering.albumGroupKey(group.first())
                     selectedArtistName = null
                     renderSongs(searchBox.text?.toString().orEmpty())
                 }
@@ -3941,7 +3941,7 @@ class MainActivity : AppCompatActivity() {
         }
         val queue = queueCandidates.filter { queuedSong ->
             (currentTab != "library" || selectedAlbumKey == null ||
-                albumGroupKey(queuedSong) == selectedAlbumKey) &&
+                MediaLibraryOrdering.albumGroupKey(queuedSong) == selectedAlbumKey) &&
                 (currentTab != "library" || selectedArtistName == null ||
                     queuedSong.artist.equals(selectedArtistName, ignoreCase = true))
         }
