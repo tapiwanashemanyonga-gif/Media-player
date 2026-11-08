@@ -68,6 +68,61 @@ class A1InstallTrackingClient(context: Context) {
             .show()
     }
 
+    /**
+     * Lets users review or change their optional installation-analytics choice at any time.
+     * Revoking consent stops future sends; it cannot retract an event already transmitted.
+     */
+    fun openPrivacyChoices() {
+        val hostActivity = activity?.takeIf { !it.isFinishing && !it.isDestroyed } ?: return
+        val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val appKey = BuildConfig.A1_APP_TRACKING_KEY
+        val configured = appKey.isNotBlank()
+        val granted = preferences.getBoolean(KEY_CONSENT_GRANTED, false)
+        val status = when {
+            !configured -> "Optional installation analytics is not enabled in this app build."
+            !preferences.getBoolean(KEY_CONSENT_DECIDED, false) -> "You have not made a choice about optional installation analytics."
+            granted -> "You currently allow optional installation analytics."
+            else -> "You currently do not allow optional installation analytics."
+        }
+        val details = status + "\n\n" +
+            "If enabled, A1 sends a random installation ID, event time, app version and Android platform. " +
+            "The service provider may receive your IP address and ordinary connection metadata. " +
+            "Your music, videos and lyrics are not included. This choice does not affect playback or advertising.\n\n" +
+            "Declining stops future optional analytics sends. It cannot remove information already received by the analytics service; contact the privacy email in the policy for a data request."
+        val dialog = AlertDialog.Builder(hostActivity)
+            .setTitle("Privacy choices")
+            .setMessage(details)
+            .setNeutralButton("Privacy policy") { _, _ ->
+                runCatching {
+                    hostActivity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+                }
+            }
+            .setPositiveButton(if (granted) "Keep allowed" else "Allow analytics", null)
+            .setNegativeButton(if (granted) "Don't allow" else "Keep declined", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).apply {
+                isEnabled = configured
+                setOnClickListener {
+                    if (!configured) return@setOnClickListener
+                    preferences.edit().putBoolean(KEY_CONSENT_DECIDED, true)
+                        .putBoolean(KEY_CONSENT_GRANTED, true).apply()
+                    sendFirstOpen(appKey, preferences)
+                    android.widget.Toast.makeText(hostActivity, "Optional analytics allowed.", android.widget.Toast.LENGTH_SHORT).show()
+                    dialog.dismiss()
+                }
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                preferences.edit().putBoolean(KEY_CONSENT_DECIDED, true)
+                    .putBoolean(KEY_CONSENT_GRANTED, false)
+                    .remove(KEY_PENDING_EVENT_ID).apply()
+                android.widget.Toast.makeText(hostActivity, "Optional analytics disabled.", android.widget.Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
     private fun sendFirstOpen(
         appKey: String,
         preferences: android.content.SharedPreferences
