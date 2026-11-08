@@ -5402,7 +5402,16 @@ class MainActivity : AppCompatActivity() {
         }
         val menuScroll = ScrollView(this)
         menuScroll.addView(menuPanel)
-        controls.addView(menuScroll, LinearLayout.LayoutParams(-1, dp(220)).apply { topMargin = dp(8) })
+        // Limit the expanded fullscreen menu on short landscape phones while retaining scrolling.
+        val fullscreenMenuHeight = (resources.configuration.screenHeightDp * 0.32f)
+            .toInt()
+            .coerceIn(112, 220)
+        controls.addView(
+            menuScroll,
+            LinearLayout.LayoutParams(-1, dp(fullscreenMenuHeight)).apply {
+                topMargin = dp(8)
+            }
+        )
 
         val bottomControls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
