@@ -42,7 +42,8 @@ class A1InstallTrackingClient(context: Context) {
                     "Android platform to the A1 Family Media analytics service. The service provider may " +
                     "also receive your IP address and ordinary connection metadata when the request is sent. " +
                     "This is optional. Your music, videos and lyrics are not included in this event, and " +
-                    "declining does not affect playback or advertising. Read the Privacy Policy for details."
+                    "declining does not affect playback or advertising. You can change this choice later from " +
+                    "Home > Privacy & data. Read the Privacy Policy for details."
             )
             .setPositiveButton("Allow optional analytics") { _, _ ->
                 preferences.edit()
