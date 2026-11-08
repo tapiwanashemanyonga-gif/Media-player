@@ -2405,6 +2405,10 @@ class MainActivity : AppCompatActivity() {
         PlaylistStore(getSharedPreferences("kivora_preferences", MODE_PRIVATE))
     }
 
+    private val favoriteStore by lazy {
+        FavoriteStore(getSharedPreferences("kivora_preferences", MODE_PRIVATE))
+    }
+
     private fun loadSavedPlaylists() {
         playlists.clear()
         playlists.putAll(playlistStore.load())
