@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity() {
 
 
     // Optimization: cache lowercase search text for each song.
-    private val normalizedSearchText = mutableMapOf<String, String>()
+    private val mediaSearchTextCache = MediaSearchTextCache()
 
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -459,8 +459,10 @@ class MainActivity : AppCompatActivity() {
                 val song = Song(name, "Unknown artist", "Unknown album", 0L, uri, null)
                 songs.removeAll { it.uri == uri }
                 songs.add(0, song)
-                normalizedSearchText[uri.toString()] =
+                mediaSearchTextCache.put(
+                    uri.toString(),
                     (song.title + " " + song.artist + " " + song.album).lowercase(Locale.ROOT)
+                )
                 renderSongs(searchBox.text?.toString().orEmpty())
                 playSong(song)
             }
@@ -3574,7 +3576,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 songs.clear()
                 songs.addAll(scannedSongs)
-                normalizedSearchText.clear()
+                mediaSearchTextCache.clear()
                 syncPlaylistToPlayer()
                 recordRecentlyPlayed(player?.currentMediaItem)
                 renderHomeDashboard()
@@ -3666,10 +3668,7 @@ class MainActivity : AppCompatActivity() {
         val matches = songs.filter { song ->
             val uri = song.uri.toString()
 
-            val searchableText = normalizedSearchText.getOrPut(uri) {
-                (song.title.trim() + " " + song.artist.trim() + " " + song.album.trim())
-                    .lowercase(Locale.ROOT)
-            }
+            val searchableText = mediaSearchTextCache.get(song)
 
             val matchesQuery =
                 normalized.isEmpty() || searchableText.contains(normalized)
