@@ -5013,11 +5013,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun cinemaPreferences() = getSharedPreferences("a1_cinema_preferences", MODE_PRIVATE)
+    private val videoPlaybackPreferences by lazy {
+        VideoPlaybackPreferences(getSharedPreferences("a1_cinema_preferences", MODE_PRIVATE))
+    }
 
-    private fun savedVideoSpeed(): Float = cinemaPreferences().getFloat("video_speed", 1f).coerceIn(0.5f, 2f)
+    private fun savedVideoSpeed(): Float = videoPlaybackPreferences.videoSpeed()
 
-    private fun savedSubtitleTextSize(): Int = cinemaPreferences().getInt("subtitle_text_size_sp", 22).coerceIn(16, 36)
+    private fun savedSubtitleTextSize(): Int = videoPlaybackPreferences.subtitleTextSize()
 
     private fun applyCinemaSubtitleSize() {
         if (::videoPlayerView.isInitialized) {
@@ -5241,7 +5243,7 @@ class MainActivity : AppCompatActivity() {
                         .setTitle("Playback speed")
                         .setSingleChoiceItems(options, selected) { dialog, which ->
                             val chosen = values[which]
-                            cinemaPreferences().edit().putFloat("video_speed", chosen).apply()
+                            videoPlaybackPreferences.saveVideoSpeed(chosen)
                             videoPlayer?.setPlaybackParameters(PlaybackParameters(chosen))
                             dialog.dismiss()
                             refreshMenu()
@@ -5294,7 +5296,7 @@ class MainActivity : AppCompatActivity() {
                         .setTitle("Subtitle text size")
                         .setView(panel)
                         .setPositiveButton("Save") { _, _ ->
-                            cinemaPreferences().edit().putInt("subtitle_text_size_sp", sizeBar.progress + 16).apply()
+                            videoPlaybackPreferences.saveSubtitleTextSize(sizeBar.progress + 16)
                             applyCinemaSubtitleSize()
                         }
                         .setNegativeButton("Cancel", null)
