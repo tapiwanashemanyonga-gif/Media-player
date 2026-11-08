@@ -1800,7 +1800,7 @@ class MainActivity : AppCompatActivity() {
                     setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                         override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
                         override fun onProgressChanged(seekBar: SeekBar, value: Int, fromUser: Boolean) {
-                            if (fromUser) valueLabel.text = formatEqualizerLevel(minLevel + value)
+                            if (fromUser) valueLabel.text = AudioEffectLevelFormatter.format(minLevel + value)
                         }
                         override fun onStopTrackingTouch(seekBar: SeekBar) {
                             sendEqualizerCommand(
@@ -2248,9 +2248,6 @@ class MainActivity : AppCompatActivity() {
         sleepTimerPollRunnable?.let(handler::removeCallbacks)
         sleepTimerPollRunnable = null
     }
-
-    private fun formatEqualizerLevel(millibels: Int): String =
-        String.format(Locale.getDefault(), "%.1f dB", millibels / 100f)
 
     private fun requestEqualizerState(onReady: (Bundle) -> Unit) {
         val controller = player
