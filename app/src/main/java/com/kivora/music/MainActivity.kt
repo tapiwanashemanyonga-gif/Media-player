@@ -4349,38 +4349,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun upcomingQueueEntries(): List<Pair<Int, MediaItem>> {
         val p = player ?: return emptyList()
-        if (!p.isCommandAvailable(Player.COMMAND_GET_TIMELINE)) return emptyList()
-        val count = p.mediaItemCount
-        if (count == 0) return emptyList()
-        val currentIndex = p.currentMediaItemIndex
-        val cachedOrder = queueOrderIndices?.takeIf {
-            queueOrderItemCount == count &&
-                queueOrderCurrentIndex == currentIndex &&
-                queueOrderShuffleEnabled == p.shuffleModeEnabled &&
-                queueOrderRepeatMode == p.repeatMode
-        }
-        if (cachedOrder != null) {
-            return cachedOrder.filter { it in 0 until count && it != currentIndex }
-                .map { it to p.getMediaItemAt(it) }
-        }
-        if (currentIndex !in 0 until count) {
-            return (0 until count).map { it to p.getMediaItemAt(it) }
-        }
-        val order = mutableListOf<Int>()
-        if (p.shuffleModeEnabled) {
-            val nextIndex = p.nextMediaItemIndex
-            if (nextIndex in 0 until count && nextIndex != currentIndex) order.add(nextIndex)
-            for (index in 0 until count) {
-                if (index != currentIndex && index !in order) order.add(index)
-            }
-        } else {
-            for (step in 1 until count) {
-                val index = (currentIndex + step) % count
-                if (p.repeatMode != Player.REPEAT_MODE_ALL && index < currentIndex) break
-                order.add(index)
-            }
-        }
-        return order.map { it to p.getMediaItemAt(it) }
+        return PlaybackQueuePreview.entries(
+            player = p,
+            cachedOrder = queueOrderIndices,
+            cachedItemCount = queueOrderItemCount,
+            cachedCurrentIndex = queueOrderCurrentIndex,
+            cachedShuffleEnabled = queueOrderShuffleEnabled,
+            cachedRepeatMode = queueOrderRepeatMode
+        )
     }
 
     private fun playQueuedItem(mediaIndex: Int) {
