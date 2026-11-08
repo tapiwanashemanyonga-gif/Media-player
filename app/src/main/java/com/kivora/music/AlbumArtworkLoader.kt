@@ -48,7 +48,8 @@ internal class AlbumArtworkLoader(
         }
     }
 
-    private fun decode(uri: Uri, targetSizePx: Int): Bitmap? = try {
+    private fun decode(uri: Uri, targetSizePx: Int): Bitmap? {
+        return try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val boundsStream = contentResolver.openInputStream(uri) ?: return null
         boundsStream.use { stream -> BitmapFactory.decodeStream(stream, null, bounds) }
@@ -65,8 +66,9 @@ internal class AlbumArtworkLoader(
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val decodeStream = contentResolver.openInputStream(uri) ?: return null
         decodeStream.use { stream -> BitmapFactory.decodeStream(stream, null, options) }
-    } catch (_: Exception) {
-        null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun close() {
