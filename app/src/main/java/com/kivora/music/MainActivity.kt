@@ -138,7 +138,7 @@ class MainActivity : AppCompatActivity() {
     private var lastFailedVideoUri: String? = null
     private val videoPlayerErrorListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
-            reportVideoPlaybackFailure()
+            reportVideoPlaybackFailure(error = error)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -322,6 +322,15 @@ class MainActivity : AppCompatActivity() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             updateProgress()
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            if (isFinishing || isDestroyed) return
+            Toast.makeText(
+                this@MainActivity,
+                playbackErrorMessage(error, "audio"),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -5777,7 +5786,27 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "No playable videos are available.", Toast.LENGTH_SHORT).show()
     }
 
-    private fun reportVideoPlaybackFailure(failedVideoUri: String? = null) {
+    private fun playbackErrorMessage(error: PlaybackException, mediaType: String): String {
+        val code = error.errorCodeName.uppercase(Locale.ROOT)
+        return when {
+            "DECODING_FORMAT_UNSUPPORTED" in code ||
+                "PARSING_CONTAINER_UNSUPPORTED" in code ||
+                "DECODING_FAILED" in code ->
+                "This $mediaType uses a format or codec this device cannot play."
+            "IO_FILE_NOT_FOUND" in code ||
+                "IO_NO_PERMISSION" in code ||
+                "CONTENT_UNSUPPORTED" in code ->
+                "This $mediaType file is unavailable or A1 FAMILY MEDIA cannot access it."
+            "PARSING" in code ->
+                "This $mediaType file may be damaged or use an unsupported format."
+            else -> "Couldn't play this $mediaType. Check that the file is available and try another one."
+        }
+    }
+
+    private fun reportVideoPlaybackFailure(
+        failedVideoUri: String? = null,
+        error: PlaybackException? = null
+    ) {
         if (isFinishing || isDestroyed) return
         val currentUri = videoPlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
         if (failedVideoUri == null && currentUri != null && navigationVideoUri != null &&
@@ -5790,11 +5819,13 @@ class MainActivity : AppCompatActivity() {
         selectedVideoUri = null
         if (::videoStatus.isInitialized) {
             renderVideos(searchBox.text?.toString().orEmpty())
-            videoStatus.text = "Couldn't play $failedTitle. Choose another video or use previous/next."
+            videoStatus.text = error?.let { playbackErrorMessage(it, "video") }
+                ?: "Couldn't play $failedTitle. Choose another video or use previous/next."
         }
         Toast.makeText(
             this,
-            "Couldn't play $failedTitle. Choose another video.",
+            error?.let { playbackErrorMessage(it, "video") }
+                ?: "Couldn't play $failedTitle. Choose another video.",
             Toast.LENGTH_LONG
         ).show()
     }
