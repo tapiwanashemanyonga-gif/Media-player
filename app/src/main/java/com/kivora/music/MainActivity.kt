@@ -5020,12 +5020,11 @@ class MainActivity : AppCompatActivity() {
     /** Keep the inline player close to 16:9 and scale it for phones, tablets and split-screen. */
     private fun videoPreviewHeight(): Int {
         val configuration = resources.configuration
-        val screenWidthDp = configuration.screenWidthDp.coerceAtLeast(1)
-        val screenHeightDp = configuration.screenHeightDp.coerceAtLeast(1)
-        // Give tablets a larger preview, but never let video consume the whole short phone screen.
-        val maxHeightDp = (screenHeightDp * 0.42f).toInt().coerceIn(160, 380)
-        val desiredHeightDp = (screenWidthDp * 9f / 16f).toInt()
-        return dp(desiredHeightDp.coerceIn(140, maxHeightDp))
+        val heightDp = VideoPreviewSizer.heightDp(
+            configuration.screenWidthDp,
+            configuration.screenHeightDp
+        )
+        return dp(heightDp)
     }
 
     /** Move the existing PlayerView into fullscreen without recreating its player. */
