@@ -52,7 +52,9 @@ fun A1VideoRow(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val compact = maxWidth < 340.dp
             Row(
-                modifier = Modifier.padding(if (compact) 7.dp else 9.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(if (compact) 7.dp else 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 11.dp)
             ) {
