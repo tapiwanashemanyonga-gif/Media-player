@@ -2414,48 +2414,17 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- PLAYLIST STORAGE ----------------
 
+    private val playlistStore by lazy {
+        PlaylistStore(getSharedPreferences("kivora_preferences", MODE_PRIVATE))
+    }
+
     private fun loadSavedPlaylists() {
-        val saved = getSharedPreferences(
-            "kivora_preferences",
-            MODE_PRIVATE
-        ).getString("saved_playlists", "{}") ?: "{}"
-
-        try {
-            val json = JSONObject(saved)
-            val keys = json.keys()
-
-            while (keys.hasNext()) {
-                val name = keys.next()
-                val array = json.optJSONArray(name) ?: JSONArray()
-                val uris = linkedSetOf<String>()
-
-                for (i in 0 until array.length()) {
-                    val uri = array.optString(i)
-                    if (uri.isNotBlank()) uris.add(uri)
-                }
-
-                playlists[name] = uris
-            }
-        } catch (_: Exception) {
-            playlists.clear()
-        }
+        playlists.clear()
+        playlists.putAll(playlistStore.load())
     }
 
     private fun savePlaylists() {
-        val json = JSONObject()
-
-        playlists.forEach { (name, uris) ->
-            val array = JSONArray()
-            uris.forEach { array.put(it) }
-            json.put(name, array)
-        }
-
-        getSharedPreferences(
-            "kivora_preferences",
-            MODE_PRIVATE
-        ).edit()
-            .putString("saved_playlists", json.toString())
-            .apply()
+        playlistStore.save(playlists)
     }
 
     private fun playlistSongs(name: String): List<Song> {
