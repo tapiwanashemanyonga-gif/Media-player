@@ -338,12 +338,7 @@ class MainActivity : AppCompatActivity() {
 
         libraryControlsVisible = !preferences.getBoolean("hide_songs_albums_shortcuts", false)
 
-        favoriteSongUris.addAll(
-            preferences.getStringSet(
-                "favorite_song_uris",
-                emptySet<String>()
-            )?.toSet().orEmpty()
-        )
+        favoriteSongUris.addAll(favoriteStore.load())
 
         loadSavedPlaylists()
         buildScreen()
@@ -2399,15 +2394,7 @@ class MainActivity : AppCompatActivity() {
             ).show()
         }
 
-        getSharedPreferences(
-            "kivora_preferences",
-            MODE_PRIVATE
-        ).edit()
-            .putStringSet(
-                "favorite_song_uris",
-                favoriteSongUris.toSet()
-            )
-            .apply()
+        favoriteStore.save(favoriteSongUris)
 
         renderSongs(searchBox.text?.toString().orEmpty())
     }
