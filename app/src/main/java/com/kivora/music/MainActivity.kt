@@ -2928,6 +2928,15 @@ class MainActivity : AppCompatActivity() {
         customization.homeSectionOrder.forEach { section ->
             if (section !in customization.hiddenHomeSections) sections[section]?.invoke()
         }
+
+        addHomeSection("Privacy & data", "YOUR CHOICES")
+        homeContent.addView(homeEmptyCard("Review or change optional installation analytics, or open the Privacy Policy.").apply {
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Open privacy choices and privacy policy"
+            setOnClickListener { A1InstallTrackingClient(this@MainActivity).openPrivacyChoices() }
+        }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) })
+
         homeContent.addView(label("Tap the mini-player to open Now Playing", 11f, Color.rgb(164, 145, 186)).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(15), 0, dp(3))
