@@ -492,9 +492,30 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Selected-video access can change in system settings while the app is backgrounded.
-        if (currentTab == "videos" && videosLoaded && hasVideoAccess()) {
-            loadVideos()
+        // Video and selected-item access can change in system settings while backgrounded.
+        if (currentTab == "videos" && videosLoaded) {
+            if (hasVideoAccess()) {
+                loadVideos()
+            } else {
+                // Drop stale MediaStore entries after permission revocation. Keep a video
+                // opened directly through another app's content/file grant independent.
+                deviceVideos.removeAll { it.uri.authority == "media" }
+                if (selectedVideoUri?.let { Uri.parse(it).authority == "media" } == true) {
+                    videoPlayer?.apply {
+                        playWhenReady = false
+                        pause()
+                        stop()
+                        clearMediaItems()
+                    }
+                    selectedVideoUri = null
+                    navigationVideoUri = null
+                    lastFailedVideoUri = null
+                    videoPlayerView.visibility = View.GONE
+                    videoPlaceholder.findViewWithTag<View>("video_player_actions")?.visibility = View.GONE
+                }
+                videosLoaded = false
+                renderVideos(searchBox.text?.toString().orEmpty())
+            }
         }
     }
 
