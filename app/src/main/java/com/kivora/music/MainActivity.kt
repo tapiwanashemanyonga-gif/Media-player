@@ -2859,7 +2859,7 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        val albumCount = songs.map(::albumGroupKey).distinct().size
+        val albumCount = songs.map(MediaLibraryOrdering::albumGroupKey).distinct().size
         homeContent.addView(
             ComposeView(this).apply {
                 setContent {
@@ -3689,7 +3689,7 @@ class MainActivity : AppCompatActivity() {
         val filteredSongs = matches.filter { song ->
             if (!isLibraryBrowse) return@filter true
             when {
-                selectedAlbumKey != null -> albumGroupKey(song) == selectedAlbumKey
+                selectedAlbumKey != null -> MediaLibraryOrdering.albumGroupKey(song) == selectedAlbumKey
                 selectedArtistName != null -> song.artist.equals(selectedArtistName, ignoreCase = true)
                 else -> true
             }
@@ -3700,7 +3700,7 @@ class MainActivity : AppCompatActivity() {
                 .associate { it.value to it.index }
             filteredSongs.sortedBy { playlistOrder[it.uri.toString()] ?: Int.MAX_VALUE }
         } else {
-            sortLibrarySongs(filteredSongs)
+            MediaLibraryOrdering.sortSongs(filteredSongs, librarySortMode, recentlyPlayedTracker.uris)
         }
         val showingCollections = isLibraryBrowse &&
             selectedAlbumKey == null && selectedArtistName == null &&
@@ -3857,13 +3857,6 @@ class MainActivity : AppCompatActivity() {
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
         }
     }
-
-    private fun albumGroupKey(song: Song): String =
-        if (song.albumId > 0L) {
-            "id:${song.albumId}"
-        } else {
-            "name:${song.album.lowercase(Locale.ROOT)}|artist:${song.artist.lowercase(Locale.ROOT)}"
-        }
 
     private fun renderAlbumGroups(items: List<Song>) {
         items.groupBy(::albumGroupKey).values
@@ -4632,24 +4625,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         updateProgress()
-    }
-
-    private fun sortLibrarySongs(items: List<Song>): List<Song> = when (librarySortMode) {
-        "artist" -> items.sortedWith(
-            compareBy<Song> { it.artist.trim().lowercase(Locale.ROOT) }
-                .thenBy { it.title.trim().lowercase(Locale.ROOT) }
-        )
-        "recent" -> items.sortedWith(
-            compareBy<Song> {
-                recentlyPlayedTracker.uris.indexOf(it.uri.toString()).let { index ->
-                    if (index < 0) Int.MAX_VALUE else index
-                }
-            }.thenBy { it.title.trim().lowercase(Locale.ROOT) }
-        )
-        else -> items.sortedWith(
-            compareBy<Song> { it.title.trim().lowercase(Locale.ROOT) }
-                .thenBy { it.artist.trim().lowercase(Locale.ROOT) }
-        )
     }
 
     private fun updateSortButton() {
