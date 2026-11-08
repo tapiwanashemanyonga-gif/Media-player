@@ -3,6 +3,7 @@ package com.kivora.music
 import android.widget.ImageView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -50,11 +51,19 @@ fun A1SongRow(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF49345F)),
         tonalElevation = 0.dp
     ) {
-        Row(
-            modifier = Modifier.padding(start = 8.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            // Reduce fixed controls on narrow phones before the title column is squeezed.
+            val compact = maxWidth < 340.dp
+            Row(
+                modifier = Modifier.padding(
+                    start = if (compact) 6.dp else 8.dp,
+                    end = 2.dp,
+                    top = 8.dp,
+                    bottom = 8.dp
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp)
+            ) {
             AndroidView(
                 factory = { context ->
                     ImageView(context).apply {
@@ -65,7 +74,7 @@ fun A1SongRow(
                     }
                 },
                 modifier = Modifier
-                    .size(50.dp)
+                    .size(if (compact) 42.dp else 50.dp)
                     .clip(RoundedCornerShape(12.dp))
             )
 
@@ -91,34 +100,35 @@ fun A1SongRow(
                 )
             }
 
-            IconButton(onClick = onFavorite, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = onFavorite, modifier = Modifier.size(if (compact) 28.dp else 32.dp)) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                     contentDescription = if (isFavorite) "Remove from favourites" else "Add to favourites",
                     tint = if (isFavorite) Color(0xFFFACC15) else Color(0xFFAE9FC2),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(if (compact) 16.dp else 18.dp)
                 )
             }
 
             IconButton(
                 onClick = if (isInPlaylist) onRemoveFromPlaylist else onAddToPlaylist,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(if (compact) 28.dp else 32.dp)
             ) {
                 Icon(
                     imageVector = if (isInPlaylist) Icons.Filled.RemoveCircleOutline else Icons.Filled.PlaylistAdd,
                     contentDescription = if (isInPlaylist) "Remove from playlist" else "Add to playlist",
                     tint = if (isInPlaylist) Color(0xFFF87171) else Color(0xFFD8B4FE),
-                    modifier = Modifier.size(19.dp)
+                    modifier = Modifier.size(if (compact) 17.dp else 19.dp)
                 )
             }
 
-            IconButton(onClick = onMore, modifier = Modifier.size(30.dp)) {
+            IconButton(onClick = onMore, modifier = Modifier.size(if (compact) 28.dp else 30.dp)) {
                 Icon(
                     imageVector = Icons.Filled.MoreVert,
                     contentDescription = "More song actions",
                     tint = Color(0xFFD8B4FE),
                     modifier = Modifier.size(19.dp)
                 )
+            }
             }
         }
     }
