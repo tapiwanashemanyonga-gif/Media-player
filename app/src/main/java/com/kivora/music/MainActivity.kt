@@ -4841,9 +4841,8 @@ class MainActivity : AppCompatActivity() {
         fullscreenVideoDialog = null
         restoreVideoPlayerView()
 
-        // Invalidate any pending artwork callback and stop its worker.
+        // Invalidate any pending artwork callback before releasing the player.
         artworkRequestId++
-        artworkExecutor.shutdownNow()
 
         player?.removeListener(playerListener)
         player = null
