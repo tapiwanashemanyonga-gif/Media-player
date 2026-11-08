@@ -966,6 +966,36 @@ class MainActivity : AppCompatActivity() {
         }
         videoPlayerActions.addView(stopInlineVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(4) })
 
+        if (narrowPhoneLayout) {
+            // Two balanced rows keep all four video actions readable on very narrow phones.
+            videoPlayerActions.removeAllViews()
+            val firstActionRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val secondActionRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            firstActionRow.addView(fullscreenButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                rightMargin = dp(4)
+            })
+            firstActionRow.addView(minimizeVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                leftMargin = dp(4)
+            })
+            secondActionRow.addView(videoListButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                rightMargin = dp(4)
+            })
+            secondActionRow.addView(stopInlineVideoButton, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                leftMargin = dp(4)
+            })
+            videoPlayerActions.orientation = LinearLayout.VERTICAL
+            videoPlayerActions.addView(firstActionRow, LinearLayout.LayoutParams(-1, -2))
+            videoPlayerActions.addView(secondActionRow, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(6)
+            })
+        }
+
         // Keep the video list last so its weight fills the space below the player and controls.
         videoPlaceholder.removeView(videoPlayerActions)
         videoPlaceholder.addView(videoPlayerActions, 1, LinearLayout.LayoutParams(-1, -2))
