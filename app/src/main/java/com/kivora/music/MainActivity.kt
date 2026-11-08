@@ -2859,7 +2859,7 @@ class MainActivity : AppCompatActivity() {
         if (!::homeContent.isInitialized) return
         homeContent.removeAllViews()
 
-        val albumCount = songs.map(MediaLibraryOrderingMediaLibraryOrdering::albumGroupKey).distinct().size
+        val albumCount = songs.map(MediaLibraryOrdering::albumGroupKey).distinct().size
         homeContent.addView(
             ComposeView(this).apply {
                 setContent {
@@ -3585,23 +3585,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun makeMediaItems(queue: List<Song>): List<MediaItem> =
-        queue.map { song ->
-            val metadata = MediaMetadata.Builder()
-                .setTitle(song.title)
-                .setArtist(song.artist)
-                .setAlbumTitle(song.album)
-                .apply {
-                    song.artworkUri?.let { setArtworkUri(it) }
-                }
-                .build()
-
-            MediaItem.Builder()
-                .setUri(song.uri)
-                .setMediaMetadata(metadata)
-                .build()
-        }
-
     private fun syncPlaylistToPlayer() {
         val p = player ?: return
 
@@ -3618,7 +3601,7 @@ class MainActivity : AppCompatActivity() {
             activeQueue = existingQueue
         } else if (songs.isNotEmpty()) {
             activeQueue = songs.toList()
-            p.setMediaItems(makeMediaItems(activeQueue))
+            p.setMediaItems(MediaItemFactory.fromSongs(activeQueue))
             p.prepare()
         } else {
             activeQueue = emptyList()
@@ -3971,7 +3954,7 @@ class MainActivity : AppCompatActivity() {
             videoStatus.text = if (deviceVideos.isEmpty()) "No videos yet" else "Choose a video to play."
             renderVideos(searchBox.text?.toString().orEmpty())
         }
-        p.setMediaItems(makeMediaItems(activeQueue), startIndex, 0L)
+        p.setMediaItems(MediaItemFactory.fromSongs(activeQueue), startIndex, 0L)
         p.prepare()
         p.play()
 
