@@ -196,17 +196,12 @@ class MainActivity : AppCompatActivity() {
     private val videoScanExecutor = Executors.newSingleThreadExecutor()
     private var musicScanRequestId = 0
     private var videoScanRequestId = 0
-    private val videoThumbnailLoader = VideoThumbnailLoader(
-        contentResolver = contentResolver,
-        density = resources.displayMetrics.density
-    ) { !isFinishing && !isDestroyed }
+    // Defer Context-dependent helpers until onCreate, after Android attaches this Activity.
+    private lateinit var videoThumbnailLoader: VideoThumbnailLoader
 
     // Keep the selected-track request guard in MainActivity; decoding and caching live separately.
     private var artworkRequestId = 0
-    private val albumArtworkLoader = AlbumArtworkLoader(
-        contentResolver = contentResolver,
-        minimumTargetSizePx = dp(32)
-    ) { !isFinishing && !isDestroyed }
+    private lateinit var albumArtworkLoader: AlbumArtworkLoader
 
 
     // Optimization: cache lowercase search text for each song.
@@ -306,6 +301,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Activity Context and resources are safe to access only after super.onCreate().
+        videoThumbnailLoader = VideoThumbnailLoader(
+            contentResolver = contentResolver,
+            density = resources.displayMetrics.density
+        ) { !isFinishing && !isDestroyed }
+        albumArtworkLoader = AlbumArtworkLoader(
+            contentResolver = contentResolver,
+            minimumTargetSizePx = dp(32)
+        ) { !isFinishing && !isDestroyed }
 
         if (Build.VERSION.SDK_INT >= 35) {
             // Android 15+ enforces edge-to-edge for apps targeting API 35 or newer.
@@ -471,29 +476,30 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(progressUpdater)
         handler.post(progressUpdater)
         // Video and selected-item access can change in system settings while backgrounded.
-        if (currentTab == "videos" && videosLoaded) {
-            if (hasVideoAccess()) {
-                loadVideos()
-            } else {
-                // Drop stale MediaStore entries after permission revocation. Keep a video
-                // opened directly through another app's content/file grant independent.
-                deviceVideos.removeAll { it.uri.authority == "media" }
-                if (selectedVideoUri?.let { Uri.parse(it).authority == "media" } == true) {
-                    videoPlayer?.apply {
-                        playWhenReady = false
-                        pause()
-                        stop()
-                        clearMediaItems()
-                    }
-                    selectedVideoUri = null
-                    navigationVideoUri = null
-                    lastFailedVideoUri = null
-                    videoPlayerView.visibility = View.GONE
-                    videoPlaceholder.findViewWithTag<View>("video_player_actions")?.visibility = View.GONE
+        if (videosLoaded && !hasVideoAccess()) {
+            // Check revocation even when another tab was open while Settings was in use.
+            // Drop stale MediaStore entries, but preserve media opened through another app's
+            // independent content/file URI grant.
+            deviceVideos.removeAll { it.uri.authority == "media" }
+            if (selectedVideoUri?.let { Uri.parse(it).authority == "media" } == true) {
+                videoPlayer?.apply {
+                    playWhenReady = false
+                    pause()
+                    stop()
+                    clearMediaItems()
                 }
-                videosLoaded = false
+                selectedVideoUri = null
+                navigationVideoUri = null
+                lastFailedVideoUri = null
+                videoPlayerView.visibility = View.GONE
+                videoPlaceholder.findViewWithTag<View>("video_player_actions")?.visibility = View.GONE
+            }
+            videosLoaded = false
+            if (currentTab == "videos") {
                 renderVideos(searchBox.text?.toString().orEmpty())
             }
+        } else if (currentTab == "videos" && videosLoaded) {
+            loadVideos()
         }
     }
 
@@ -1136,7 +1142,8 @@ class MainActivity : AppCompatActivity() {
 
         progress = SeekBar(this).apply {
             max = 1000
-            minHeight = dp(if (compactPlayerLayout) 34 else 42)
+            // Use View.setMinimumHeight(), available on older Android releases.
+            minimumHeight = dp(if (compactPlayerLayout) 34 else 42)
             setPadding(dp(2), 0, dp(2), 0)
 
             progressTintList =
@@ -1958,7 +1965,7 @@ class MainActivity : AppCompatActivity() {
                 latestLevels = levels.toList()
                 levels.indices.filter { it < bandSliders.size }.forEach { band ->
                     bandSliders[band].progress = levels[band] - minLevel
-                    levelLabels[band].text = formatEqualizerLevel(levels[band])
+                    levelLabels[band].text = AudioEffectLevelFormatter.format(levels[band])
                 }
             }
             updateDialogState = ::applyState
@@ -2761,11 +2768,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSelectSongsForPlaylistDialog() {
         val query = searchBox.text?.toString().orEmpty().trim().lowercase(Locale.ROOT)
-        val candidates = sortLibrarySongs(songs.filter { song ->
+        val candidates = MediaLibraryOrdering.sortSongs(songs.filter { song ->
             val searchableText =
                 "${song.title.trim()} ${song.artist.trim()} ${song.album.trim()}".lowercase(Locale.ROOT)
             query.isEmpty() || searchableText.contains(query)
-        })
+        }, librarySortMode, recentlyPlayedTracker.uris)
         if (candidates.isEmpty()) {
             AlertDialog.Builder(this)
                 .setTitle("No songs available")

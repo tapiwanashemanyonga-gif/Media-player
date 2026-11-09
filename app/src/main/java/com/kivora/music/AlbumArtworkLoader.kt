@@ -48,25 +48,27 @@ internal class AlbumArtworkLoader(
         }
     }
 
-    private fun decode(uri: Uri, targetSizePx: Int): Bitmap? = try {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val boundsStream = contentResolver.openInputStream(uri) ?: return null
-        boundsStream.use { stream -> BitmapFactory.decodeStream(stream, null, bounds) }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    private fun decode(uri: Uri, targetSizePx: Int): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            val boundsStream = contentResolver.openInputStream(uri) ?: return null
+            boundsStream.use { stream -> BitmapFactory.decodeStream(stream, null, bounds) }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        var sampleSize = 1
-        while (maxOf(
-                bounds.outWidth / (sampleSize * 2),
-                bounds.outHeight / (sampleSize * 2)
-            ) >= targetSizePx
-        ) {
-            sampleSize *= 2
+            var sampleSize = 1
+            while (maxOf(
+                    bounds.outWidth / (sampleSize * 2),
+                    bounds.outHeight / (sampleSize * 2)
+                ) >= targetSizePx
+            ) {
+                sampleSize *= 2
+            }
+            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val decodeStream = contentResolver.openInputStream(uri) ?: return null
+            decodeStream.use { stream -> BitmapFactory.decodeStream(stream, null, options) }
+        } catch (_: Exception) {
+            null
         }
-        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val decodeStream = contentResolver.openInputStream(uri) ?: return null
-        decodeStream.use { stream -> BitmapFactory.decodeStream(stream, null, options) }
-    } catch (_: Exception) {
-        null
     }
 
     fun close() {

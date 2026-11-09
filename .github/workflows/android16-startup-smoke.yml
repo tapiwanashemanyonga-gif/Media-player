@@ -1,0 +1,91 @@
+name: A1 FAMILY MEDIA JVM CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - fix/kotlin-compilation-errors
+      - test/android16-build-523-startup
+      - perf/a1-family-all-device-stability
+  pull_request:
+    branches:
+      - main
+      - fix/kotlin-compilation-errors
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a1-jvm-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jvm-tests-and-debug-build:
+    name: Robolectric tests and Android debug build (no emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android build SDK packages (no emulator)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Check patch whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
+
+      - name: Run JVM and Robolectric tests
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Build Android debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          BADGING="$("${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "$APK")"
+          echo "$BADGING" | head -n 1
+          echo "$BADGING" | grep -Fq "package: name='com.a1family.media'"
+          mkdir -p artifacts
+          {
+            echo "Commit: $(git rev-parse HEAD)"
+            echo "Expected package: com.a1family.media"
+            echo "Expected launcher: com.kivora.music.MainActivity"
+            echo "Runtime device validation: required separately on physical Android hardware"
+            echo "Emulator: not used"
+          } > artifacts/test-environment.txt
+
+      - name: Upload JVM test reports and debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A1-JVM-Test-Reports-and-Debug-APK
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            app/build/outputs/apk/debug/app-debug.apk
+            artifacts/test-environment.txt
+          if-no-files-found: warn
+          retention-days: 14
