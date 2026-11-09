@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build-debug-apk:
     name: Build APK and JVM checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - name: Check out source
@@ -44,10 +44,30 @@ jobs:
       - name: Check patch whitespace
         if: github.event_name == 'pull_request'
         run: git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
-      - name: Run JVM and Robolectric tests
-        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
-      - name: Build debug APK
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+      - name: Run JVM and Robolectric tests (retry transient distribution download failures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon --stacktrace testDebugUnitTest; then exit 0; fi
+            if (( attempt < 3 )); then
+              echo "Gradle test attempt $attempt failed; retrying after a short delay."
+              sleep 15
+            fi
+          done
+          exit 1
+      - name: Build debug APK (retry transient distribution download failures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon --stacktrace assembleDebug; then exit 0; fi
+            if (( attempt < 3 )); then
+              echo "Gradle build attempt $attempt failed; retrying after a short delay."
+              sleep 15
+            fi
+          done
+          exit 1
       - name: Verify APK identity
         shell: bash
         run: |
@@ -67,7 +87,7 @@ jobs:
   android-runtime:
     name: Android API ${{ matrix.api-level }} startup + screenshots
     needs: build-debug-apk
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
