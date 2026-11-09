@@ -1,0 +1,63 @@
+name: Android 16 startup smoke test (build 523 source)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/android16-build-523-startup
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  android-16-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out build 523 source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build debug APK from the exact build 523 source
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Boot Android 16 and launch A1 FAMILY MEDIA
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-boot-timeout: 900
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK="app/build/outputs/apk/debug/app-debug.apk"
+            test -s "$APK"
+            adb install -r "$APK"
+            adb logcat -c
+            adb shell am force-stop com.a1family.media
+            adb shell am start -W -n com.a1family.media/com.kivora.music.MainActivity
+            sleep 20
+            if ! adb shell pidof com.a1family.media >/dev/null; then
+              echo "::error::A1 FAMILY MEDIA process exited after launch on Android 16."
+              adb logcat -d -v threadtime | grep -E -A 35 -B 8 'FATAL EXCEPTION|Fatal signal|com.a1family.media' || true
+              exit 1
+            fi
+            if adb logcat -d -v threadtime | grep -E 'FATAL EXCEPTION|Fatal signal' | grep -q 'com.a1family.media'; then
+              echo "::error::A1 FAMILY MEDIA logged a fatal crash on Android 16."
+              adb logcat -d -v threadtime | grep -E -A 35 -B 8 'FATAL EXCEPTION|Fatal signal|com.a1family.media' || true
+              exit 1
+            fi
+            echo "A1 FAMILY MEDIA remained running for 20 seconds after launch on Android 16."
