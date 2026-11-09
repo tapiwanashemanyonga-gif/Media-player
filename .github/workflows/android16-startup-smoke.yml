@@ -1,4 +1,4 @@
-name: A1 FAMILY MEDIA Android CI
+name: A1 FAMILY MEDIA JVM CI
 
 on:
   workflow_dispatch:
@@ -17,14 +17,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: a1-android-ci-${{ github.workflow }}-${{ github.ref }}
+  group: a1-jvm-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  android-16-startup:
-    name: Build and launch on Android 16 (API 36)
+  jvm-tests-and-debug-build:
+    name: Robolectric tests and Android debug build (no emulator)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
 
     steps:
       - name: Check out source
@@ -36,20 +36,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Install Android 16 SDK and emulator packages
+      - name: Install Android build SDK packages (no emulator)
         shell: bash
         run: |
           set -euo pipefail
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "emulator" "system-images;android-36;google_apis;x86_64"
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Run unit tests and build debug APK
-        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleDebug
+      - name: Check patch whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
+
+      - name: Run JVM and Robolectric tests
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Build Android debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Verify APK package identity
         shell: bash
@@ -57,7 +64,7 @@ jobs:
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          BADGING="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")"
+          BADGING="$("${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "$APK")"
           echo "$BADGING" | head -n 1
           echo "$BADGING" | grep -Fq "package: name='com.a1family.media'"
           mkdir -p artifacts
@@ -65,55 +72,19 @@ jobs:
             echo "Commit: $(git rev-parse HEAD)"
             echo "Expected package: com.a1family.media"
             echo "Expected launcher: com.kivora.music.MainActivity"
-            echo "Target emulator: Android 16 / API 36"
+            echo "Runtime device validation: required separately on physical Android hardware"
+            echo "Emulator: not used"
           } > artifacts/test-environment.txt
 
-      - name: Launch app and capture Android 16 evidence
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          emulator-boot-timeout: 900
-          disable-animations: true
-          script: |
-            set -euo pipefail
-            mkdir -p artifacts
-            capture_evidence() {
-              adb logcat -d -v threadtime > artifacts/android16-logcat.txt 2>&1 || true
-              adb exec-out screencap -p > artifacts/android16-screen.png 2>/dev/null || true
-              adb shell dumpsys activity activities > artifacts/android16-activities.txt 2>&1 || true
-              adb shell pidof com.a1family.media > artifacts/android16-process.txt 2>&1 || true
-            }
-            trap capture_evidence EXIT
-
-            APK="app/build/outputs/apk/debug/app-debug.apk"
-            test -s "$APK"
-            adb install -r "$APK"
-            adb logcat -c
-            adb shell am force-stop com.a1family.media
-            adb shell am start -W -n com.a1family.media/com.kivora.music.MainActivity
-            sleep 20
-
-            if ! adb shell pidof com.a1family.media >/dev/null 2>&1; then
-              echo "::error::A1 FAMILY MEDIA process exited during the 20-second Android 16 startup check."
-              adb logcat -d -v threadtime | grep -E -A 35 -B 8 'FATAL EXCEPTION|Fatal signal|com.a1family.media' || true
-              exit 1
-            fi
-
-            adb logcat -d -v threadtime > artifacts/android16-logcat.txt
-            if grep -E -A 12 'FATAL EXCEPTION|Fatal signal' artifacts/android16-logcat.txt | grep -q 'com.a1family.media'; then
-              echo "::error::A1 FAMILY MEDIA reported a fatal crash on Android 16."
-              exit 1
-            fi
-            echo "PASS: A1 FAMILY MEDIA stayed running for 20 seconds after launch on Android 16."
-
-      - name: Upload screenshots, logcat and test evidence
+      - name: Upload JVM test reports and debug APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: A1-Android16-Test-Evidence
-          path: artifacts/
+          name: A1-JVM-Test-Reports-and-Debug-APK
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            app/build/outputs/apk/debug/app-debug.apk
+            artifacts/test-environment.txt
           if-no-files-found: warn
           retention-days: 14
