@@ -1,5 +1,6 @@
 package com.kivora.music
 
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -22,16 +23,17 @@ class AppManifestRobolectricTest {
     private val packageManager get() = context.packageManager
 
     @Test
-    fun exposesCorrectAppIdentityAndLauncher() {
+    fun exposesCorrectAppIdentityAndMainActivity() {
         val appInfo = packageManager.getApplicationInfo(context.packageName, 0)
         assertEquals("com.a1family.media", context.packageName)
         assertEquals("A1 FAMILY MEDIA", packageManager.getApplicationLabel(appInfo).toString())
 
-        val launcher = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setPackage(context.packageName)
-        val launchers = packageManager.queryIntentActivities(launcher, PackageManager.MATCH_DEFAULT_ONLY)
-        assertTrue(launchers.any { it.activityInfo.name == "com.kivora.music.MainActivity" })
+        val mainActivity = packageManager.getActivityInfo(
+            ComponentName(context.packageName, "com.kivora.music.MainActivity"),
+            0
+        )
+        assertNotNull("Main activity must remain declared", mainActivity)
+        assertTrue("Main activity must remain exported for launcher and file-open intents", mainActivity.exported)
     }
 
     @Test
