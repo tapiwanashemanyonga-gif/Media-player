@@ -81,11 +81,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: A1-Screenshots-Test-Reports-and-Debug-APK
+          name: A1-JVM-Test-Reports-and-Debug-APK
           path: |
             app/build/reports/tests/testDebugUnitTest/
             app/build/test-results/testDebugUnitTest/
-            app/build/outputs/roborazzi/
             app/build/outputs/apk/debug/app-debug.apk
             artifacts/test-environment.txt
           if-no-files-found: warn
