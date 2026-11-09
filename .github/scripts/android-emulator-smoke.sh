@@ -48,9 +48,11 @@ if ! adb shell am start -W -n "$PACKAGE/$ACTIVITY" > "$OUT/activity-start.txt" 2
   FAIL=1
 fi
 
-# Allow Activity creation, Compose rendering, service binding and first media scan to settle.
-sleep 12
-adb exec-out screencap -p > "$OUT/home-screen.png" 2> "$OUT/screenshot-error.txt" || FAIL=1
+# Capture both an early frame and the settled screen to help spot startup/UI regressions.
+sleep 3
+adb exec-out screencap -p > "$OUT/launch-screen.png" 2> "$OUT/screenshot-error.txt" || FAIL=1
+sleep 9
+adb exec-out screencap -p > "$OUT/home-screen.png" 2>> "$OUT/screenshot-error.txt" || FAIL=1
 adb shell dumpsys activity activities > "$OUT/activities.txt" 2>&1 || true
 adb shell dumpsys window windows > "$OUT/windows.txt" 2>&1 || true
 adb shell pidof "$PACKAGE" > "$OUT/app-pid.txt" 2>&1 || true
@@ -61,8 +63,9 @@ if ! grep -q "$PACKAGE" "$OUT/app-pid.txt"; then
   FAIL=1
 fi
 
-if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt" && grep -q "Process: $PACKAGE" "$OUT/logcat.txt"; then
+if grep -A6 "FATAL EXCEPTION" "$OUT/logcat.txt" | grep -q "Process: $PACKAGE"; then
   echo "Fatal application exception detected; see logcat.txt" | tee -a "$OUT/failure.txt"
+  grep -A30 "FATAL EXCEPTION" "$OUT/logcat.txt" > "$OUT/fatal-exception.txt" || true
   FAIL=1
 fi
 
