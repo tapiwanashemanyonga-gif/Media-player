@@ -1,0 +1,103 @@
+name: A1 FAMILY MEDIA Android Runtime Matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/android16-build-523-startup
+      - fix/kotlin-compilation-errors
+      - perf/a1-family-all-device-stability
+  pull_request:
+    branches:
+      - fix/kotlin-compilation-errors
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a1-android-runtime-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Build APK and JVM checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+      - name: Check patch whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
+      - name: Run JVM and Robolectric tests
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+      - name: Build debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+      - name: Verify APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "${ANDROID_HOME}/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.a1family.media'"
+          mkdir -p artifacts/apk
+          cp "$APK" artifacts/apk/app-debug.apk
+      - name: Upload debug APK for device matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: a1-debug-apk
+          path: artifacts/apk/app-debug.apk
+          retention-days: 2
+
+  android-runtime:
+    name: Android API ${{ matrix.api-level }} startup + screenshots
+    needs: build-debug-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 13
+      matrix:
+        api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+    steps:
+      - name: Check out test harness
+        uses: actions/checkout@v4
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: a1-debug-apk
+          path: artifacts/apk
+      - name: Boot Android emulator, launch app, capture screenshots and logs
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: default
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash .github/scripts/android-emulator-smoke.sh
+        env:
+          A1_ARTIFACT_DIR: artifacts/emulator/api-${{ matrix.api-level }}
+      - name: Upload API-specific screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a1-android-api-${{ matrix.api-level }}-screenshots-logs
+          path: artifacts/emulator/api-${{ matrix.api-level }}/
+          if-no-files-found: warn
+          retention-days: 14
