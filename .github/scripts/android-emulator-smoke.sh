@@ -58,8 +58,16 @@ adb shell dumpsys window windows > "$OUT/windows.txt" 2>&1 || true
 adb shell pidof "$PACKAGE" > "$OUT/app-pid.txt" 2>&1 || true
 adb logcat -d -v threadtime > "$OUT/logcat.txt" 2>&1 || true
 
-if ! grep -q "$PACKAGE" "$OUT/app-pid.txt"; then
+# pidof prints numeric PID(s), not the package name. Check for a numeric PID.
+APP_PIDS="$(tr -d '\r\n' < "$OUT/app-pid.txt")"
+if [[ ! "$APP_PIDS" =~ ^[0-9]+([[:space:]]+[0-9]+)*$ ]]; then
   echo "App process is not alive after startup" | tee -a "$OUT/failure.txt"
+  FAIL=1
+fi
+
+# Confirm the launched activity remains in the task stack as well as the process.
+if ! grep -Fq "$PACKAGE/$ACTIVITY" "$OUT/activities.txt"; then
+  echo "Main activity is missing from the activity task stack" | tee -a "$OUT/failure.txt"
   FAIL=1
 fi
 
