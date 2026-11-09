@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - test/android16-build-523-startup
       - fix/kotlin-compilation-errors
       - perf/a1-family-all-device-stability
   pull_request:
