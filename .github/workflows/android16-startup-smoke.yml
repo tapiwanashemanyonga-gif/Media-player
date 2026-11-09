@@ -39,15 +39,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Set up Android SDK (current packages only)
+      - name: Set up Android SDK command-line tools
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
-            emulator
-            system-images;android-36;google_apis;x86_64
+
+      - name: Install Android 16 SDK and emulator packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "emulator" "system-images;android-36;google_apis;x86_64"
 
       - name: Run unit tests and build debug APK
         run: ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleDebug
