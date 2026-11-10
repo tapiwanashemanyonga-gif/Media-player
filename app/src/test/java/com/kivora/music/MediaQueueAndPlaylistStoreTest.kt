@@ -2,7 +2,6 @@ package com.kivora.music
 
 import android.net.Uri
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,6 +9,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -78,7 +78,7 @@ class PlaylistStoreTest {
 
     @Before
     fun setUp() {
-        preferences = ApplicationProvider.getApplicationContext<Context>()
+        preferences = RuntimeEnvironment.getApplication()
             .getSharedPreferences("playlist-store-tests", Context.MODE_PRIVATE)
         preferences.edit().clear().commit()
         store = PlaylistStore(preferences)
